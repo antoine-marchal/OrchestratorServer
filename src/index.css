@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-color: #f8fafc;
+  --text-color: #1e293b;
+}
+
+
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.react-flow__node {
+  @apply shadow-lg;
+}
+
+.react-flow__handle {
+  @apply w-3 h-3 bg-blue-500;
+}
+
+.react-flow__minimap {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg;
+}
+
+.react-flow__controls {
+  @apply bg-white dark:bg-gray-800 rounded-lg shadow-lg;
+}
+
+.react-flow__controls-button {
+  @apply hover:bg-gray-100 dark:hover:bg-gray-700;
+}
+
+
+/* Make sure the handle is always on top */
+.react-flow__handle {
+  z-index: 1000;
+}

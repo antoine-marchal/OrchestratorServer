@@ -1,0 +1,19 @@
+{
+    "name": "backend",
+    "version": "1.0.0",
+    "description": "Backend for external Node-based poller with Playwright",
+    "main": "poller.js",
+    "type": "module",
+    "scripts": {
+        "start": "node poller.cjs"
+    },
+    "dependencies": {
+        "dayjs": "^1.11.13",
+        "lodash": "^4.17.21",
+        "playwright": "^1.43.1",
+        "tree-kill": "^1.2.2"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}

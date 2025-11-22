@@ -1,0 +1,121 @@
+{
+  "main": "electron-main.js",
+  "name": "orchestrator",
+  "private": true,
+  "version": "0.5.1",
+  "build": {
+    "appId": "house.marchal.orchestrator",
+    "productName": "Orchestrator",
+    "files": [
+      "dist/",
+      "preload.js",
+      "electron-main.js",
+      "splash.html",
+      "package.json",
+      "node_modules/"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "or",
+        "name": "Orchestrator Flow File",
+        "description": "Orchestrator Flow JSON",
+        "role": "Editor",
+        "icon": "build/icon.ico"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "backend/",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "backend/node_modules/",
+        "to": "backend/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "preload/",
+        "to": "preload",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "logo.png",
+        "to": "logo.png"
+      }
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "include": "build/installer-modify-path.nsh",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "start": "npm run dev",
+    "electron": "electron electron-main.js",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron-main.js\"",
+    "pack": "npm run build && electron-builder --dir",
+    "pre:dist": "cd backend && npm install",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.1.0",
+    "@dnd-kit/sortable": "^8.0.0",
+    "ace-builds": "^1.41.0",
+    "concurrently": "^9.1.2",
+    "dagre": "^0.8.5",
+    "lucide-react": "^0.344.0",
+    "prettier": "^3.6.2",
+    "prettier-plugin-java": "^2.7.5",
+    "react": "^18.3.1",
+    "react-ace": "^14.0.1",
+    "react-dom": "^18.3.1",
+    "react-resizable": "^3.0.5",
+    "reactflow": "^11.10.4",
+    "tree-kill": "^1.2.2",
+    "uuid": "^11.1.0",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "@types/dagre": "^0.7.52",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-resizable": "^3.0.7",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.18",
+    "electron": "13.6.9",
+    "electron-builder": "22.14.13",
+    "eslint": "^9.9.1",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.11",
+    "globals": "^15.9.0",
+    "postcss": "^8.4.35",
+    "prettier-plugin-groovy": "^0.2.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.5.3",
+    "typescript-eslint": "^8.3.0",
+    "vite": "^5.4.2",
+    "wait-on": "^8.0.3"
+  }
+}

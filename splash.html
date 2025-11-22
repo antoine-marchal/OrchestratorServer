@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=400, initial-scale=1.0">
+  <title>Loading Orchestrator</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: radial-gradient(ellipse at top, #23263a 60%, #1e1e2e 100%);
+      color: #cdd6f4;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-width: 0;
+      min-height: 0;
+      user-select: none;
+      overflow: hidden;
+    }
+    .logo-container {
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .logo-img {
+      width: 68px;
+      height: 68px;
+      display: block;
+      margin: 0 auto 10px auto;
+      filter: drop-shadow(0 0 18px #89b4fa55);
+      animation: glow 1.2s infinite alternate;
+      border-radius: 50%;
+      background: #181825;
+      box-shadow: 0 0 0 2.5px #313244;
+    }
+    @keyframes glow {
+      0% { filter: drop-shadow(0 0 10px #89b4fa33);}
+      100% { filter: drop-shadow(0 0 24px #89b4fa99);}
+    }
+    .logo-title {
+      font-size: 1.36rem;
+      font-weight: 600;
+      letter-spacing: 0.11em;
+      margin-bottom: 3px;
+      color: #89b4fa;
+      text-shadow: 0 1px 3px #45475a22;
+    }
+    .subtitle {
+      font-size: 0.93rem;
+      color: #a6adc8;
+      margin-bottom: 17px;
+      letter-spacing: 0.045em;
+    }
+    .loading-bar {
+      width: 160px;
+      height: 6px;
+      background-color: #313244;
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 8px #18182599;
+    }
+    .loading-bar::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 35%;
+      background: linear-gradient(90deg,#89b4fa 0%, #6c7086 100%);
+      border-radius: 3px;
+      animation: loading 1.2s infinite cubic-bezier(.4,0,.2,1);
+      opacity: 0.8;
+      box-shadow: 0 0 7px #89b4fa55, 0 0 1px #313244;
+    }
+    .version {
+      margin-top: 7px;
+      font-size: 0.81rem;
+      color: #6c7086;
+      letter-spacing: 0.035em;
+    }
+    @keyframes loading {
+      0% { left: -35%; }
+      100% { left: 110%; }
+    }
+    .watermark {
+      position: fixed;
+      right: 7px;
+      bottom: 4px;
+      font-size: 0.74rem;
+      color: #a6adc899;
+      opacity: 0.44;
+      letter-spacing: 0.012em;
+      z-index: 50;
+      pointer-events: auto;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      user-select: text;
+      background: none;
+      padding: 0 2px;
+      max-width: 95vw;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .watermark a {
+      color: #89b4fa;
+      text-decoration: none;
+      border-bottom: 1px dotted #89b4fa33;
+      transition: color .2s;
+    }
+    .watermark a:hover {
+      color: #cba6f7;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="logo-container">
+    <img class="logo-img" id="splash-logo" alt="Logo Orchestrator" />
+    <div class="logo-title">Orchestrator</div>
+  </div>
+  <div class="subtitle">Starting application...</div>
+  <div class="loading-bar"></div>
+  <div class="version" id="version">v0.0.0</div>
+  <div class="watermark">
+    <a href="https://github.com/antoine-marchal" target="_blank">am-2025</a>
+  </div>
+  <script>
+    window.onload = async function () {
+      const logoElement = document.getElementById('splash-logo');
+
+      if (window.electronAPI && window.electronAPI.getLogoPath) {
+        const logoPath = await window.electronAPI.getLogoPath();
+        if (logoPath) {
+          logoElement.src = 'file://' + logoPath.replace(/\\/g, '/');
+        }
+      }
+
+      if (window.electronAPI && window.electronAPI.getVersion) {
+        const version = await window.electronAPI.getVersion();
+        document.getElementById('version').textContent = 'v' + version;
+      }
+    };
+  </script>
+</body>
+</html>
