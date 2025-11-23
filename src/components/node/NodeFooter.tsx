@@ -2,7 +2,7 @@ import React from 'react';
 import { Handle, Position } from 'reactflow';
 import { X, ChevronUp, ChevronDown } from 'lucide-react';
 import { EdgeConnection } from '../../types/node';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
 
 interface NodeFooterProps {
   nodeId: string;

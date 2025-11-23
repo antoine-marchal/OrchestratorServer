@@ -1,6 +1,6 @@
 # ![Orchestrator Logo](logo-full.png)
 
-Orchestrator is a cross-platform desktop application built with Electron, React, and Node.js. It enables you to visually orchestrate, edit, and execute custom scripts or nodes (JavaScript, Batch, Groovy, PowerShell, Playwright) through a modern, interactive graphical interface.
+Orchestrator is a web application built with React and Node.js. It enables you to visually orchestrate, edit, and execute custom scripts or nodes (JavaScript, Batch, Groovy, PowerShell, Playwright) through a modern, interactive graphical interface.
 
 ![Orchestrator](captures/main.jpg)
 
@@ -16,7 +16,6 @@ Orchestrator is a cross-platform desktop application built with Electron, React,
 - 🗂️ File-based backend orchestration with inbox/outbox job processing
 - 🖱️ Comprehensive keyboard shortcuts for all operations (save, load, undo, redo, copy, paste)
 - 🖼️ Resizable, customizable nodes and flow layout auto-arrangement
-- 🛠️ Full Electron integration for native desktop experience
 - ⏱️ Execution time display for performance monitoring
 - 🧠 Flow history navigation with undo/redo functionality
 - 📋 Copy/paste functionality for nodes and configurations
@@ -48,9 +47,6 @@ npm run backend
 # Start the frontend (React)
 npm run dev
 
-# Launch the Electron app
-npm run electron
-
 # Or use all-in-one (backend + frontend)
 npm run start
 ```
@@ -63,21 +59,19 @@ npm run start
 # Build the frontend
 npm run build
 
-# Launch the packaged application
-npm run dist
+# Serve the built application
+npm run preview
 ```
 
 ## 📂 Project Structure
 
 | Directory/File | Description |
 |----------------|-------------|
-| `electron-main.js` | Main Electron entry point, manages the window and backend |
 | `src/` | React source code (frontend) |
 | `src/components/` | UI components (FlowEditor, CodeEditorModal, Console, etc.) |
 | `src/store/` | State management for flows and nodes |
 | `src/types/` | TypeScript types for nodes and edges |
 | `backend/` | Node.js backend for script execution and orchestration |
-| `preload/` | Electron preload scripts for secure IPC |
 | `build/` | App icons and build resources |
 
 ## 🧩 Node Types
@@ -120,7 +114,7 @@ Orchestrator supports various node types, each with a unique icon for quick iden
 - File-based inbox/outbox job processing for secure script execution
 - Supports running scripts in isolated processes
 - Groovy, Batch, PowerShell, Playwright, and Node.js backend execution
-- Reworked poller.cjs for improved performance and reliability
+- Reworked API server for improved performance and reliability
 - Enhanced nested flow logging for better debugging of complex workflows
 
 ### 🖱️ Keyboard Shortcuts
@@ -200,27 +194,14 @@ Flow nodes operate by executing the entire workflow contained in the referenced 
 
 ## 🖥️ Command Line Execution
 
-Orchestrator supports executing flows directly from the command line without opening the UI:
+The backend supports executing flows directly from the command line:
 
 ```bash
-orchestrator.exe -s path/to/flow.or
-# or
-orchestrator.exe --silent path/to/flow.or
+node backend/api-server.js execute path/to/flow.or
 ```
 
-In silent mode, Orchestrator:
-1. Starts the backend services
-2. Executes the specified flow file
-3. Outputs results to the console
-4. Exits automatically when execution is complete
+This allows for headless execution of flows via the backend service.
 
-## 📦 Packaging & Distribution
-
-To generate an executable for Windows, Mac, or Linux:
-
-```bash
-npm run dist
-```
 
 ## 🤝 Contributing
 
@@ -231,7 +212,6 @@ Contributions are welcome!
 
 ## 🔗 Useful Links
 
-- [Electron](https://www.electronjs.org/)
 - [React](https://react.dev/)
 - [Node.js](https://nodejs.org/)
 - [Playwright](https://playwright.dev/)

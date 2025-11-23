@@ -224,7 +224,7 @@ def _xcom_input(ti, upstream_task_ids):
         result[tid] = ti.xcom_pull(task_ids=tid)
     return result
 
-# ---- Wrappers faithful to poller.cjs semantics ----
+# ---- Wrappers faithful to api-server.js semantics ----
 
 def _run_js_with_inline_input(code:str, input_obj):
     \"\"\"processJsNode: inline const input = <json>; write output to temp file via fs.\"\"\"

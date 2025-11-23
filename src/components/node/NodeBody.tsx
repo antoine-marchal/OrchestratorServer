@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, memo } from "react";
 import { NodeData } from '../../types/node';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
 
 // Function to format execution time in seconds or minutes
 const formatExecutionTime = (timeMs: number): string => {

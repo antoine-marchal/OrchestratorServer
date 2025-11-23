@@ -18,7 +18,7 @@ import {
   CornerRightDown
 } from 'lucide-react';
 import { NodeData } from '../../types/node';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
 import { pathUtils } from '../../utils/pathUtils';
 interface NodeHeaderProps {
   data: NodeData;
@@ -37,7 +37,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   onExecute,
   onDelete,
 }) => {
-  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution } = useFlowStore();
+  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath } = useFlowStore();
   
   // Check if the node is currently loading/executing
   const isNodeExecuting = nodeLoading?.[nodeId] || false;
@@ -45,37 +45,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   // Check if this node has dontWaitForOutput enabled
   const hasDontWaitForOutput = data.dontWaitForOutput;
   const openFlowNodeInNewWindow = async() => {
-      if (data.code) {
-        // If the flow node already has a file path, open it in a new window
-        let flowPath = data.code;
-        
-        // If the path is relative, convert it to absolute for opening
-        if (data.isRelativePath) {
-          const { flowPath: rootFlowPath } = useFlowStore.getState();
-          if (rootFlowPath && window.electronAPI?.getAbsolutePath) {
-            const baseDir = pathUtils.dirname(rootFlowPath || '');
-            flowPath = window.electronAPI.getAbsolutePath(flowPath, baseDir);
-          } else if (rootFlowPath) {
-            console.error("getAbsolutePath API not available");
-          }
-        }
-        
-        //console.log('Attempting to open flow node in new window');
-        //console.log('electronAPI available:', !!window.electronAPI);
-        //console.log('openFlowInNewWindow available:', !!(window.electronAPI?.openFlowInNewWindow));
-        //console.log('Flow path:', flowPath);
-        
-        if (window.electronAPI?.openFlowInNewWindow) {
-          try {
-            const result = await window.electronAPI.openFlowInNewWindow(flowPath);
-            //console.log('Open flow result:', result);
-          } catch (error) {
-            console.error('Error opening flow in new window:', error);
-          }
-        } else {
-          console.error('openFlowInNewWindow API not available');
-        }
-      }
+    // Opening flows in new windows is not supported in browser environment
+    alert('Opening flows in new windows is not supported in the browser version. Double-click the flow node to see details.');
   }
   return (
     <div className="p-4 border-b border-gray-700 dark:border-gray-300">
@@ -112,11 +83,11 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
             onChange={(e) => onLabelChange(e.target.value)}
             onFocus={(e) => {
               e.target.select();
-              useFlowStore.getState().setTitleEditing(true);
+              setTitleEditing(true);
             }}
             onBlur={(e) => {
-              useFlowStore.getState().setTitleEditing(false);
-              useFlowStore.getState().updateCodeFilePath(nodeId,e.target.value);
+              setTitleEditing(false);
+              updateCodeFilePath(nodeId,e.target.value);
             }}
             onMouseEnter={() => {
               updateNodeDraggable(nodeId, false);
@@ -209,10 +180,10 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           placeholder="Value…"
           onFocus={(e) => {
             e.target.select();
-            useFlowStore.getState().setTitleEditing(true);
+            setTitleEditing(true);
           }}
           onBlur={() => {
-            useFlowStore.getState().setTitleEditing(false);
+            setTitleEditing(false);
           }}
           onMouseEnter={() => {
             updateNodeDraggable(nodeId, false);

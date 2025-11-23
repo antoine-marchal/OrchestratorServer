@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState,useMemo } from 'react';
 import ToolbarButton from './ToolbarButton';
-import * as path from 'path';
 import { pathUtils } from '../utils/pathUtils';
 
 import ReactFlow, {
@@ -21,7 +20,8 @@ import ReactFlow, {
   Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useFlowStore } from '../store/flowStore';
+import { useFlowStore } from '../store/sessionFlowStore';
+import { useSessionStore } from '../store/sessionStore';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
 import {
@@ -202,6 +202,7 @@ function Flow() {
     saveFlow,
     loadFlow,
     executeFlow,
+    stopFlow,
     panOnDrag,
     zoomOnScroll,
     clearFlow,
@@ -215,7 +216,13 @@ function Flow() {
     canRedo,
     // Copy/Paste functionality
     copySelectedNodes,
-    pasteNodes
+    pasteNodes,
+    // Additional state needed for keyboard shortcuts
+    isOutputZoneActive,
+    isTitleEditing,
+    editorModal,
+    isMouseOverConsole,
+    addToHistory
   } = useFlowStore();
   
   // Add state for edge animations
@@ -247,7 +254,6 @@ function Flow() {
       // Prevent default browser actions for our shortcuts
       if (event.ctrlKey || event.metaKey) {
         // Get current state of output zone, title editing, and mouse over console
-        const { isOutputZoneActive, isTitleEditing, editorModal, isMouseOverConsole } = useFlowStore.getState();
         const isModalOpen = editorModal.isOpen;
         
         // Skip handling CTRL+C and CTRL+V when modal editor is open, output zone is active, title is being edited, or mouse is over console
@@ -309,7 +315,8 @@ function Flow() {
   // Function to create a new flow
   const createNewFlow = () => {
     clearFlow(); // This clears nodes, edges, and sets flowPath to null
-    window.electronAPI?.setTitle?.('New Flow');
+    // TODO: Replace with browser API for title management
+    // window.electronAPI?.setTitle?.('New Flow');
   };
   const isValidConnection: IsValidConnection = useCallback(
     (connection) => {
@@ -354,7 +361,7 @@ function Flow() {
           if (isDragging && !isDraggingNow) {
             // Add to history after the position update is applied
             setTimeout(() => {
-              useFlowStore.getState().addToHistory();
+              addToHistory();
             }, 0);
           }
         }
@@ -365,7 +372,7 @@ function Flow() {
         // Apply changes directly without adding to history
         const updatedNodes = applyNodeChanges(changes, nodes);
         // Use the store's set function directly to avoid adding to history
-        useFlowStore.setState({ nodes: updatedNodes });
+        setNodes(updatedNodes);
       } else {
         // For non-dragging changes, use the normal setNodes which adds to history
         setNodes((nds) => applyNodeChanges(changes, nds));
@@ -498,6 +505,73 @@ const displayEdges = useMemo<Edge[]>(() => {
   };
  
   const addNewNode = async (type: string, pos?: { x: number, y: number }) => {
+    // Handle flow node type - open file dialog to select a flow file
+    if (type === 'flow') {
+      return new Promise<void>((resolve) => {
+        // Create a file input element
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.or';
+        input.style.display = 'none';
+
+        input.onchange = async (event) => {
+          const file = (event.target as HTMLInputElement).files?.[0];
+          if (!file) {
+            resolve(); // User cancelled
+            return;
+          }
+
+          // Validate file extension
+          if (!file.name.toLowerCase().endsWith('.or')) {
+            alert('Please select a valid .or file');
+            resolve();
+            return;
+          }
+
+          try {
+            // For browser environment, we can only store the filename
+            // since we can't access full paths for security reasons
+            const fileName = file.name;
+
+            const nodePosition = pos || position || { x: 100, y: 100 };
+
+            const newNode = {
+              id: `node-${Date.now()}`,
+              type: 'custom',
+              position: nodePosition,
+              data: {
+                label: fileName.replace('.or', ''), // Use filename without extension as label
+                type: 'flow',
+                code: fileName, // Store the filename in the code property
+                isRelativePath: true, // Always relative in browser context
+              },
+              draggable: true,
+            };
+
+            setNodes((nds) => [...nds, newNode]);
+            closeMenus();
+
+            // Note: Opening flow in new window is not supported in browser environment
+            // The flow execution will handle loading the file content when needed
+
+            resolve();
+          } catch (error) {
+            alert(`Error creating flow node: ${error instanceof Error ? error.message : String(error)}`);
+            resolve();
+          }
+        };
+
+        // Handle cancellation
+        input.oncancel = () => {
+          resolve();
+        };
+
+        // Trigger file selection
+        document.body.appendChild(input);
+        input.click();
+        document.body.removeChild(input);
+      });
+    }
     const nodeType = NODE_TYPES.find(t => t.id === type);
     if (!nodeType) return;
     const uniqueLabel = getUniqueNodeLabel(nodeType.label);
@@ -515,62 +589,6 @@ const displayEdges = useMemo<Edge[]>(() => {
       }
     }
     
-    // Handle flow node type - open file dialog to select a flow file
-    if (type === 'flow' && window.electronAPI?.openFlowFile) {
-      try {
-        const result = await window.electronAPI.openFlowFile();
-        if (!result || !result.filePath) {
-          return; // User cancelled the file selection
-        }
-        
-        // Extract filename from the path
-        const fileName = result.filePath.split(/[\\/]/).pop() || 'Flow';
-        
-        // Get the current flow path from the store
-        const { flowPath } = useFlowStore.getState();
-        
-        // Determine if we should use relative or absolute path
-        let nodePath = result.filePath;
-        let isRelativePath = false;
-        
-        // If the root flow has been saved, store the path relative to it
-        if (flowPath) {
-          const { convertToRelativePath } = useFlowStore.getState();
-          const baseDir = pathUtils.dirname(flowPath || '');
-          nodePath = convertToRelativePath(result.filePath, baseDir);
-          isRelativePath = true;
-        }
-        
-        const newNode = {
-          id: `node-${Date.now()}`,
-          type: 'custom',
-          position,
-          data: {
-            label: fileName, // Use filename as the node label
-            type: 'flow',
-            code: nodePath, // Store the path in the code property
-            isRelativePath, // Flag indicating if the path is relative
-          },
-          draggable: true,
-        };
-        
-        setNodes((nds) => [...nds, newNode]);
-        closeMenus();
-        
-        // Open the selected flow file in a new window
-        if (window.electronAPI?.openFlowInNewWindow) {
-          try {
-            await window.electronAPI.openFlowInNewWindow(result.filePath);
-          } catch (error) {
-            alert(`Error opening flow file: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      } catch (error) {
-        alert(`Error creating flow node: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      
-      return;
-    }
     // goto node behavior
     if (type === 'goto'){
       const newNode = {
@@ -656,113 +674,91 @@ const displayEdges = useMemo<Edge[]>(() => {
   
   // Handle opening the editor modal for flow nodes
   const handleNodeDoubleClick = async (event: React.MouseEvent, node: Node) => {
-    // Check if this is a node with external code file that needs to be loaded first
-    if (node.data.codeFilePath && ['javascript', 'jsbackend', 'groovy', 'batch', 'powershell'].includes(node.data.type)) {
-      // Get the absolute path to the external file
-      let absoluteFilePath = node.data.codeFilePath;
-      const { flowPath } = useFlowStore.getState();
-      
-      if (!window.electronAPI?.getAbsolutePath) {
-        console.error("getAbsolutePath API not available");
-        return;
-      }
-      
-      if (!path.isAbsolute(absoluteFilePath) && flowPath) {
-        absoluteFilePath = window.electronAPI.getAbsolutePath(node.data.codeFilePath, flowPath);
-      }
-      
-      // Check if the file exists and load its content
-      // First check if the file exists
-      if (window.electronAPI?.fileExists && window.electronAPI?.readTextFile) {
-        try {
-          const fileExists = await window.electronAPI.fileExists(absoluteFilePath);
-          
-          if (fileExists) {
-            try {
-              // Read the latest content from the file
-              const fileContent = await window.electronAPI.readTextFile(absoluteFilePath);
-              
-              // Update the node's code with the latest content from the file
-              if (fileContent !== node.data.code) {
-                console.log(`Updating node ${node.id} with latest content from external file: ${absoluteFilePath}`);
-                updateNodeData(node.id, { code: fileContent });
-              }
-            } catch (err) {
-              console.error(`Error reading external code file: ${err}`);
-            }
-          } else {
-            console.warn(`External code file not found: ${absoluteFilePath}`);
-          }
-        } catch (err) {
-          console.error(`Error checking if external code file exists: ${err}`);
-        }
-      } else {
-        console.error("fileExists or readTextFile API not available");
-      }
-      
-      // Open the editor modal
-      openEditorModal(node.id);
-    }
-    else if (node.data.type === 'flow') {
-      if (node.data.code) {
-        // If the flow node already has a file path, open it in a new window
-        // If the path is relative, convert it to absolute for opening
-        let flowPath = node.data.code;
-        const { flowPath: rootFlowPath } = useFlowStore.getState();
-        
-        if (node.data.isRelativePath && rootFlowPath && window.electronAPI?.getAbsolutePath) {
-          flowPath = window.electronAPI.getAbsolutePath(flowPath, rootFlowPath);
-        } else if (node.data.isRelativePath && !rootFlowPath) {
-          // If we have a relative path but no flowPath, we can't resolve it
-          alert('Cannot open flow: the main flow file has not been saved');
+    // In browser environment, we can't access external files directly
+    // The code is already stored in the node data, so we just open the editor
+
+    if (node.data.type === 'flow') {
+      // For flow nodes, load the referenced flow into a new session
+      try {
+        const flowFileName = node.data.code;
+        if (!flowFileName) {
+          alert('No flow file specified in this flow node.');
           return;
         }
-        
-        if (window.electronAPI?.openFlowInNewWindow) {
+
+        // Create a new session
+        const newSessionId = await useSessionStore.getState().createSession(`Flow: ${node.data.label || flowFileName}`);
+
+        // Load the flow file content
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.or';
+        input.style.display = 'none';
+
+        input.onchange = async (event) => {
+          const file = (event.target as HTMLInputElement).files?.[0];
+          if (!file) {
+            // User cancelled, close the empty session
+            await useSessionStore.getState().closeSession(newSessionId);
+            return;
+          }
+
+          // Validate file extension
+          if (!file.name.toLowerCase().endsWith('.or')) {
+            alert('Please select a valid .or file');
+            await useSessionStore.getState().closeSession(newSessionId);
+            return;
+          }
+
           try {
-            await window.electronAPI.openFlowInNewWindow(flowPath);
-          } catch (error) {
-            alert(`Error opening flow file: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-      } else if (window.electronAPI?.openFlowFile) {
-        // If no file path yet, open file dialog to select a flow file
-        const result = await window.electronAPI.openFlowFile();
-        if (result && result.filePath) {
-          // Extract filename from the path
-          const fileName = result.filePath.split(/[\\/]/).pop() || 'Flow';
-          
-          // Get the current flow path from the store
-          const { flowPath } = useFlowStore.getState();
-          
-          // Determine if we should use relative or absolute path
-          let nodePath = result.filePath;
-          let isRelativePath = false;
-          
-          // If the root flow has been saved, store the path relative to it
-          if (flowPath && window.electronAPI?.getRelativePath) {
-            nodePath = window.electronAPI.getRelativePath(result.filePath, flowPath);
-            isRelativePath = true;
-          }
-          
-          // Update the node with the new file path and name
-          updateNodeData(node.id, {
-            label: fileName,
-            code: nodePath,
-            isRelativePath
-          });
-          
-          // Open the selected flow file in a new window
-          if (window.electronAPI?.openFlowInNewWindow) {
-            try {
-              await window.electronAPI.openFlowInNewWindow(result.filePath);
-            } catch (error) {
-              alert(`Error opening flow file: ${error instanceof Error ? error.message : String(error)}`);
+            const text = await file.text();
+            const flowData = JSON.parse(text);
+
+            // Validate JSON structure
+            if (!flowData || typeof flowData !== 'object') {
+              throw new Error('Invalid flow file format');
             }
+
+            if (!Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+              throw new Error('Flow file must contain nodes and edges arrays');
+            }
+
+            // Load the flow data into the new session
+            useSessionStore.getState().updateActiveFlowState({
+              nodes: flowData.nodes,
+              edges: flowData.edges,
+              flowPath: file.name,
+              history: [],
+              historyIndex: -1
+            });
+
+            // Switch to the new session
+            useSessionStore.getState().switchSession(newSessionId);
+
+          } catch (error) {
+            console.error('Error loading flow:', error);
+            alert(`Error loading flow: ${error instanceof Error ? error.message : String(error)}`);
+            await useSessionStore.getState().closeSession(newSessionId);
           }
-        }
+        };
+
+        // Handle cancellation
+        input.oncancel = () => {
+          // Close the empty session
+          useSessionStore.getState().closeSession(newSessionId);
+        };
+
+        // Trigger file selection
+        document.body.appendChild(input);
+        input.click();
+        document.body.removeChild(input);
+
+      } catch (error) {
+        console.error('Error creating session for flow:', error);
+        alert(`Error opening flow: ${error instanceof Error ? error.message : String(error)}`);
       }
-    } else if(node.data.type !== 'goto') {
+      return;
+    } else if (node.data.type !== 'goto') {
       // For other node types, open the regular editor modal
       openEditorModal(node.id);
     }
@@ -868,6 +864,13 @@ const displayEdges = useMemo<Edge[]>(() => {
             label="Run Flow"
             color="bg-yellow-500 hover:bg-yellow-600"
             title="Run Flow (Ctrl+R)"
+          />
+          <ToolbarButton
+            onClick={stopFlow}
+            icon={XCircle}
+            label="Stop Flow"
+            color="bg-red-600 hover:bg-red-700"
+            title="Stop Flow Execution"
           />
         </div>
 

@@ -1,7 +1,7 @@
 import React, { memo, useRef, useLayoutEffect, useState } from 'react';
 import { NodeResizer, NodeProps } from 'reactflow';
 import { Trash2 } from 'lucide-react';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
 
 const MIN_HEIGHT = 64;
 

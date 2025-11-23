@@ -1,5 +1,5 @@
 import React from 'react';
-import { useFlowStore } from '../store/flowStore';
+import { useFlowStore } from '../store/sessionFlowStore';
 import { Terminal, X, Trash2, Maximize2, Minimize2, Clock } from 'lucide-react';
 import { useTheme } from "../context/ThemeContext";
 

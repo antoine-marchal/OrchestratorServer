@@ -1,4 +1,14 @@
 'use strict';
+
+/* ===============================
+   API Server for Orchestrator
+   
+   This server provides a REST API for job execution and session management.
+   It supports multiple execution types: JavaScript, Groovy, Batch, PowerShell, and Flow files.
+   =============================== */
+
+const express = require('express');
+const cors = require('cors');
 const { exec } = require('child_process');
 const fs = require('fs');
 const fsp = require('fs').promises;
@@ -8,7 +18,9 @@ const kill = require('tree-kill');
 /* ===============================
    Configuration & Environment
    =============================== */
+
 const nodeExecutablePath = process.env.NODE_EXECUTABLE_PATH || 'node';
+const PORT = process.env.PORT || 3000;
 
 const INBOX = path.join(__dirname, 'inbox');
 const OUTBOX = path.join(__dirname, 'outbox');
@@ -17,24 +29,36 @@ const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 200);
 const STOP_CHECK_INTERVAL_MS = Number(process.env.STOP_CHECK_INTERVAL_MS ?? 500);
 const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_MS ?? 0);   // 0 = infinite
 const JS_BACKEND_TIMEOUT_MS = Number(process.env.JS_BACKEND_TIMEOUT_MS ?? 0);    // 0 = infinite
+
+// Ensure directories exist
 if (!fs.existsSync(INBOX)) fs.mkdirSync(INBOX, { recursive: true });
 if (!fs.existsSync(OUTBOX)) fs.mkdirSync(OUTBOX, { recursive: true });
 
+// Command line arguments
 const argv = process.argv;
 const isSilent = argv.includes('--silent') || argv.includes('-s');
 const shouldShutdownAfterExecution = argv.includes('-s');
 
+// Detect if running in packaged environment
 const isPackaged = (() => {
   return process.resourcesPath !== undefined;
 })();
+
+/* ===============================
+   Console Utilities
+   =============================== */
+
 const COLORS = {
   reset: '\x1b[0m',
   cyan: '\x1b[36m',
   gray: '\x1b[90m',
   yellow: '\x1b[33m',
   red: '\x1b[31m',
+  green: '\x1b[32m',
 };
+
 const indent = '  ';
+
 function colorize(color, text) {
   const c = COLORS[color] || '';
   return c + text + COLORS.reset;
@@ -63,15 +87,18 @@ function printOutputBlock(formattedOutput, lineColor = 'cyan') {
 }
 
 /* ===============================
-   Globals
+   Global State Management
    =============================== */
+
 global.localStorage = {};
 
 let isMasterFlowRunning = false;
 const runningProcesses = new Map(); // jobId -> ChildProcess
+const jobs = new Map(); // jobId -> job object
+const sessions = new Map(); // sessionId -> session object
 
 /* ===============================
-   Paths & Resources
+   Path & Resource Utilities
    =============================== */
 
 const getResourcePath = () => {
@@ -84,7 +111,7 @@ const getResourcePath = () => {
 const groovyJarPath = path.join(getResourcePath(), 'groovyExec.jar');
 
 /* ===============================
-   Utilities
+   Core Utilities
    =============================== */
 
 const nowUid = () => {
@@ -112,16 +139,12 @@ function terminateProcess(jobId) {
 }
 
 function shouldStopJob(jobId) {
-  return fs.existsSync(path.join(INBOX, `${jobId}.stop`));
+  const job = jobs.get(jobId);
+  return job && job.stopRequested;
 }
 
 function cleanupStopSignal(jobId) {
-  const stopFilePath = path.join(INBOX, `${jobId}.stop`);
-  try {
-    if (fs.existsSync(stopFilePath)) fs.unlinkSync(stopFilePath);
-  } catch (err) {
-    if (!isSilent) console.error(`Error cleaning up stop signal for job ${jobId}:`, err);
-  }
+  // No-op for HTTP-based jobs
 }
 
 function readJSONSync(filePath) {
@@ -140,6 +163,7 @@ function safeUnlinkSync(filePath) {
     if (!isSilent) console.warn(`Failed to unlink ${filePath}: ${e.message}`);
   }
 }
+
 function normalizeValue(v) {
   if (typeof v === 'string') return v.trim();
   return v;
@@ -239,7 +263,7 @@ function parseFlowFile(flowFilePath) {
 }
 
 /* ===============================
-   Flow Execution
+   Flow Execution Engine
    =============================== */
 
 async function executeFlowFile(
@@ -249,7 +273,8 @@ async function executeFlowFile(
   isTopLevel = true,
   _respectStarterNode = true,
   basePath = null,
-  timeout = 0
+  timeout = 0,
+  jobId = null
 ) {
   return new Promise((resolve, reject) => {
     (async () => {
@@ -419,6 +444,15 @@ async function executeFlowFile(
         };
 
         const stepTo = async (nextId, budget) => {
+          // Check for stop signal at the start of each step
+          if (jobId) {
+            const flowJob = jobs.get(jobId);
+            if (flowJob && flowJob.stopRequested) {
+              if (!isSilent) console.log(`Flow execution stopped for job ${jobId}`);
+              return;
+            }
+          }
+
           if (budget.left-- <= 0) return;
 
           visitCount[nextId] = (visitCount[nextId] ?? 0) + 1;
@@ -508,7 +542,8 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
       false,
       true,
       currentFlowDir,
-      timeout
+      timeout,
+      null
     );
 
     const executionTime = Date.now() - startTime;
@@ -674,27 +709,26 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
 }
 
 /* ===============================
-   Job Processing
+   Job Management
    =============================== */
 
-function finalizeJob(id, result, processingPath) {
+function finalizeJob(id, result) {
   try {
     runningProcesses.delete(id);
-    const outFile = path.join(OUTBOX, `${id}.result.json`);
-    writeJSONSync(outFile, { id, ...result, dontWaitForOutput: result?.dontWaitForOutput });
+    const job = jobs.get(id);
+    if (job) {
+      job.status = result.error ? 'failed' : 'completed';
+      job.output = result.output;
+      job.error = result.error;
+      job.log = result.log;
+      job.executionTime = result.executionTime;
+      job.endTime = new Date().toISOString();
+      if (result.dontWaitForOutput) {
+        job.status = 'completed'; // or running? but since async, completed
+      }
+    }
   } catch (err) {
     if (!isSilent) console.error(`Error during job finalize for ${id}: ${err.message}`);
-  } finally {
-    try {
-      if (processingPath && fs.existsSync(processingPath)) fs.unlinkSync(processingPath);
-    } catch (err) {
-      if (!isSilent) console.error(`Error removing processing file ${processingPath}: ${err.message}`);
-    }
-    try {
-      cleanupStopSignal(id);
-    } catch (cleanupErr) {
-      if (!isSilent) console.error(`Error cleaning up stop signal for ${id}: ${cleanupErr.message}`);
-    }
   }
 }
 
@@ -811,7 +845,8 @@ function processJobFile(filePath) {
             false,
             true,
             job.basePath || path.dirname(flowFilePath),
-            job.timeout || DEFAULT_FLOW_TIMEOUT_MS
+            job.timeout || DEFAULT_FLOW_TIMEOUT_MS,
+            jobId
           );
           restoreConsole();
 
@@ -846,7 +881,7 @@ function processJobFile(filePath) {
 }
 
 /* ===============================
-   Language Runners
+   Language-Specific Runners
    =============================== */
 
 function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
@@ -1245,72 +1280,374 @@ function processJsNode(id, code, input, finish) {
   }
 
 }
+
 /* ===============================
-   Inbox Polling
+   HTTP API Routes
    =============================== */
 
-function isJsonJobFile(name) {
-  return name.endsWith('.json') && !name.endsWith('.result.json') && !name.endsWith('.processing') && !name.startsWith('.');
-}
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-function pollInbox() {
+// Serve static files from parent directory (frontend)
+app.use(express.static(path.join(__dirname, '..')));
+
+// Job Management Routes
+app.post('/api/v1/jobs', (req, res) => {
   try {
-    const files = fs.readdirSync(INBOX).filter(isJsonJobFile);
-    files.forEach((file) => {
-      try {
-        const filePath = path.join(INBOX, file);
-        const processingPath = filePath + '.processing';
+    const { type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId } = req.body;
 
-        try {
-          fs.renameSync(filePath, processingPath); // atomic claim
-        } catch {
-          return; // someone else took it
-        }
+    if (!type) {
+      return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job type is required' } });
+    }
 
-        try {
-          processJobFile(processingPath);
-        } catch (processErr) {
-          console.error(`Error processing job file ${processingPath}: ${processErr.message}`);
-          try {
-            if (fs.existsSync(processingPath)) fs.unlinkSync(processingPath);
-          } catch (cleanupErr) {
-            console.error(`Failed to clean up processing file after error: ${cleanupErr.message}`);
-          }
-        }
-      } catch (fileErr) {
-        console.error(`Error handling file ${file}: ${fileErr.message}`);
-      }
+    const jobId = nowUid();
+    const job = {
+      jobId,
+      type,
+      code,
+      codeFilePath,
+      input,
+      timeout,
+      dontWaitForOutput,
+      basePath,
+      sessionId,
+      runnerId,
+      status: 'queued',
+      startTime: new Date().toISOString(),
+      stopRequested: false,
+    };
+
+    jobs.set(jobId, job);
+
+    // Start processing asynchronously
+    setTimeout(() => processJob(job), 0);
+
+    res.status(202).json({
+      jobId,
+      status: 'queued',
+      estimatedStartTime: new Date(Date.now() + 100).toISOString(), // small delay
+      queuePosition: 0,
     });
   } catch (err) {
-    console.error(`Error polling inbox directory: ${err.message}`);
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+app.get('/api/v1/jobs/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ error: { code: 'JOB_NOT_FOUND', message: 'Job not found' } });
+  }
+
+  res.json({
+    jobId: job.jobId,
+    status: job.status,
+    progress: job.progress || null,
+    output: job.output,
+    error: job.error,
+    log: job.log,
+    executionTime: job.executionTime,
+    startTime: job.startTime,
+    endTime: job.endTime,
+  });
+});
+
+app.post('/api/v1/jobs/:jobId/stop', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ error: { code: 'JOB_NOT_FOUND', message: 'Job not found' } });
+  }
+
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped') {
+    return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job is not running' } });
+  }
+
+  job.stopRequested = true;
+  job.status = 'stopped';
+  job.endTime = new Date().toISOString();
+
+  // Terminate if running
+  if (runningProcesses.has(jobId)) {
+    terminateProcess(jobId);
+  }
+
+  res.json({
+    jobId,
+    status: 'stopped',
+    message: 'Job stopped successfully',
+  });
+});
+
+app.get('/api/v1/jobs', (req, res) => {
+  const { status, limit = 50, offset = 0 } = req.query;
+  let jobList = Array.from(jobs.values());
+
+  if (status) {
+    jobList = jobList.filter(job => job.status === status);
+  }
+
+  jobList = jobList.slice(offset, offset + limit);
+
+  res.json({
+    jobs: jobList.map(job => ({
+      jobId: job.jobId,
+      type: job.type,
+      status: job.status,
+      startTime: job.startTime,
+      executionTime: job.executionTime,
+    })),
+    total: jobs.size,
+    hasMore: offset + jobList.length < jobs.size,
+  });
+});
+
+// Session Management Routes
+app.post('/api/v1/sessions', (req, res) => {
+  try {
+    const { metadata } = req.body;
+    const sessionId = nowUid();
+    const token = nowUid(); // Simple token generation
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+    const session = {
+      sessionId,
+      token,
+      expiresAt,
+      metadata: metadata || {},
+      createdAt: new Date().toISOString(),
+      activeJobs: 0,
+      totalJobs: 0,
+    };
+
+    sessions.set(sessionId, session);
+
+    res.status(201).json({
+      sessionId,
+      token,
+      expiresAt,
+      metadata: session.metadata,
+    });
+  } catch (err) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+app.get('/api/v1/sessions/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: { code: 'SESSION_NOT_FOUND', message: 'Session not found' } });
+  }
+
+  // Count active jobs for this session
+  const sessionJobs = Array.from(jobs.values()).filter(job => job.sessionId === sessionId);
+  const activeJobs = sessionJobs.filter(job => ['queued', 'running'].includes(job.status)).length;
+  const totalJobs = sessionJobs.length;
+
+  res.json({
+    sessionId: session.sessionId,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    metadata: session.metadata,
+    activeJobs,
+    totalJobs,
+  });
+});
+
+app.post('/api/v1/sessions/:sessionId/extend', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: { code: 'SESSION_NOT_FOUND', message: 'Session not found' } });
+  }
+
+  session.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // Extend by 24 hours
+
+  res.json({
+    sessionId,
+    expiresAt: session.expiresAt,
+    message: 'Session extended successfully',
+  });
+});
+
+app.delete('/api/v1/sessions/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: { code: 'SESSION_NOT_FOUND', message: 'Session not found' } });
+  }
+
+  // Stop all jobs for this session
+  const sessionJobs = Array.from(jobs.values()).filter(job => job.sessionId === sessionId);
+  for (const job of sessionJobs) {
+    if (['queued', 'running'].includes(job.status)) {
+      job.stopRequested = true;
+      job.status = 'stopped';
+      job.endTime = new Date().toISOString();
+      if (runningProcesses.has(job.jobId)) {
+        terminateProcess(job.jobId);
+      }
+    }
+  }
+
+  sessions.delete(sessionId);
+
+  res.json({
+    sessionId,
+    message: 'Session terminated successfully',
+    stoppedJobs: sessionJobs.filter(job => job.status === 'stopped').length,
+  });
+});
+
+/* ===============================
+   Job Processing (HTTP-based)
+   =============================== */
+
+function processJob(job) {
+  const { jobId, code, codeFilePath, type, input, dontWaitForOutput, timeout } = job;
+
+  // Normalize/trim input early
+  job.input = normalizeInput(input);
+
+  // Determine working directory
+  let execCwd = process.cwd();
+  try {
+    if (job.basePath && fs.existsSync(job.basePath)) {
+      execCwd = job.basePath;
+    } else if (codeFilePath && fs.existsSync(path.dirname(codeFilePath))) {
+      execCwd = path.dirname(codeFilePath);
+    }
+  } catch {
+    // fallback to default cwd
+  }
+
+  const finish = (result) => finalizeJob(jobId, result);
+
+  if (codeFilePath) {
+    try {
+      let resolvedCodePath = codeFilePath;
+      if (!path.isAbsolute(codeFilePath)) {
+        const basePath = job.basePath;
+        resolvedCodePath = path.resolve(basePath || process.cwd(), codeFilePath);
+        codeFilePath = resolvedCodePath;
+      }
+      if (fs.existsSync(resolvedCodePath)) {
+        job.code = fs.readFileSync(resolvedCodePath, 'utf8');
+      } else {
+        console.warn(`Code file not found: ${resolvedCodePath}, falling back to embedded code`);
+      }
+    } catch (err) {
+      console.error(`Error loading code from file ${codeFilePath}: ${err.message}`);
+    }
+  }
+
+  job.status = 'running';
+
+  if (type === 'flow') {
+    let flowFilePath = '';
+    if (codeFilePath) {
+      flowFilePath = codeFilePath;
+    } else {
+      flowFilePath = code;
+    }
+
+    if (!path.isAbsolute(flowFilePath) && job.basePath) {
+      flowFilePath = path.resolve(job.basePath, flowFilePath);
+    }
+
+    if (!fs.existsSync(flowFilePath)) {
+      finish({ output: null, log: null, error: `Flow file not found: ${flowFilePath}` });
+      return;
+    }
+
+    const flowPath = job.flowPath || [];
+    if (flowPath.includes(flowFilePath)) {
+      finish({
+        output: null,
+        log: `Circular reference detected in flow execution: ${flowFilePath}`,
+        error: `Circular reference detected: ${flowFilePath} is already in the execution path`,
+      });
+      return;
+    }
+
+    (async () => {
+      try {
+        const { logs, restore: restoreConsole } = createLogCollector();
+        try {
+          const flowResult = await executeFlowFile(
+            flowFilePath,
+            job.input,
+            flowPath,
+            false,
+            true,
+            job.basePath || path.dirname(flowFilePath),
+            job.timeout || DEFAULT_FLOW_TIMEOUT_MS,
+            job.jobId
+          );
+          restoreConsole();
+
+          const logMessages = logs
+            .map((log) => (log.type === 'error' ? `ERROR: ${log.message}` : log.message))
+            .join('\n');
+
+          finish({
+            output: flowResult,
+            log: logMessages || `Successfully executed flow`,
+            error: null,
+          });
+        } catch (err) {
+          restoreConsole();
+          throw err;
+        }
+      } catch (err) {
+        finish({ output: null, log: null, error: `Error executing flow: ${err.message}` });
+      }
+    })();
+  } else if (type === 'groovy') {
+    processGroovyNode(jobId, code, input, finish, codeFilePath, execCwd);
+  } else if (type === 'batch') {
+    processBatchNode(jobId, code, input, finish, codeFilePath, execCwd);
+  } else if (type === 'jsbackend' || type === 'playwright') {
+    processJsBackendNode(jobId, code, input, finish, codeFilePath, execCwd);
+  } else if (type === 'powershell') {
+    processPowershellNode(jobId, code, input, finish, codeFilePath, execCwd);
+  } else {
+    processJsNode(jobId, code, input, finish);
   }
 }
 
 /* ===============================
-   Startup & Shutdown
+   Server Startup & Shutdown
    =============================== */
 
-if (!isSilent) console.log(colorize('green', 'Backend file-based executor started.'));
-
-const pollTimer = setInterval(pollInbox, POLL_INTERVAL_MS);
+const server = app.listen(PORT, () => {
+  if (!isSilent) console.log(colorize('green', `\n🚀 Orchestrator API Server started on port ${PORT}`));
+  if (!isSilent) console.log(colorize('cyan', `   API endpoint: http://localhost:${PORT}/api/v1`));
+  if (!isSilent) console.log(colorize('gray', `   Environment: ${process.env.NODE_ENV || 'development'}\n`));
+});
 
 const shutdown = (signal) => {
-  if (!isSilent) console.log(`Received ${signal}. Shutting down...`);
-  clearInterval(pollTimer);
-  // best-effort terminate child processes
-  for (const [jobId] of runningProcesses) {
-    try {
-      terminateProcess(jobId);
-    } catch { }
-  }
-  process.exit(0);
+  if (!isSilent) console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  server.close(() => {
+    // best-effort terminate child processes
+    for (const [jobId] of runningProcesses) {
+      try {
+        terminateProcess(jobId);
+      } catch { }
+    }
+    if (!isSilent) console.log('Server shut down successfully.');
+    process.exit(0);
+  });
 };
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 /* ===============================
-   Exports
+   Module Exports
    =============================== */
 
 module.exports = {

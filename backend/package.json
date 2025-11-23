@@ -1,14 +1,16 @@
 {
     "name": "backend",
     "version": "1.0.0",
-    "description": "Backend for external Node-based poller with Playwright",
-    "main": "poller.js",
+    "description": "Orchestrator API Server - REST API for job execution and session management",
+    "main": "api-server.cjs",
     "type": "module",
     "scripts": {
-        "start": "node poller.cjs"
+        "start": "node api-server.cjs"
     },
     "dependencies": {
+        "cors": "^2.8.5",
         "dayjs": "^1.11.13",
+        "express": "^5.1.0",
         "lodash": "^4.17.21",
         "playwright": "^1.43.1",
         "tree-kill": "^1.2.2"
