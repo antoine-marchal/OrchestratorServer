@@ -22,6 +22,9 @@ export interface NodeData {
     forwardInput?: boolean;
   }>;
   gotoDecision?: string | null; // transient decision during "run entire flow"
+  
+  // Linked session for editing flow nodes
+  linkedSessionId?: string;
 }
 
 export interface ConnectionItemProps {

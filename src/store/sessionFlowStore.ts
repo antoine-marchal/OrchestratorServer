@@ -289,19 +289,6 @@ export const useFlowStore = (): FlowStoreInterface => {
             throw new Error('No flow file specified');
           }
 
-          // If we have a relative path and no absolutePath, we need to resolve it
-          if (node.data.isRelativePath && !node.data.absolutePath) {
-            // Determine the base path for resolution
-            const basePath = node.data.flowFilePath || activeFlowState.flowPath;
-
-            if (basePath) {
-              const baseDir = pathUtils.dirname(basePath || '');
-              flowPath = pathUtils.resolve(baseDir, flowPath);
-            } else {
-              // If we have a relative path but no base path, we can't resolve it
-              throw new Error('Cannot resolve relative path: flow file has not been saved');
-            }
-          }
 
           // Find input nodes and sort them by connection order
           activeFlowState = sessionStore.getActiveFlowState()!;
@@ -1564,13 +1551,17 @@ export const useFlowStore = (): FlowStoreInterface => {
       const flow = { nodes: nodesToSave, edges: activeFlowState.edges };
       const flowJson = JSON.stringify(flow, null, 2);
 
+      // Get the current session name for the suggested filename
+      const activeSession = sessionStore.getActiveSession();
+      const suggestedFilename = activeSession ? `${activeSession.name}.or` : 'flow.or';
+
       try {
         // Use browser download as fallback
         const blob = new Blob([flowJson], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'flow.or';
+        a.download = suggestedFilename;
         a.click();
         URL.revokeObjectURL(url);
       } catch (error) {
@@ -1614,14 +1605,21 @@ export const useFlowStore = (): FlowStoreInterface => {
               throw new Error('Flow file must contain nodes and edges arrays');
             }
 
+            // Process nodes - flow nodes already have their content in the code field
+            const processedNodes = flowData.nodes;
+
             // Load the flow data
             updateFlowState({
-              nodes: flowData.nodes,
+              nodes: processedNodes,
               edges: flowData.edges,
               flowPath: file.name,
               history: [],
               historyIndex: -1
             });
+
+            // Create a new session with the file name (without .or extension)
+            const sessionName = file.name.replace(/\.or$/i, '');
+            await sessionStore.createSession(sessionName);
 
             resolve();
           } catch (error) {

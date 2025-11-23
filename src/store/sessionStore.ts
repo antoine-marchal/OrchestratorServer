@@ -58,6 +58,7 @@ interface SessionStore {
   // Flow state management
   updateActiveFlowState: (updates: Partial<FlowState>) => void;
   getActiveFlowState: () => FlowState | null;
+  syncToLinkedFlowNodes: (sessionId: string) => void;
 
   // Persistence
   saveSessions: () => void;
@@ -191,6 +192,63 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       ),
     }));
 
+    get().saveSessions();
+    
+    // Sync changes back to linked flow nodes in other sessions
+    const activeSession = get().getActiveSession();
+    if (activeSession && (updates.nodes || updates.edges)) {
+      get().syncToLinkedFlowNodes(activeSessionId);
+    }
+  },
+  
+  syncToLinkedFlowNodes: (sessionId: string) => {
+    const session = get().getSession(sessionId);
+    if (!session) return;
+    
+    // Serialize the current flow state
+    const flowContent = JSON.stringify({
+      nodes: session.flowState.nodes,
+      edges: session.flowState.edges,
+    });
+    
+    // Find all sessions that have flow nodes linked to this session
+    const { sessions } = get();
+    sessions.forEach(otherSession => {
+      if (otherSession.id === sessionId) return; // Skip the current session
+      
+      const hasLinkedNodes = otherSession.flowState.nodes.some(
+        node => node.data?.type === 'flow' && node.data?.linkedSessionId === sessionId
+      );
+      
+      if (hasLinkedNodes) {
+        // Update the flow nodes in this session
+        const updatedNodes = otherSession.flowState.nodes.map(node => {
+          if (node.data?.type === 'flow' && node.data?.linkedSessionId === sessionId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                code: flowContent, // Store in code field instead of flowContent
+              }
+            };
+          }
+          return node;
+        });
+        
+        // Update the session with the new nodes
+        set((state) => ({
+          sessions: state.sessions.map(s =>
+            s.id === otherSession.id
+              ? {
+                  ...s,
+                  flowState: { ...s.flowState, nodes: updatedNodes },
+                }
+              : s
+          ),
+        }));
+      }
+    });
+    
     get().saveSessions();
   },
 

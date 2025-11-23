@@ -502,77 +502,341 @@ async function executeFlowFile(
 }
 
 /* ===============================
+   Inline Flow Execution
+   =============================== */
+
+async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeout, jobId) {
+  const { flow, nodeMap, incomingMap, outgoingMap, roots } = tempFlow;
+  
+  const starter = flow.nodes.find((n) => n?.data?.isStarterNode);
+  const starterId = starter ? starter.id : null;
+
+  const byId = (id) => nodeMap[id] || null;
+  const incoming = (id) => incomingMap[id] || [];
+  const outgoing = (id) => outgoingMap[id] || [];
+  const creationIndex = (id) => flow.nodes.findIndex((n) => n.id === id);
+
+  const rootOf = (id) => {
+    const seen = new Set();
+    const acc = [];
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop();
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      const inc = incoming(cur);
+      if (!inc.length) acc.push(cur);
+      else inc.forEach((e) => stack.push(e.source));
+    }
+    if (!acc.length) return id;
+    acc.sort((a, b) => creationIndex(a) - creationIndex(b));
+    return acc[0];
+  };
+  
+  const firstCreatedRoot = () => {
+    if (!roots.length) return null;
+    const r = [...roots];
+    r.sort((a, b) => creationIndex(a) - creationIndex(b));
+    return r[0];
+  };
+  
+  const firstCreatedGoto = () => {
+    const gotos = flow.nodes.filter((n) => n?.data?.type === 'goto');
+    if (!gotos.length) return null;
+    gotos.sort((a, b) => creationIndex(a.id) - creationIndex(b.id));
+    return gotos[0].id;
+  };
+
+  const stripSemis = (s) => (s ?? '').trim().replace(/;+\\s*$/, '');
+  const toNumberIfNumeric = (v) => (typeof v === 'string' && v.trim() !== '' && !isNaN(+v) ? +v : v);
+  const evalGotoExpr = (expr, input) => {
+    try {
+      const cleaned = stripSemis(expr);
+      const ninput = toNumberIfNumeric(input);
+      const fn = new Function('input', 'ninput', `return !!(${cleaned});`);
+      return !!fn(input, ninput);
+    } catch {
+      return false;
+    }
+  };
+
+  let entryId = starterId;
+  if (!entryId) {
+    const g = firstCreatedGoto();
+    entryId = g ? rootOf(g) : firstCreatedRoot();
+  }
+  if (!entryId) throw new Error('No valid entry point found.');
+
+  const gotoDecision = {};
+  const nodeResults = {};
+  const injectedInputs = {};
+  const executed = new Set();
+  const executing = new Set();
+  const executedAt = {};
+  let tick = 0;
+  let lastExecutedId = null;
+  const visitCount = {};
+  const MAX_VISITS_PER_NODE = 1000;
+  const MAX_STEPS = 1000;
+
+  const ensureExecuted = async (nodeId, force = false) => {
+    if (executing.has(nodeId)) return;
+    if (executed.has(nodeId) && !force) return;
+
+    const node = byId(nodeId);
+    if (!node) return;
+
+    executing.add(nodeId);
+
+    const preds = incoming(nodeId).map((e) => e.source);
+    for (const p of preds) await ensureExecuted(p, false);
+
+    let processedInputs;
+    if (Object.prototype.hasOwnProperty.call(injectedInputs, nodeId)) {
+      processedInputs = injectedInputs[nodeId];
+    } else if (starterId && nodeId === starterId) {
+      processedInputs = flowInput;
+    } else {
+      const preds = incoming(nodeId).map((e) => e.source);
+      if (preds.length) {
+        const vals = preds.map((p) => nodeResults[p]);
+        processedInputs = vals.length === 1 ? vals[0] : vals;
+      } else {
+        processedInputs = flowInput;
+      }
+    }
+
+    if (node?.data?.type === 'goto') {
+      const rules = Array.isArray(node?.data?.conditions) ? node.data.conditions : [];
+      let decision = null;
+      let forward = false;
+
+      for (const r of rules) {
+        if (r?.expr && r?.goto) {
+          if (evalGotoExpr(r.expr, processedInputs)) {
+            decision = r.goto;
+            forward = !!r.forwardInput;
+            break;
+          }
+        }
+      }
+
+      gotoDecision[nodeId] = decision;
+      nodeResults[nodeId] = processedInputs;
+
+      if (decision && forward) {
+        injectedInputs[decision] = processedInputs;
+      }
+    } else if (node?.data?.type === 'constant') {
+      nodeResults[nodeId] = node.data.value;
+    } else {
+      const res = await executeRegularNode(
+        node,
+        nodeId,
+        processedInputs,
+        nodeResults,
+        true,
+        timeout,
+        basePath
+      );
+      nodeResults[nodeId] = res?.output !== undefined ? res.output : res;
+    }
+
+    if (node?.data?.type !== 'goto') lastExecutedId = nodeId;
+
+    executed.add(nodeId);
+    executedAt[nodeId] = ++tick;
+    executing.delete(nodeId);
+  };
+
+  const stepTo = async (nextId, budget) => {
+    if (jobId) {
+      const flowJob = jobs.get(jobId);
+      if (flowJob && flowJob.stopRequested) {
+        if (!isSilent) console.log(`Flow execution stopped for job ${jobId}`);
+        return;
+      }
+    }
+
+    if (budget.left-- <= 0) return;
+
+    visitCount[nextId] = (visitCount[nextId] ?? 0) + 1;
+    if (visitCount[nextId] > MAX_VISITS_PER_NODE) return;
+
+    const node = byId(nextId);
+    if (!node) return;
+
+    const preds = incoming(nextId).map((e) => e.source);
+    const needsRefresh = preds.some((p) => (executedAt[p] || 0) > (executedAt[nextId] || 0));
+
+    await ensureExecuted(nextId, needsRefresh);
+
+    const n = byId(nextId);
+    if (!n) return;
+
+    if (n?.data?.type === 'goto') {
+      const jump = gotoDecision[nextId];
+      if (jump) {
+        await ensureExecuted(jump, true);
+        await stepTo(jump, budget);
+        return;
+      }
+      for (const e of outgoing(nextId)) await stepTo(e.target, budget);
+      return;
+    }
+
+    for (const e of outgoing(nextId)) await stepTo(e.target, budget);
+  };
+
+  await stepTo(entryId, { left: MAX_STEPS });
+
+  const finalResult = lastExecutedId ? nodeResults[lastExecutedId] : null;
+  return finalResult;
+}
+
+/* ===============================
    Node Executors
    =============================== */
 
 async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, currentFlowDir, timeout = 0) {
-  let nestedFlowPath = '';
-
-  if (node.data.codeFilePath) {
-    nestedFlowPath = node.data.codeFilePath;
-    console.log(`Using external flow file path: ${nestedFlowPath}`);
-  } else {
-    nestedFlowPath = node.data.code || '';
-    console.log(`Using embedded flow path: ${nestedFlowPath}`);
-  }
-
-  if (!nestedFlowPath) {
-    throw new Error(`Flow node ${nodeId} has no flow file path specified`);
-  }
-
-  if (!path.isAbsolute(nestedFlowPath) && flowPath.length > 0) {
-    const parentFlowPath = flowPath[flowPath.length - 1];
-    const parentDir = path.dirname(parentFlowPath);
-    console.log(`Resolving nested flow path: ${nestedFlowPath} relative to parent flow directory: ${parentDir}`);
-    nestedFlowPath = path.resolve(parentDir, nestedFlowPath);
-    console.log(`Resolved nested flow path: ${nestedFlowPath}`);
-  }
-
   const startTime = Date.now();
-
   const { restore: restoreNestedConsole } = createLogCollector();
+  
   try {
-    // Parse once to validate and allow future checks
-    parseFlowFile(nestedFlowPath);
+    let flowData;
+    let nestedFlowPath = '';
 
-    const nestedFlowResult = await executeFlowFile(
-      nestedFlowPath,
-      nodeInput,
-      flowPath,
-      false,
-      true,
-      currentFlowDir,
-      timeout,
-      null
-    );
-
-    const executionTime = Date.now() - startTime;
-    const nestedLogs = restoreNestedConsole();
-
-    printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
-
-    if (nestedLogs.length > 0) {
-      // logs have already been printed via overridden console; no need to duplicate here
-    }
-
-    let formattedOutput;
-    if (typeof nestedFlowResult === 'string') {
-      formattedOutput = nestedFlowResult;
-    } else {
+    // Check if code contains JSON flow content (starts with '{' or '[')
+    const code = node.data.code || '';
+    const trimmedCode = code.trim();
+    
+    if (trimmedCode.startsWith('{') || trimmedCode.startsWith('[')) {
+      // Code contains inline flow content - parse it directly
+      console.log(`Using inline flow content for node ${nodeId}`);
       try {
-        formattedOutput = JSON.stringify(nestedFlowResult, null, 2);
-      } catch {
-        formattedOutput = String(nestedFlowResult);
+        flowData = JSON.parse(trimmedCode);
+        
+        // Validate the parsed flow data
+        if (!flowData || !Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+          throw new Error('Invalid inline flow format: missing nodes or edges array');
+        }
+        
+        // Execute the inline flow directly
+        const nodeMap = {};
+        flowData.nodes.forEach((n) => (nodeMap[n.id] = n));
+
+        const incomingMap = {};
+        const outgoingMap = {};
+        flowData.edges.forEach((e) => {
+          (incomingMap[e.target] ||= []).push(e);
+          (outgoingMap[e.source] ||= []).push(e);
+        });
+
+        const roots = flowData.nodes.map((n) => n.id).filter((id) => !(incomingMap[id] && incomingMap[id].length));
+        
+        // Create a temporary flow structure for execution
+        const tempFlow = { flow: flowData, nodeMap, incomingMap, outgoingMap, roots };
+        
+        // Execute using the same logic as executeFlowFile but with inline data
+        const nestedFlowResult = await executeInlineFlow(
+          tempFlow,
+          nodeInput,
+          flowPath,
+          currentFlowDir,
+          timeout,
+          null
+        );
+        
+        const executionTime = Date.now() - startTime;
+        const nestedLogs = restoreNestedConsole();
+
+        printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
+
+        let formattedOutput;
+        if (typeof nestedFlowResult === 'string') {
+          formattedOutput = nestedFlowResult;
+        } else {
+          try {
+            formattedOutput = JSON.stringify(nestedFlowResult, null, 2);
+          } catch {
+            formattedOutput = String(nestedFlowResult);
+          }
+        }
+
+        printOutputBlock(formattedOutput, 'cyan');
+
+        nodeResults[nodeId] = nestedFlowResult;
+        nodeResults[`${nodeId}_executionTime`] = executionTime;
+
+        return { output: nestedFlowResult, executionTime };
+        
+      } catch (parseError) {
+        console.error(`Error parsing inline flow content: ${parseError.message}`);
+        throw new Error(`Invalid inline flow content: ${parseError.message}`);
       }
+    } else {
+      // Code contains a file path - use existing file-based logic
+      if (node.data.codeFilePath) {
+        nestedFlowPath = node.data.codeFilePath;
+        console.log(`Using external flow file path: ${nestedFlowPath}`);
+      } else {
+        nestedFlowPath = code;
+        console.log(`Using embedded flow path: ${nestedFlowPath}`);
+      }
+
+      if (!nestedFlowPath) {
+        throw new Error(`Flow node ${nodeId} has no flow file path specified`);
+      }
+
+      if (!path.isAbsolute(nestedFlowPath) && flowPath.length > 0) {
+        const parentFlowPath = flowPath[flowPath.length - 1];
+        const parentDir = path.dirname(parentFlowPath);
+        console.log(`Resolving nested flow path: ${nestedFlowPath} relative to parent flow directory: ${parentDir}`);
+        nestedFlowPath = path.resolve(parentDir, nestedFlowPath);
+        console.log(`Resolved nested flow path: ${nestedFlowPath}`);
+      }
+
+      // Parse once to validate and allow future checks
+      parseFlowFile(nestedFlowPath);
+
+      const nestedFlowResult = await executeFlowFile(
+        nestedFlowPath,
+        nodeInput,
+        flowPath,
+        false,
+        true,
+        currentFlowDir,
+        timeout,
+        null
+      );
+
+      const executionTime = Date.now() - startTime;
+      const nestedLogs = restoreNestedConsole();
+
+      printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
+
+      if (nestedLogs.length > 0) {
+        // logs have already been printed via overridden console; no need to duplicate here
+      }
+
+      let formattedOutput;
+      if (typeof nestedFlowResult === 'string') {
+        formattedOutput = nestedFlowResult;
+      } else {
+        try {
+          formattedOutput = JSON.stringify(nestedFlowResult, null, 2);
+        } catch {
+          formattedOutput = String(nestedFlowResult);
+        }
+      }
+
+      printOutputBlock(formattedOutput, 'cyan');
+
+      nodeResults[nodeId] = nestedFlowResult;
+      nodeResults[`${nodeId}_executionTime`] = executionTime;
+
+      return { output: nestedFlowResult, executionTime };
     }
-
-    printOutputBlock(formattedOutput, 'cyan');
-
-
-    nodeResults[nodeId] = nestedFlowResult;
-    nodeResults[`${nodeId}_executionTime`] = executionTime;
-
-    return { output: nestedFlowResult, executionTime };
   } catch (err) {
     restoreNestedConsole();
     console.error(`Error executing nested flow: ${err.message}`);

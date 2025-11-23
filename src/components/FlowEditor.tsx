@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState,useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import ToolbarButton from './ToolbarButton';
 import { pathUtils } from '../utils/pathUtils';
+import FlowNodeCreationModal from './FlowNodeCreationModal';
 
 import ReactFlow, {
   Edge,
@@ -234,6 +235,10 @@ function Flow() {
   const [dropdownMenu, setDropdownMenu] = useState(false);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [flowNodeModal, setFlowNodeModal] = useState<{
+    isOpen: boolean;
+    position?: { x: number; y: number };
+  }>({ isOpen: false });
   
   // Handle copy selected nodes
   const handleCopyNodes = useCallback(() => {
@@ -480,9 +485,9 @@ const displayEdges = useMemo<Edge[]>(() => {
     });
     setContextMenu({
       x: event.clientX, // <- screen X for menu position
-      y: event.clientY, // <- screen Y for menu position
+      y: event.clientY - 46, // <- screen Y for menu position
       flowX: flowPoint.x, // <- if you want to use for node creation
-      flowY: flowPoint.y
+      flowY: flowPoint.y + 23
     });
     setDropdownMenu(false);
   }, [screenToFlowPosition]);
@@ -505,72 +510,11 @@ const displayEdges = useMemo<Edge[]>(() => {
   };
  
   const addNewNode = async (type: string, pos?: { x: number, y: number }) => {
-    // Handle flow node type - open file dialog to select a flow file
+    // Handle flow node type - show modal for selection
     if (type === 'flow') {
-      return new Promise<void>((resolve) => {
-        // Create a file input element
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.or';
-        input.style.display = 'none';
-
-        input.onchange = async (event) => {
-          const file = (event.target as HTMLInputElement).files?.[0];
-          if (!file) {
-            resolve(); // User cancelled
-            return;
-          }
-
-          // Validate file extension
-          if (!file.name.toLowerCase().endsWith('.or')) {
-            alert('Please select a valid .or file');
-            resolve();
-            return;
-          }
-
-          try {
-            // For browser environment, we can only store the filename
-            // since we can't access full paths for security reasons
-            const fileName = file.name;
-
-            const nodePosition = pos || position || { x: 100, y: 100 };
-
-            const newNode = {
-              id: `node-${Date.now()}`,
-              type: 'custom',
-              position: nodePosition,
-              data: {
-                label: fileName.replace('.or', ''), // Use filename without extension as label
-                type: 'flow',
-                code: fileName, // Store the filename in the code property
-                isRelativePath: true, // Always relative in browser context
-              },
-              draggable: true,
-            };
-
-            setNodes((nds) => [...nds, newNode]);
-            closeMenus();
-
-            // Note: Opening flow in new window is not supported in browser environment
-            // The flow execution will handle loading the file content when needed
-
-            resolve();
-          } catch (error) {
-            alert(`Error creating flow node: ${error instanceof Error ? error.message : String(error)}`);
-            resolve();
-          }
-        };
-
-        // Handle cancellation
-        input.oncancel = () => {
-          resolve();
-        };
-
-        // Trigger file selection
-        document.body.appendChild(input);
-        input.click();
-        document.body.removeChild(input);
-      });
+      setFlowNodeModal({ isOpen: true, position: pos });
+      closeMenus();
+      return;
     }
     const nodeType = NODE_TYPES.find(t => t.id === type);
     if (!nodeType) return;
@@ -678,80 +622,61 @@ const displayEdges = useMemo<Edge[]>(() => {
     // The code is already stored in the node data, so we just open the editor
 
     if (node.data.type === 'flow') {
-      // For flow nodes, load the referenced flow into a new session
+      // For flow nodes, open or switch to linked session
       try {
-        const flowFileName = node.data.code;
-        if (!flowFileName) {
-          alert('No flow file specified in this flow node.');
-          return;
+        const sessionStore = useSessionStore.getState();
+        
+        // Check if this flow node already has a linked session
+        if (node.data.linkedSessionId) {
+          const linkedSession = sessionStore.getSession(node.data.linkedSessionId);
+          if (linkedSession) {
+            // Switch to the existing linked session
+            sessionStore.switchSession(node.data.linkedSessionId);
+            return;
+          }
+          // If linked session doesn't exist anymore, clear the link and create new one
+          updateNodeData(node.id, { linkedSessionId: undefined }, false);
         }
 
-        // Create a new session
-        const newSessionId = await useSessionStore.getState().createSession(`Flow: ${node.data.label || flowFileName}`);
+        // Create a new linked session
+        const sessionName = `Flow: ${node.data.label || 'Untitled'}`;
+        const newSessionId = await sessionStore.createSession(sessionName);
 
-        // Load the flow file content
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.or';
-        input.style.display = 'none';
-
-        input.onchange = async (event) => {
-          const file = (event.target as HTMLInputElement).files?.[0];
-          if (!file) {
-            // User cancelled, close the empty session
-            await useSessionStore.getState().closeSession(newSessionId);
-            return;
-          }
-
-          // Validate file extension
-          if (!file.name.toLowerCase().endsWith('.or')) {
-            alert('Please select a valid .or file');
-            await useSessionStore.getState().closeSession(newSessionId);
-            return;
-          }
-
+        // Parse the flow content from code field
+        let flowData: { nodes: Node[], edges: Edge[] } | null = null;
+        if (node.data.code) {
           try {
-            const text = await file.text();
-            const flowData = JSON.parse(text);
-
-            // Validate JSON structure
-            if (!flowData || typeof flowData !== 'object') {
-              throw new Error('Invalid flow file format');
-            }
-
-            if (!Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
-              throw new Error('Flow file must contain nodes and edges arrays');
-            }
-
-            // Load the flow data into the new session
-            useSessionStore.getState().updateActiveFlowState({
-              nodes: flowData.nodes,
-              edges: flowData.edges,
-              flowPath: file.name,
-              history: [],
-              historyIndex: -1
-            });
-
-            // Switch to the new session
-            useSessionStore.getState().switchSession(newSessionId);
-
+            flowData = JSON.parse(node.data.code);
           } catch (error) {
-            console.error('Error loading flow:', error);
-            alert(`Error loading flow: ${error instanceof Error ? error.message : String(error)}`);
-            await useSessionStore.getState().closeSession(newSessionId);
+            console.error('Error parsing flow content:', error);
           }
-        };
+        }
 
-        // Handle cancellation
-        input.oncancel = () => {
-          // Close the empty session
-          useSessionStore.getState().closeSession(newSessionId);
-        };
+        // Load the flow data into the new session
+        if (flowData && Array.isArray(flowData.nodes) && Array.isArray(flowData.edges)) {
+          sessionStore.updateActiveFlowState({
+            nodes: flowData.nodes,
+            edges: flowData.edges,
+            flowPath: `${node.data.label}.or`,
+            history: [],
+            historyIndex: -1
+          });
+        } else {
+          // Initialize with empty flow
+          sessionStore.updateActiveFlowState({
+            nodes: [],
+            edges: [],
+            flowPath: `${node.data.label}.or`,
+            history: [],
+            historyIndex: -1
+          });
+        }
 
-        // Trigger file selection
-        document.body.appendChild(input);
-        input.click();
-        document.body.removeChild(input);
+        // Link the session to the flow node
+        updateNodeData(node.id, { linkedSessionId: newSessionId }, false);
+
+        // Switch to the new session
+        sessionStore.switchSession(newSessionId);
 
       } catch (error) {
         console.error('Error creating session for flow:', error);
@@ -769,8 +694,67 @@ const displayEdges = useMemo<Edge[]>(() => {
     setSelectedNodes(nodes.map(node => node.id));
   }, []);
 
+  // Handle flow node creation from session
+  const handleFlowNodeFromSession = useCallback((sessionId: string, sessionName: string) => {
+    const session = useSessionStore.getState().getSession(sessionId);
+    if (!session) {
+      alert('Session not found');
+      return;
+    }
+
+    const nodePosition = flowNodeModal.position || { x: 100, y: 100 };
+
+    // Serialize the session's flow state to JSON
+    const flowContent = JSON.stringify({
+      nodes: session.flowState.nodes,
+      edges: session.flowState.edges,
+    });
+
+    const newNode = {
+      id: `node-${Date.now()}`,
+      type: 'custom',
+      position: nodePosition,
+      data: {
+        label: sessionName,
+        type: 'flow' as const,
+        code: flowContent, // Store flow content directly in code field
+        isRelativePath: false,
+      },
+      draggable: true,
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  }, [flowNodeModal.position, setNodes]);
+
+  // Handle flow node creation from file upload
+  const handleFlowNodeFromFile = useCallback(async (file: File) => {
+    try {
+      const fileContent = await file.text();
+      const fileName = file.name;
+
+      const nodePosition = flowNodeModal.position || { x: 100, y: 100 };
+
+      const newNode = {
+        id: `node-${Date.now()}`,
+        type: 'custom',
+        position: nodePosition,
+        data: {
+          label: fileName.replace('.or', ''),
+          type: 'flow' as const,
+          code: fileContent, // Store flow content directly in code field
+          isRelativePath: false,
+        },
+        draggable: true,
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+    } catch (error) {
+      alert(`Error creating flow node: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [flowNodeModal.position, setNodes]);
+
   return (
-    <div className="w-full" style={{ height: 'calc(100vh)' }}>
+    <div className="w-full" style={{ height: 'calc(100vh - 46px)' }}>
       <ReactFlow
         className='react-flow__dark'
         nodes={nodes}
@@ -997,6 +981,14 @@ const displayEdges = useMemo<Edge[]>(() => {
 
       </ReactFlow>
       <Console />
+      
+      {/* Flow Node Creation Modal */}
+      <FlowNodeCreationModal
+        isOpen={flowNodeModal.isOpen}
+        onClose={() => setFlowNodeModal({ isOpen: false })}
+        onSelectSession={handleFlowNodeFromSession}
+        onUploadFile={handleFlowNodeFromFile}
+      />
     </div>
   );
 }
