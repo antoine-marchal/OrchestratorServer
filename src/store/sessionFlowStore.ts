@@ -343,7 +343,7 @@ export const useFlowStore = (): FlowStoreInterface => {
             const jobResult = await apiClient.pollJobStatus(jobId, (status) => {
               // Optional: handle progress updates if needed
               if (status.progress !== undefined) {
-                addLog('log', `Flow execution progress: ${status.progress}%`);
+                //addLog('log', `Flow execution progress: ${status.progress}%`);
               }
             });
 
@@ -414,6 +414,7 @@ export const useFlowStore = (): FlowStoreInterface => {
         
         if (typeof injected !== 'undefined') {
           processedInputs = injected;
+          delete (node.data as any)?._injectedInput;
           addLog('input', prettyFormat(processedInputs));
           // clear it so it's single-use
           activeFlowState = sessionStore.getActiveFlowState()!;
@@ -544,7 +545,7 @@ export const useFlowStore = (): FlowStoreInterface => {
             const jobResult = await apiClient.pollJobStatus(jobId, (status) => {
               // Optional: handle progress updates if needed
               if (status.progress !== undefined) {
-                addLog('log', `Execution progress: ${status.progress}%`);
+                //addLog('log', `Execution progress: ${status.progress}%`);
               }
             });
 
@@ -906,6 +907,7 @@ export const useFlowStore = (): FlowStoreInterface => {
       updateFlowState({ nodes: [...activeFlowState.nodes, node] });
     },
     removeNode: (nodeId) => {
+      console.log(`Removing node ${nodeId}`);
       updateFlowState({
         nodes: activeFlowState.nodes.filter(n => n.id !== nodeId),
         edges: activeFlowState.edges.filter(e => e.source !== nodeId && e.target !== nodeId)

@@ -8,17 +8,7 @@ const MIN_HEIGHT = 64;
 const CommentNode = ({ data, id, selected }: NodeProps) => {
   const { removeNode, updateNodeData, updateNodeDraggable, updatePanOnDrag } = useFlowStore();
   const [editing, setEditing] = useState(false);
-
-  useLayoutEffect(() => {
-    updateNodeDraggable(id, !editing);
-    updatePanOnDrag(!editing);
-    return () => {
-      updateNodeDraggable(id, true);
-      updatePanOnDrag(true);
-    };
-  }, [editing, id]);  // Only depend on values that actually change
-
-  // Handle DEL key for deletion when node is selected
+// Handle DEL key for deletion when node is selected
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (selected && e.key === 'Delete' && !editing) {
