@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, memo } from "react";
 import { NodeData } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
+import { useSessionStore } from '../../store/sessionStore';
 
 // Function to format execution time in seconds or minutes
 const formatExecutionTime = (timeMs: number): string => {
@@ -53,7 +54,12 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
 
   // FLOW node
   if (data.type === 'flow') {
-    const flowPath = data.code || '';
+    const { sessions } = useSessionStore();
+    const linkedSession = data.linkedSessionId
+      ? sessions.find(s => s.id === data.linkedSessionId)
+      : null;
+    const displayName = linkedSession?.name || data.label || 'Unlinked Flow';
+
     return (
       <div
         className="flex-1 overflow-hidden p-4 border-b border-gray-400"
@@ -61,11 +67,11 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
         onMouseLeave={handleMouseLeave}
       >
         <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
-          Flow File
+          {linkedSession ? 'Linked Session' : 'Flow'}
         </div>
         <div className="text-sm text-gray-400 space-y-2 relative">
           <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded p-2 border border-emerald-700/30">
-            <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{flowPath}</div>
+            <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{displayName}</div>
           </div>
           <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
             {data.executionTime !== undefined ? <>Output ({formatExecutionTime(data.executionTime)}): <br /></> : <>Output: <br /></>}

@@ -694,7 +694,7 @@ const displayEdges = useMemo<Edge[]>(() => {
     setSelectedNodes(nodes.map(node => node.id));
   }, []);
 
-  // Handle flow node creation from session
+  // Handle flow node creation from existing session (link directly to it)
   const handleFlowNodeFromSession = useCallback((sessionId: string, sessionName: string) => {
     const session = useSessionStore.getState().getSession(sessionId);
     if (!session) {
@@ -717,37 +717,73 @@ const displayEdges = useMemo<Edge[]>(() => {
       data: {
         label: sessionName,
         type: 'flow' as const,
-        code: flowContent, // Store flow content directly in code field
+        code: flowContent,
         isRelativePath: false,
+        linkedSessionId: sessionId, // Link directly to the existing session
       },
       draggable: true,
     };
 
     setNodes((nds) => [...nds, newNode]);
+
+    // Switch to the linked session so user can view/edit it
+    useSessionStore.getState().switchSession(sessionId);
   }, [flowNodeModal.position, setNodes]);
 
-  // Handle flow node creation from file upload
+  // Handle flow node creation from file upload (create new session)
   const handleFlowNodeFromFile = useCallback(async (file: File) => {
     try {
       const fileContent = await file.text();
       const fileName = file.name;
+      const flowName = fileName.replace('.or', '');
+
+      // Parse and validate the flow content
+      const flowData = JSON.parse(fileContent);
+      if (!flowData || !Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+        throw new Error('Invalid flow file format: missing nodes or edges');
+      }
 
       const nodePosition = flowNodeModal.position || { x: 100, y: 100 };
 
+      // Remember current session to add the node to it
+      const currentSessionId = useSessionStore.getState().activeSessionId;
+
+      // Create a new session for this flow
+      const newSessionName = `Flow: ${flowName}`;
+      const newSessionId = await useSessionStore.getState().createSession(newSessionName);
+
+      // Load the flow data into the new session
+      useSessionStore.getState().updateActiveFlowState({
+        nodes: flowData.nodes,
+        edges: flowData.edges,
+        flowPath: fileName,
+        history: [],
+        historyIndex: -1,
+      });
+
+      // Create the flow node linked to the new session
       const newNode = {
         id: `node-${Date.now()}`,
         type: 'custom',
         position: nodePosition,
         data: {
-          label: fileName.replace('.or', ''),
+          label: flowName,
           type: 'flow' as const,
-          code: fileContent, // Store flow content directly in code field
+          code: fileContent,
           isRelativePath: false,
+          linkedSessionId: newSessionId, // Link to the newly created session
         },
         draggable: true,
       };
 
-      setNodes((nds) => [...nds, newNode]);
+      // Switch back to original session to add the node
+      if (currentSessionId) {
+        useSessionStore.getState().switchSession(currentSessionId);
+        setNodes((nds) => [...nds, newNode]);
+
+        // Then switch to the new session to show the uploaded flow
+        useSessionStore.getState().switchSession(newSessionId);
+      }
     } catch (error) {
       alert(`Error creating flow node: ${error instanceof Error ? error.message : String(error)}`);
     }

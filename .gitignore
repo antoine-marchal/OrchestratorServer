@@ -27,3 +27,4 @@ backend/testing
 *.sw?
 *.zip
 scriptsTest
+/CLAUDE.md

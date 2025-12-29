@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { NodeData } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { pathUtils } from '../../utils/pathUtils';
 interface NodeHeaderProps {
   data: NodeData;
@@ -37,17 +38,86 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   onExecute,
   onDelete,
 }) => {
-  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath } = useFlowStore();
-  
+  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath, updateNodeData } = useFlowStore();
+  const sessionStore = useSessionStore();
+
   // Check if the node is currently loading/executing
   const isNodeExecuting = nodeLoading?.[nodeId] || false;
-  
+
   // Check if this node has dontWaitForOutput enabled
   const hasDontWaitForOutput = data.dontWaitForOutput;
-  const openFlowNodeInNewWindow = async() => {
-    // Opening flows in new windows is not supported in browser environment
-    alert('Opening flows in new windows is not supported in the browser version. Double-click the flow node to see details.');
-  }
+
+  const handleEditFlowNode = async () => {
+    // If flow node has a linked session that exists, switch to it
+    if (data.linkedSessionId) {
+      const existingSession = sessionStore.sessions.find(s => s.id === data.linkedSessionId);
+      if (existingSession) {
+        sessionStore.switchSession(data.linkedSessionId);
+        return;
+      }
+    }
+
+    // No linked session or it doesn't exist - create a new session with the flow content
+    const flowCode = data.code || '';
+    const sessionName = data.label || 'Flow Session';
+
+    // Save the original session ID before creating new session (which switches to it)
+    const originalSessionId = sessionStore.activeSessionId;
+
+    // Create new session (this switches to the new session)
+    const newSessionId = await sessionStore.createSession(sessionName);
+
+    // If there's flow content, parse and load it into the new session
+    if (flowCode.trim()) {
+      try {
+        const flowData = JSON.parse(flowCode);
+        if (flowData.nodes && flowData.edges) {
+          // Process nodes to ensure they have proper structure
+          const processedNodes = flowData.nodes.map((node: any) => ({
+            ...node,
+            data: {
+              ...node.data,
+              output: undefined,
+              executionTime: undefined
+            }
+          }));
+
+          sessionStore.updateActiveFlowState({
+            nodes: processedNodes,
+            edges: flowData.edges,
+            flowPath: sessionName,
+            history: [],
+            historyIndex: -1
+          });
+        }
+      } catch (e) {
+        console.error('Failed to parse flow content:', e);
+      }
+    }
+
+    // Link the flow node to the new session in the ORIGINAL session
+    // We need to update the original session's flow state directly
+    if (originalSessionId) {
+      useSessionStore.setState((state) => ({
+        sessions: state.sessions.map(session =>
+          session.id === originalSessionId
+            ? {
+                ...session,
+                flowState: {
+                  ...session.flowState,
+                  nodes: session.flowState.nodes.map(n =>
+                    n.id === nodeId
+                      ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } }
+                      : n
+                  )
+                }
+              }
+            : session
+        )
+      }));
+      sessionStore.saveSessions();
+    }
+  };
   return (
     <div className="p-4 border-b border-gray-700 dark:border-gray-300">
       <div className="flex items-center justify-between">
@@ -112,7 +182,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           {data.type === 'flow' && (
             <button
               className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
-              onClick={() => openFlowNodeInNewWindow()}
+              onClick={handleEditFlowNode}
+              title={data.linkedSessionId ? "Switch to linked session" : "Create session from flow content"}
             >
               <Edit2 className="w-4 h-4 text-blue-500" />
             </button>

@@ -278,17 +278,29 @@ export const useFlowStore = (): FlowStoreInterface => {
       } else if (node.data.type === 'constant') {
         result = node.data.value;
       } else if (node.data.type === 'flow') {
-        // For flow nodes, we execute the referenced flow file using the backend poller
+        // For flow nodes, we execute the flow content (JSON) using the backend
         try {
           // Start execution time tracking
           const startTime = Date.now();
 
-          // Get the flow file path - use absolutePath if available, otherwise use code
-          let flowPath = node.data.absolutePath || node.data.code;
-          if (!flowPath) {
-            throw new Error('No flow file specified');
+          // Get the flow content - either from linked session or from node's code
+          let flowContent = node.data.code;
+
+          // If flow node is linked to a session, get current content from that session
+          if (node.data.linkedSessionId) {
+            const linkedSession = sessionStore.getSession(node.data.linkedSessionId);
+            if (linkedSession && linkedSession.flowState) {
+              // Serialize the linked session's current flow state
+              flowContent = JSON.stringify({
+                nodes: linkedSession.flowState.nodes,
+                edges: linkedSession.flowState.edges
+              });
+            }
           }
 
+          if (!flowContent) {
+            throw new Error('No flow content specified');
+          }
 
           // Find input nodes and sort them by connection order
           activeFlowState = sessionStore.getActiveFlowState()!;
@@ -312,28 +324,14 @@ export const useFlowStore = (): FlowStoreInterface => {
           const processedInputs = inputs.length === 1 ? inputs[0] : inputs;
           if (inputs.length > 0) addLog('input', prettyFormat(processedInputs));
 
-          // Create a payload for the backend poller
-          const payload = {
-            id: 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2),
-            code: flowPath,
-            type: 'flow',
-            input: processedInputs,
-            timeout: activeFlowState.nodeExecutionTimeout,
-            // Pass the directory of the flow file as the base path for resolving nested flows
-            basePath: pathUtils.dirname(flowPath),
-            // Store the flow file path for reference
-            flowFilePath: flowPath
-          };
+          addLog('log', `Executing flow: ${node.data.label || 'Flow'}`);
 
-          addLog('log', `Executing flow: ${flowPath}`);
-
-          // Submit job via HTTP API
+          // Submit job via HTTP API - flow content is always JSON
           const jobRequest = {
             type: 'flow',
-            code: flowPath,
+            code: flowContent,
             input: processedInputs,
             timeout: activeFlowState.nodeExecutionTimeout,
-            basePath: pathUtils.dirname(flowPath),
           };
 
           try {
@@ -1610,18 +1608,19 @@ export const useFlowStore = (): FlowStoreInterface => {
             // Process nodes - flow nodes already have their content in the code field
             const processedNodes = flowData.nodes;
 
-            // Load the flow data
-            updateFlowState({
+            // Create a new session FIRST with the file name (without .or extension)
+            // createSession switches to the new session automatically
+            const sessionName = file.name.replace(/\.or$/i, '');
+            await sessionStore.createSession(sessionName);
+
+            // Now load the flow data into the NEW active session
+            sessionStore.updateActiveFlowState({
               nodes: processedNodes,
               edges: flowData.edges,
               flowPath: file.name,
               history: [],
               historyIndex: -1
             });
-
-            // Create a new session with the file name (without .or extension)
-            const sessionName = file.name.replace(/\.or$/i, '');
-            await sessionStore.createSession(sessionName);
 
             resolve();
           } catch (error) {

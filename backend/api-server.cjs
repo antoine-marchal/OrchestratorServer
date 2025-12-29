@@ -262,6 +262,33 @@ function parseFlowFile(flowFilePath) {
   return { flow, nodeMap, incomingMap, outgoingMap, roots };
 }
 
+function parseFlowContent(flowContent) {
+  let flow;
+  try {
+    flow = JSON.parse(flowContent);
+  } catch (e) {
+    throw new Error(`Invalid JSON in flow content: ${e.message}`);
+  }
+
+  if (!flow || !Array.isArray(flow.nodes) || !Array.isArray(flow.edges)) {
+    throw new Error('Invalid flow content format: missing nodes or edges array');
+  }
+
+  const nodeMap = {};
+  flow.nodes.forEach((n) => (nodeMap[n.id] = n));
+
+  const incomingMap = {};
+  const outgoingMap = {};
+  flow.edges.forEach((e) => {
+    (incomingMap[e.target] ||= []).push(e);
+    (outgoingMap[e.source] ||= []).push(e);
+  });
+
+  const roots = flow.nodes.map((n) => n.id).filter((id) => !(incomingMap[id] && incomingMap[id].length));
+
+  return { flow, nodeMap, incomingMap, outgoingMap, roots };
+}
+
 /* ===============================
    Flow Execution Engine
    =============================== */
@@ -846,130 +873,124 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
 }
 
 async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath) {
-  const nodeJobId = `flow-cli-${nowUid()}`;
-  const nodeJob = {
-    id: nodeJobId,
-    code: node.data.code || '',
-    codeFilePath: node.data.codeFilePath || null,
-    type: node.data.type,
-    input: nodeInput,
-    dontWaitForOutput: node.data.dontWaitForOutput,
-    basePath: jobBasePath,
-    timeout: timeout,
-  };
+  const nodeJobId = `flow-node-${nowUid()}`;
+  const code = node.data.code || '';
+  const type = node.data.type;
+  const execCwd = jobBasePath || process.cwd();
 
-  printSectionTitle(`Executing node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
+  printSectionTitle(`Executing node ${node.data.label || nodeId} (${type})`, 'cyan');
   printLabeledLine('Input', JSON.stringify(nodeInput, null, 2), 'gray');
 
-
   const startTime = Date.now();
-  const nodeJobPath = path.join(INBOX, `${nodeJobId}.json`);
-  writeJSONSync(nodeJobPath, nodeJob);
 
+  // Handle non-blocking execution
   if (node.data.dontWaitForOutput && !waitForResult) {
-    console.log(colorize('gray',
-      `Started non-blocking execution for node ${node.data.label || nodeId} (${node.data.type})`
-    ));
-
+    console.log(colorize('gray', `Started non-blocking execution for node ${node.data.label || nodeId} (${type})`));
     const executionTime = Date.now() - startTime;
-
-    console.log(colorize('gray',
-      `Non-blocking node ${node.data.label || nodeId} (${node.data.type}) completed in ${executionTime} ms`
-    ));
-
-    let formattedOutput;
-    if (typeof nodeInput === 'string') {
-      formattedOutput = nodeInput;
-    } else {
-      try {
-        formattedOutput = JSON.stringify(nodeInput, null, 2);
-      } catch {
-        formattedOutput = String(nodeInput);
-      }
-    }
-
-    printOutputBlock(formattedOutput, 'cyan');
-
     nodeResults[nodeId] = nodeInput;
     return { output: nodeInput, executionTime, nonBlocking: true };
   }
 
   return new Promise((resolveNode, rejectNode) => {
     let timeoutId;
-    if (!node.data.dontWaitForOutput && timeout > 0) {
-      timeoutId = setTimeout(() => {
-        console.error(colorize(
-          'red',
-          `Node ${node.data.label || nodeId} execution timed out after ${timeout / 1000} seconds`
-        ));
+    let resolved = false;
 
-        if (runningProcesses.has(nodeJobId)) {
-          terminateProcess(nodeJobId);
-          const outFile = path.join(OUTBOX, `${nodeJobId}.result.json`);
-          try {
-            writeJSONSync(outFile, {
-              id: nodeJobId,
-              output: null,
-              log: 'Process terminated due to timeout',
-              error: `Process terminated after ${timeout / 1000} seconds timeout`,
-              dontWaitForOutput: node.data.dontWaitForOutput,
-            });
-          } catch (err) {
-            console.error(`Error writing timeout result file: ${err.message}`);
-          }
+    const finish = (result) => {
+      if (resolved) return;
+      resolved = true;
+      if (timeoutId) clearTimeout(timeoutId);
+
+      const executionTime = Date.now() - startTime;
+
+      if (result.log) {
+        printLabeledLine('Log', result.log, 'gray');
+      }
+      if (result.error) {
+        console.error(colorize('red', `Error: ${result.error}`));
+      }
+
+      let formattedOutput;
+      if (typeof result.output === 'string') {
+        formattedOutput = result.output;
+      } else {
+        try {
+          formattedOutput = JSON.stringify(result.output, null, 2);
+        } catch {
+          formattedOutput = String(result.output);
         }
-        rejectNode(new Error(`Execution timed out after ${timeout / 1000} seconds`));
+      }
+      printOutputBlock(formattedOutput, 'cyan');
+
+      nodeResults[nodeId] = result.output;
+      nodeResults[`${nodeId}_executionTime`] = executionTime;
+      result.executionTime = executionTime;
+      resolveNode(result);
+    };
+
+    // Set up timeout
+    if (timeout > 0) {
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (runningProcesses.has(nodeJobId)) {
+            terminateProcess(nodeJobId);
+          }
+          rejectNode(new Error(`Execution timed out after ${timeout / 1000} seconds`));
+        }
       }, timeout);
     }
 
-    const checkResult = () => {
-      const resultPath = path.join(OUTBOX, `${nodeJobId}.result.json`);
-      if (fs.existsSync(resultPath)) {
-        try {
-          if (timeoutId) clearTimeout(timeoutId);
-          const result = readJSONSync(resultPath);
-          safeUnlinkSync(resultPath);
-
-          const executionTime = Date.now() - startTime;
-
-          printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
-
-          if (result.log) {
-            printLabeledLine('Log', result.log, 'gray');
-          }
-          if (result.error) {
-            console.error(colorize('red', `Error: ${result.error}`));
-          }
-
-          let formattedOutput;
-          if (typeof result.output === 'string') {
-            formattedOutput = result.output;
-          } else {
-            try {
-              formattedOutput = JSON.stringify(result.output, null, 2);
-            } catch {
-              formattedOutput = String(result.output);
-            }
-          }
-
-          printOutputBlock(formattedOutput, 'cyan');
-
-
-          nodeResults[nodeId] = result.output;
-          nodeResults[`${nodeId}_executionTime`] = executionTime;
-
-          result.executionTime = executionTime;
-          resolveNode(result);
-        } catch (err) {
-          if (timeoutId) clearTimeout(timeoutId);
-          rejectNode(err);
-        }
-      } else {
-        setTimeout(checkResult, 100);
+    // Execute based on node type
+    if (type === 'flow') {
+      // Nested flow execution - parse and execute inline
+      const flowContent = code.trim();
+      if (!flowContent) {
+        finish({ output: null, log: null, error: 'No flow content provided' });
+        return;
       }
-    };
 
-    setTimeout(checkResult, 100);
+      let flowData;
+      try {
+        flowData = JSON.parse(flowContent);
+      } catch (e) {
+        finish({ output: null, log: null, error: `Invalid flow content: ${e.message}` });
+        return;
+      }
+
+      if (!flowData || !Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+        finish({ output: null, log: null, error: 'Invalid flow content - missing nodes or edges' });
+        return;
+      }
+
+      (async () => {
+        try {
+          const tempFlow = parseFlowContent(flowContent);
+          const flowResult = await executeInlineFlow(
+            tempFlow,
+            nodeInput,
+            [],
+            execCwd,
+            timeout || DEFAULT_FLOW_TIMEOUT_MS,
+            nodeJobId
+          );
+          finish({ output: flowResult, log: 'Flow executed successfully', error: null });
+        } catch (err) {
+          finish({ output: null, log: null, error: `Error executing nested flow: ${err.message}` });
+        }
+      })();
+    } else if (type === 'groovy') {
+      processGroovyNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+    } else if (type === 'batch') {
+      processBatchNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+    } else if (type === 'jsbackend' || type === 'playwright') {
+      processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+    } else if (type === 'powershell') {
+      processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+    } else if (type === 'javascript' || type === 'js') {
+      processJsNode(nodeJobId, code, nodeInput, finish);
+    } else {
+      finish({ output: null, log: null, error: `Unknown node type: ${type}` });
+    }
   });
 }
 
@@ -1069,47 +1090,40 @@ function processJobFile(filePath) {
   job.code = code || '';
 
   if (type === 'flow') {
-    let flowFilePath = '';
-    if (codeFilePath) {
-      flowFilePath = codeFilePath;
-      console.log(`Using external flow file path: ${flowFilePath}`);
-    } else {
-      flowFilePath = code;
-      console.log(`Using embedded flow path: ${flowFilePath}`);
-    }
+    // Flow execution - expects JSON content with nodes and edges
+    const flowContent = (code || '').trim();
 
-    if (!path.isAbsolute(flowFilePath) && job.basePath) {
-      console.log(`Resolving relative path: ${flowFilePath} relative to ${job.basePath}`);
-      flowFilePath = path.resolve(job.basePath, flowFilePath);
-      console.log(`Resolved to: ${flowFilePath}`);
-    }
-
-    if (!fs.existsSync(flowFilePath)) {
-      finish({ output: null, log: null, error: `Flow file not found: ${flowFilePath}` });
+    if (!flowContent) {
+      finish({ output: null, log: null, error: 'No flow content provided' });
       return;
     }
 
-    const flowPath = job.flowPath || [];
-    if (flowPath.includes(flowFilePath)) {
-      finish({
-        output: null,
-        log: `Circular reference detected in flow execution: ${flowFilePath}`,
-        error: `Circular reference detected: ${flowFilePath} is already in the execution path`,
-      });
+    // Parse flow content as JSON
+    let flowData;
+    try {
+      flowData = JSON.parse(flowContent);
+    } catch (parseErr) {
+      finish({ output: null, log: null, error: `Invalid flow content - not valid JSON: ${parseErr.message}` });
       return;
     }
+
+    if (!flowData || !Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+      finish({ output: null, log: null, error: 'Invalid flow content - missing nodes or edges array' });
+      return;
+    }
+
+    console.log('Executing flow content');
 
     (async () => {
       try {
         const { logs, restore: restoreConsole } = createLogCollector();
         try {
-          const flowResult = await executeFlowFile(
-            flowFilePath,
+          const tempFlow = parseFlowContent(flowContent);
+          const flowResult = await executeInlineFlow(
+            tempFlow,
             input,
-            flowPath,
-            false,
-            true,
-            job.basePath || path.dirname(flowFilePath),
+            [],
+            job.basePath || process.cwd(),
             job.timeout || DEFAULT_FLOW_TIMEOUT_MS,
             jobId
           );
@@ -1121,7 +1135,7 @@ function processJobFile(filePath) {
 
           finish({
             output: flowResult,
-            log: logMessages || `Successfully executed flow`,
+            log: logMessages || 'Successfully executed flow',
             error: null,
           });
         } catch (err) {
@@ -1811,45 +1825,68 @@ function processJob(job) {
 
   job.status = 'running';
 
-  if (type === 'flow') {
-    let flowFilePath = '';
-    if (codeFilePath) {
-      flowFilePath = codeFilePath;
-    } else {
-      flowFilePath = code;
-    }
+  // Set up timeout handling for individual node execution
+  let timeoutId = null;
+  let timedOut = false;
+  const effectiveTimeout = timeout && timeout !== Infinity && timeout > 0 ? timeout : 0;
 
-    if (!path.isAbsolute(flowFilePath) && job.basePath) {
-      flowFilePath = path.resolve(job.basePath, flowFilePath);
-    }
-
-    if (!fs.existsSync(flowFilePath)) {
-      finish({ output: null, log: null, error: `Flow file not found: ${flowFilePath}` });
-      return;
-    }
-
-    const flowPath = job.flowPath || [];
-    if (flowPath.includes(flowFilePath)) {
+  if (effectiveTimeout > 0) {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      if (runningProcesses.has(jobId)) {
+        terminateProcess(jobId);
+      }
       finish({
         output: null,
-        log: `Circular reference detected in flow execution: ${flowFilePath}`,
-        error: `Circular reference detected: ${flowFilePath} is already in the execution path`,
+        log: null,
+        error: `Execution timed out after ${effectiveTimeout / 1000} seconds`
       });
+    }, effectiveTimeout);
+  }
+
+  // Wrap finish to clear timeout and prevent double-finishing
+  const wrappedFinish = (result) => {
+    if (timedOut) return; // Already timed out, ignore this result
+    if (timeoutId) clearTimeout(timeoutId);
+    finish(result);
+  };
+
+  if (type === 'flow') {
+    // Flow execution - expects JSON content with nodes and edges
+    const flowContent = (job.code || '').trim();
+
+    if (!flowContent) {
+      wrappedFinish({ output: null, log: null, error: 'No flow content provided' });
       return;
     }
+
+    // Parse flow content as JSON
+    let flowData;
+    try {
+      flowData = JSON.parse(flowContent);
+    } catch (parseErr) {
+      wrappedFinish({ output: null, log: null, error: `Invalid flow content - not valid JSON: ${parseErr.message}` });
+      return;
+    }
+
+    if (!flowData || !Array.isArray(flowData.nodes) || !Array.isArray(flowData.edges)) {
+      wrappedFinish({ output: null, log: null, error: 'Invalid flow content - missing nodes or edges array' });
+      return;
+    }
+
+    console.log('Executing flow content');
 
     (async () => {
       try {
         const { logs, restore: restoreConsole } = createLogCollector();
         try {
-          const flowResult = await executeFlowFile(
-            flowFilePath,
+          const tempFlow = parseFlowContent(flowContent);
+          const flowResult = await executeInlineFlow(
+            tempFlow,
             job.input,
-            flowPath,
-            false,
-            true,
-            job.basePath || path.dirname(flowFilePath),
-            job.timeout || DEFAULT_FLOW_TIMEOUT_MS,
+            [],
+            job.basePath || process.cwd(),
+            effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS,
             job.jobId
           );
           restoreConsole();
@@ -1858,9 +1895,9 @@ function processJob(job) {
             .map((log) => (log.type === 'error' ? `ERROR: ${log.message}` : log.message))
             .join('\n');
 
-          finish({
+          wrappedFinish({
             output: flowResult,
-            log: logMessages || `Successfully executed flow`,
+            log: logMessages || 'Successfully executed flow',
             error: null,
           });
         } catch (err) {
@@ -1868,19 +1905,19 @@ function processJob(job) {
           throw err;
         }
       } catch (err) {
-        finish({ output: null, log: null, error: `Error executing flow: ${err.message}` });
+        wrappedFinish({ output: null, log: null, error: `Error executing flow: ${err.message}` });
       }
     })();
   } else if (type === 'groovy') {
-    processGroovyNode(jobId, code, input, finish, codeFilePath, execCwd);
+    processGroovyNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
   } else if (type === 'batch') {
-    processBatchNode(jobId, code, input, finish, codeFilePath, execCwd);
+    processBatchNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
   } else if (type === 'jsbackend' || type === 'playwright') {
-    processJsBackendNode(jobId, code, input, finish, codeFilePath, execCwd);
+    processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
   } else if (type === 'powershell') {
-    processPowershellNode(jobId, code, input, finish, codeFilePath, execCwd);
+    processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
   } else {
-    processJsNode(jobId, code, input, finish);
+    processJsNode(jobId, code, input, wrappedFinish);
   }
 }
 
@@ -1916,5 +1953,6 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
    =============================== */
 
 module.exports = {
-  executeFlowFile,
+  executeInlineFlow,
+  parseFlowContent,
 };

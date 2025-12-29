@@ -1,15 +1,11 @@
 {
   "name": "orchestrator_server",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:prod": "vite build --mode production",
-    "serve": "vite preview",
-    "serve:prod": "npm run build:prod && npm run serve",
-    "lint": "eslint .",
-    "preview": "vite preview",
+    "backend": "node backend/api-server.cjs",
     "start": "npm run dev"
   },
   "dependencies": {

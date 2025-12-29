@@ -52,6 +52,7 @@ interface SessionStore {
   createSession: (name?: string) => Promise<string>;
   switchSession: (sessionId: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
+  reorderSessions: (sourceIndex: number, destinationIndex: number) => void;
   getActiveSession: () => Session | null;
   getSession: (sessionId: string) => Session | null;
 
@@ -135,17 +136,44 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  reorderSessions: (sourceIndex: number, destinationIndex: number) => {
+    const sessions = [...get().sessions];
+    const [movedSession] = sessions.splice(sourceIndex, 1);
+    sessions.splice(destinationIndex, 0, movedSession);
+
+    set({ sessions });
+    get().saveSessions();
+  },
+
   closeSession: async (sessionId: string) => {
     const state = get();
     const session = state.sessions.find(s => s.id === sessionId);
 
     if (!session) return;
 
-    // Terminate session on backend - don't catch errors, let them propagate
-    try{
-    await apiClient.deleteSession(sessionId);
-    }catch(e){}
-    const updatedSessions = state.sessions.filter(s => s.id !== sessionId);
+    // Terminate session on backend
+    try {
+      await apiClient.deleteSession(sessionId);
+    } catch (e) {}
+
+    // Remove the session and cleanup linkedSessionId references in other sessions
+    const updatedSessions = state.sessions
+      .filter(s => s.id !== sessionId)
+      .map(s => ({
+        ...s,
+        flowState: {
+          ...s.flowState,
+          // Remove linkedSessionId from flow nodes that referenced the closed session
+          nodes: s.flowState.nodes.map(node => {
+            if (node.data?.linkedSessionId === sessionId) {
+              const { linkedSessionId, ...restData } = node.data;
+              return { ...node, data: restData };
+            }
+            return node;
+          }),
+        },
+      }));
+
     let newActiveSessionId = state.activeSessionId;
 
     // If closing active session, switch to another session or create new one

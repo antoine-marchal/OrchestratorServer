@@ -1,7 +1,140 @@
 import React, { useState, useEffect } from 'react';
 import { useSessionStore } from '../store/sessionStore';
-import { X, Plus, Edit2, Server } from 'lucide-react';
+import { X, Plus, Edit2, Server, GripVertical } from 'lucide-react';
 import { apiClient } from '../utils/apiClient';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  horizontalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+
+interface SortableTabProps {
+  session: {
+    id: string;
+    name: string;
+  };
+  isActive: boolean;
+  isEditing: boolean;
+  editingName: string;
+  onSwitch: () => void;
+  onClose: (e: React.MouseEvent) => void;
+  onEdit: (e: React.MouseEvent) => void;
+  onNameChange: (name: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  canClose: boolean;
+  isLoading: boolean;
+}
+
+const SortableTab: React.FC<SortableTabProps> = ({
+  session,
+  isActive,
+  isEditing,
+  editingName,
+  onSwitch,
+  onClose,
+  onEdit,
+  onNameChange,
+  onSaveEdit,
+  onCancelEdit,
+  canClose,
+  isLoading,
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: session.id });
+
+  const style = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 100 : undefined,
+  };
+
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      onSaveEdit();
+    } else if (event.key === 'Escape') {
+      onCancelEdit();
+    }
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center min-w-0 max-w-xs px-3 py-2 mr-1 rounded-t-lg cursor-pointer transition-colors ${
+        isActive
+          ? 'bg-white dark:bg-gray-700 border-t border-l border-r border-gray-300 dark:border-gray-600'
+          : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'
+      }`}
+      onClick={onSwitch}
+    >
+      {/* Drag handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="mr-2 cursor-grab active:cursor-grabbing"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical size={12} className="text-gray-400" />
+      </div>
+
+      {isEditing ? (
+        <input
+          type="text"
+          value={editingName}
+          onChange={(e) => onNameChange(e.target.value)}
+          onBlur={onSaveEdit}
+          onKeyDown={handleKeyPress}
+          className="flex-1 bg-transparent border-none outline-none text-sm min-w-0"
+          autoFocus
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="flex-1 truncate text-sm font-medium">
+          {session.name}
+        </span>
+      )}
+
+      <div className="flex items-center ml-2">
+        <button
+          onClick={onEdit}
+          className="p-1 hover:bg-gray-400 dark:hover:bg-gray-400 rounded opacity-60 hover:opacity-100 transition-opacity"
+          title="Rename session"
+        >
+          <Edit2 size={12} />
+        </button>
+
+        {canClose && (
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-red-400 dark:hover:bg-red-400 rounded opacity-60 hover:opacity-100 transition-opacity ml-1"
+            title="Close session"
+            disabled={isLoading}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const SessionTabs: React.FC = () => {
   const {
@@ -10,12 +143,24 @@ const SessionTabs: React.FC = () => {
     createSession,
     switchSession,
     closeSession,
+    reorderSessions,
     isLoading
   } = useSessionStore();
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [backendAddress, setBackendAddress] = useState('localhost:3000');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Load backend address from localStorage on mount
   useEffect(() => {
@@ -85,11 +230,16 @@ const SessionTabs: React.FC = () => {
     setEditingName('');
   };
 
-  const handleKeyPress = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter') {
-      handleSaveEdit();
-    } else if (event.key === 'Escape') {
-      handleCancelEdit();
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = sessions.findIndex(s => s.id === active.id);
+      const newIndex = sessions.findIndex(s => s.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        reorderSessions(oldIndex, newIndex);
+      }
     }
   };
 
@@ -110,55 +260,34 @@ const SessionTabs: React.FC = () => {
         />
       </div>
 
-      {sessions.map((session) => (
-        <div
-          key={session.id}
-          className={`flex items-center min-w-0 max-w-xs px-3 py-2 mr-1 rounded-t-lg cursor-pointer transition-colors ${
-            activeSessionId === session.id
-              ? 'bg-white dark:bg-gray-700 border-t border-l border-r border-gray-300 dark:border-gray-600'
-              : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'
-          }`}
-          onClick={() => switchSession(session.id)}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={sessions.map(s => s.id)}
+          strategy={horizontalListSortingStrategy}
         >
-          {editingSessionId === session.id ? (
-            <input
-              type="text"
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              onBlur={handleSaveEdit}
-              onKeyDown={handleKeyPress}
-              className="flex-1 bg-transparent border-none outline-none text-sm"
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
+          {sessions.map((session) => (
+            <SortableTab
+              key={session.id}
+              session={session}
+              isActive={activeSessionId === session.id}
+              isEditing={editingSessionId === session.id}
+              editingName={editingName}
+              onSwitch={() => switchSession(session.id)}
+              onClose={(e) => handleCloseSession(session.id, e)}
+              onEdit={(e) => handleEditSession(session.id, session.name, e)}
+              onNameChange={setEditingName}
+              onSaveEdit={handleSaveEdit}
+              onCancelEdit={handleCancelEdit}
+              canClose={sessions.length > 1}
+              isLoading={isLoading}
             />
-          ) : (
-            <span className="flex-1 truncate text-sm font-medium">
-              {session.name}
-            </span>
-          )}
-
-          <div className="flex items-center ml-2">
-            <button
-              onClick={(e) => handleEditSession(session.id, session.name, e)}
-              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-400 rounded opacity-60 hover:opacity-100 transition-opacity"
-              title="Rename session"
-            >
-              <Edit2 size={12} />
-            </button>
-
-            {sessions.length > 1 && (
-              <button
-                onClick={(e) => handleCloseSession(session.id, e)}
-                className="p-1 hover:bg-red-400 dark:hover:bg-red-400 rounded opacity-60 hover:opacity-100 transition-opacity ml-1"
-                title="Close session"
-                disabled={isLoading}
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
+          ))}
+        </SortableContext>
+      </DndContext>
 
       <button
         onClick={handleCreateSession}
