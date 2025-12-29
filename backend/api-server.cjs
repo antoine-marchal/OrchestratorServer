@@ -19,11 +19,95 @@ const kill = require('tree-kill');
    Configuration & Environment
    =============================== */
 
-const nodeExecutablePath = process.env.NODE_EXECUTABLE_PATH || 'node';
 const PORT = process.env.PORT || 3000;
 
-const INBOX = path.join(__dirname, 'inbox');
-const OUTBOX = path.join(__dirname, 'outbox');
+// Detect if running in packaged environment (pkg bundles to snapshot)
+const isPackaged = (() => {
+  // pkg sets process.pkg when running from snapshot
+  return !!(process.pkg || __dirname.includes('snapshot'));
+})();
+
+// Get the path to system Node.js executable
+// When packaged, we must use system node, not the packaged exe
+const getNodeExecutablePath = () => {
+  if (process.env.NODE_EXECUTABLE_PATH) {
+    return process.env.NODE_EXECUTABLE_PATH;
+  }
+  if (isPackaged) {
+    // When packaged, try to find system node
+    const os = require('os');
+    const { execSync } = require('child_process');
+    const platform = os.platform();
+
+    if (platform === 'win32') {
+      // Try using 'where' command to find node.exe
+      try {
+        const result = execSync('where node.exe', { encoding: 'utf8', timeout: 5000 });
+        const paths = result.trim().split(/\r?\n/);
+        // Filter out any path that points to our packaged exe
+        const exePath = process.execPath.toLowerCase();
+        for (const p of paths) {
+          if (p.toLowerCase() !== exePath && fs.existsSync(p)) {
+            return p;
+          }
+        }
+      } catch (e) {
+        // 'where' command failed, try known paths
+      }
+
+      // Try common Windows Node.js locations
+      const possiblePaths = [
+        'C:\\Program Files\\nodejs\\node.exe',
+        'C:\\Program Files (x86)\\nodejs\\node.exe',
+        path.join(os.homedir(), 'AppData', 'Roaming', 'nvm', 'current', 'node.exe'),
+        path.join(os.homedir(), '.nvm', 'current', 'node.exe'),
+      ];
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) return p;
+      }
+
+      console.warn('Warning: Could not find system Node.js. Set NODE_EXECUTABLE_PATH environment variable.');
+    } else {
+      // Linux/macOS - try 'which' command
+      try {
+        const result = execSync('which node', { encoding: 'utf8', timeout: 5000 });
+        const nodePath = result.trim();
+        if (nodePath && fs.existsSync(nodePath)) {
+          return nodePath;
+        }
+      } catch (e) {
+        // 'which' command failed
+      }
+    }
+
+    // Last resort - this may cause issues if PATH has packaged exe first
+    return 'node';
+  }
+  // When not packaged, use current Node.js process
+  return process.execPath;
+};
+
+const nodeExecutablePath = getNodeExecutablePath();
+
+// Log which Node.js is being used (helpful for debugging)
+if (isPackaged) {
+  console.log(`[Packaged Mode] Using Node.js: ${nodeExecutablePath}`);
+}
+
+// Use temp directory for INBOX/OUTBOX when packaged, otherwise use __dirname
+const getWorkDir = () => {
+  if (isPackaged) {
+    // Use a directory next to the executable or in temp
+    const os = require('os');
+    const workDir = process.env.ORCHESTRATOR_WORK_DIR || path.join(os.tmpdir(), 'orchestrator-backend');
+    return workDir;
+  }
+  return __dirname;
+};
+
+const WORK_DIR = getWorkDir();
+const INBOX = path.join(WORK_DIR, 'inbox');
+const OUTBOX = path.join(WORK_DIR, 'outbox');
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 200);
 const STOP_CHECK_INTERVAL_MS = Number(process.env.STOP_CHECK_INTERVAL_MS ?? 500);
@@ -31,6 +115,7 @@ const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_MS ?? 0)
 const JS_BACKEND_TIMEOUT_MS = Number(process.env.JS_BACKEND_TIMEOUT_MS ?? 0);    // 0 = infinite
 
 // Ensure directories exist
+if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 if (!fs.existsSync(INBOX)) fs.mkdirSync(INBOX, { recursive: true });
 if (!fs.existsSync(OUTBOX)) fs.mkdirSync(OUTBOX, { recursive: true });
 
@@ -38,11 +123,6 @@ if (!fs.existsSync(OUTBOX)) fs.mkdirSync(OUTBOX, { recursive: true });
 const argv = process.argv;
 const isSilent = argv.includes('--silent') || argv.includes('-s');
 const shouldShutdownAfterExecution = argv.includes('-s');
-
-// Detect if running in packaged environment
-const isPackaged = (() => {
-  return process.resourcesPath !== undefined;
-})();
 
 /* ===============================
    Console Utilities
@@ -102,10 +182,17 @@ const sessions = new Map(); // sessionId -> session object
    =============================== */
 
 const getResourcePath = () => {
-  if (isPackaged && process.resourcesPath) {
-    return path.join(process.resourcesPath, 'backend');
+  if (isPackaged) {
+    // In pkg, assets are bundled and accessible via __dirname (snapshot path)
+    // But for external files like groovyExec.jar, check next to executable first
+    const exeDir = path.dirname(process.execPath);
+    if (fs.existsSync(path.join(exeDir, 'groovyExec.jar'))) {
+      return exeDir;
+    }
+    // Fallback to snapshot path (if bundled as asset)
+    return __dirname;
   }
-  return path.join(__dirname);
+  return __dirname;
 };
 
 const groovyJarPath = path.join(getResourcePath(), 'groovyExec.jar');

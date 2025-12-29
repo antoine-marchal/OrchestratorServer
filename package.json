@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:backend": "cd backend && npm run build",
+    "build:backend:all": "cd backend && npm run build:all",
     "backend": "node backend/api-server.cjs",
     "start": "npm run dev"
   },
