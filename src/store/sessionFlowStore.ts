@@ -24,6 +24,79 @@ function prettyFormat(val: any): string {
   return String(val);
 }
 
+/**
+ * Sanitize a variable name to be a valid JavaScript identifier
+ */
+function sanitizeVariableName(name: string): string {
+  // Replace invalid characters with underscores
+  let sanitized = name.replace(/[^a-zA-Z0-9_$]/g, '_');
+  // Ensure it doesn't start with a number
+  if (/^[0-9]/.test(sanitized)) {
+    sanitized = '_' + sanitized;
+  }
+  // Avoid reserved words
+  const reserved = ['input', 'output', 'console', 'process', 'require', 'module', 'exports'];
+  if (reserved.includes(sanitized)) {
+    sanitized = 'var_' + sanitized;
+  }
+  return sanitized || '_var';
+}
+
+/**
+ * Collects all Variable nodes and returns them as a key-value object
+ * Keys are sanitized node labels, values are parsed JSON or raw strings
+ * Prioritizes runtime output value over initial value (for variable persistence during flow execution)
+ */
+function collectVariables(nodes: Node[]): Record<string, any> {
+  const variables: Record<string, any> = {};
+
+  nodes.forEach(node => {
+    if (node.data?.type === 'variable' && node.data.label) {
+      const varName = sanitizeVariableName(node.data.label);
+
+      // Prioritize runtime output if it exists (modified by previous nodes)
+      if (node.data.output !== undefined) {
+        variables[varName] = node.data.output;
+      } else {
+        // Fallback to initial value, parse as JSON if possible
+        const rawValue = node.data.value || '';
+        try {
+          variables[varName] = JSON.parse(rawValue);
+        } catch {
+          variables[varName] = rawValue;
+        }
+      }
+    }
+  });
+
+  return variables;
+}
+
+/**
+ * Updates Variable nodes with modified values from execution
+ */
+function updateVariableNodes(
+  nodes: Node[],
+  modifiedVariables: Record<string, any>
+): Node[] {
+  return nodes.map(node => {
+    if (node.data?.type === 'variable' && node.data.label) {
+      const varName = sanitizeVariableName(node.data.label);
+      if (varName in modifiedVariables) {
+        const newValue = modifiedVariables[varName];
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            output: newValue, // Show current runtime value
+          }
+        };
+      }
+    }
+    return node;
+  });
+}
+
 // Re-export the FlowState interface from sessionStore
 export interface FlowState {
   nodes: Node[];
@@ -265,7 +338,7 @@ export const useFlowStore = (): FlowStoreInterface => {
             return activeFlowState.nodes.find(n => n.id === e.source);
           })
           .filter((n): n is Node => n !== undefined);
-        const inputs = await Promise.all(inputNodes.map(n => n.data.type === 'constant' ? n.data.value : n.data.output));
+        const inputs = await Promise.all(inputNodes.map(n => n.data.type === 'variable' ? n.data.value : n.data.output));
         const processedInputs = inputs.length === 1 ? inputs[0] : inputs;
         
         updateFlowState({
@@ -275,8 +348,14 @@ export const useFlowStore = (): FlowStoreInterface => {
         });
         updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
         return;
-      } else if (node.data.type === 'constant') {
-        result = node.data.value;
+      } else if (node.data.type === 'variable') {
+        // Parse JSON if possible, otherwise use raw value
+        const rawValue = node.data.value || '';
+        try {
+          result = JSON.parse(rawValue);
+        } catch {
+          result = rawValue;
+        }
       } else if (node.data.type === 'flow') {
         // For flow nodes, we execute the flow content (JSON) using the backend
         try {
@@ -314,8 +393,13 @@ export const useFlowStore = (): FlowStoreInterface => {
 
           // Get input values from connected nodes
           const inputs = await Promise.all(inputNodes.map(async (inputNode) => {
-            if (inputNode.data.type === 'constant') {
-              return inputNode.data.value;
+            if (inputNode.data.type === 'variable') {
+              // Parse JSON if possible
+              try {
+                return JSON.parse(inputNode.data.value || '');
+              } catch {
+                return inputNode.data.value;
+              }
             }
             return inputNode.data.output;
           }));
@@ -423,7 +507,14 @@ export const useFlowStore = (): FlowStoreInterface => {
           });
         } else {
           const inputs = await Promise.all(inputNodes.map(async (inputNode) => {
-            if (inputNode.data.type === 'constant') return inputNode.data.value;
+            if (inputNode.data.type === 'variable') {
+              // Parse JSON if possible
+              try {
+                return JSON.parse(inputNode.data.value || '');
+              } catch {
+                return inputNode.data.value;
+              }
+            }
             return inputNode.data.output;
           }));
           processedInputs = inputs.length === 1 ? inputs[0] : inputs;
@@ -471,19 +562,48 @@ export const useFlowStore = (): FlowStoreInterface => {
               ),
             });
 
+            // Collect variables from all Variable nodes
+            activeFlowState = sessionStore.getActiveFlowState()!;
+            const variables = collectVariables(activeFlowState.nodes);
+            const varNames = Object.keys(variables);
+
             let code = node.data.code?.trim() || '';
-            let fn;
-            if (/^function\s*\w*\s*\(/.test(code)) {
-              fn = new Function(`${code}; return process(arguments[0]);`);
-            } else {
-              fn = new Function('input', code.includes('return') ? code : `return (${code})`);
-            }
             const logBuffer: any[] = [];
             console.log = (...args) => {
               args.forEach(arg => addLog('log', prettyFormat(arg)));
               logBuffer.push(args);
             };
-            result = fn(processedInputs);
+
+            // Build wrapped code that injects variables and captures them after execution
+            if (/^function\s*\w*\s*\(/.test(code)) {
+              // Function-style code
+              const fn = new Function(`${code}; return process(arguments[0]);`);
+              result = fn(processedInputs);
+            } else {
+              // Expression or statement-style code
+              // Inject variables as parameters and capture them after execution
+              const varDeclarations = varNames.map(name => `let ${name} = __variables["${name}"];`).join('\n');
+              const varCapture = `const __capturedVars = { ${varNames.join(', ')} };`;
+
+              const wrappedCode = `
+                ${varDeclarations}
+                let __result;
+                ${code.includes('return') ? `__result = (function(input) { ${code} })(input);` : `__result = (${code});`}
+                ${varCapture}
+                return { __result, __capturedVars };
+              `;
+
+              const fn = new Function('input', '__variables', wrappedCode);
+              const execResult = fn(processedInputs, variables);
+              result = execResult.__result;
+
+              // Update variable nodes with modified values
+              if (execResult.__capturedVars && Object.keys(execResult.__capturedVars).length > 0) {
+                activeFlowState = sessionStore.getActiveFlowState()!;
+                const updatedNodes = updateVariableNodes(activeFlowState.nodes, execResult.__capturedVars);
+                updateFlowState({ nodes: updatedNodes });
+              }
+            }
             console.log = originalConsoleLog;
 
             // Calculate execution time
@@ -513,6 +633,10 @@ export const useFlowStore = (): FlowStoreInterface => {
               }
             }
 
+            // Collect variables from all Variable nodes
+            activeFlowState = sessionStore.getActiveFlowState()!;
+            const variables = collectVariables(activeFlowState.nodes);
+
             // Submit job via HTTP API
             const jobRequest = {
               type: node.data.type,
@@ -522,6 +646,7 @@ export const useFlowStore = (): FlowStoreInterface => {
               timeout: activeFlowState.nodeExecutionTimeout,
               dontWaitForOutput: node.data.dontWaitForOutput,
               basePath: basePath,
+              variables: variables,
             };
 
             const { jobId } = await apiClient.submitJob(jobRequest);
@@ -550,6 +675,13 @@ export const useFlowStore = (): FlowStoreInterface => {
             result = jobResult.output !== '[]' ? jobResult.output : null;
             log = jobResult.log;
             error = jobResult.error;
+
+            // Update variable nodes with returned modified variables
+            if (jobResult.variables && Object.keys(jobResult.variables).length > 0) {
+              activeFlowState = sessionStore.getActiveFlowState()!;
+              const updatedNodes = updateVariableNodes(activeFlowState.nodes, jobResult.variables);
+              updateFlowState({ nodes: updatedNodes });
+            }
 
             // Calculate execution time
             const executionTime = jobResult.executionTime || (Date.now() - startTime);
@@ -1385,7 +1517,14 @@ export const useFlowStore = (): FlowStoreInterface => {
 
             const inputs = await Promise.all(
               inputNodes.map(async (n) => {
-                if (n.data?.type === 'constant') return n.data.value;
+                if (n.data?.type === 'variable') {
+                  // Parse JSON if possible
+                  try {
+                    return JSON.parse(n.data.value || '');
+                  } catch {
+                    return n.data.value;
+                  }
+                }
                 return byId(n.id)?.data?.output;
               })
             );

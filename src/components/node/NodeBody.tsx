@@ -50,7 +50,40 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     return () => { if (el) el.removeEventListener('wheel', handleWheel); };
   }, []);
 
-  if (data.type === 'constant') return null;
+  // VARIABLE node - show current runtime value if modified
+  if (data.type === 'variable') {
+    // If the variable has been modified (output differs from value), show it
+    if (data.output !== undefined && data.output !== data.value) {
+      const displayValue = typeof data.output === 'object'
+        ? JSON.stringify(data.output, null, 2)
+        : String(data.output);
+      return (
+        <div
+          className="flex-1 overflow-hidden px-3 py-2 border-b border-gray-400"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div className="text-[10px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-medium mb-1">
+            Current Value
+          </div>
+          <div
+            ref={outputRef}
+            className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs p-2 font-mono whitespace-pre-wrap w-full break-words max-h-32 overflow-y-auto select-text rounded"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.stopPropagation();
+              const div = e.currentTarget;
+              div.scrollTop += e.deltaY;
+            }}
+          >
+            {displayValue}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
 
   // FLOW node
   if (data.type === 'flow') {

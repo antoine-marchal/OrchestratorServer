@@ -8,7 +8,7 @@ interface NodeFooterProps {
   nodeId: string;
   isEditing: boolean;
   setConnecting: React.Dispatch<React.SetStateAction<boolean>>;
-  type: 'constant' | string;
+  type: 'variable' | string;
   inputEdges: EdgeConnection[];
   outputEdges: EdgeConnection[];
   getNodeLabel: (id: string) => string;
@@ -119,7 +119,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
       
       <div className="flex justify-between">
         <div className="w-1/2 pr-2">
-          {type !== 'constant' && (
+          {type !== 'variable' && (
             <div className="relative">
               <Handle
                 type="target"

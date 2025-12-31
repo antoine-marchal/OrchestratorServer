@@ -102,8 +102,8 @@ const NODE_TYPES = [
     iconColor: 'text-blue-400'
   },
   {
-    id: 'constant',
-    label: 'Constant',
+    id: 'variable',
+    label: 'Variable',
     value: '0',
     icon: Hash,
     iconColor: 'text-purple-500'
@@ -575,9 +575,9 @@ const displayEdges = useMemo<Edge[]>(() => {
           data: {
             label: uniqueLabel,
             type: type,
-            language: type === 'constant' ? undefined : type,
-            code: type === 'constant' ? undefined : nodeType.code,
-            value: type === 'constant' ? nodeType.value : undefined,
+            language: type === 'variable' ? undefined : type,
+            code: type === 'variable' ? undefined : nodeType.code,
+            value: type === 'variable' ? nodeType.value : undefined,
           },
           draggable: true,
         };
@@ -828,7 +828,7 @@ const displayEdges = useMemo<Edge[]>(() => {
 {/*}
         <MiniMap
           nodeColor={(node) => {
-            if (node.data.type === 'constant') return '#9333ea';
+            if (node.data.type === 'variable') return '#9333ea';
             if (node.data.type === 'flow') return '#10b981'; // Green color for flow nodes
             return '#3b82f6';
           }}

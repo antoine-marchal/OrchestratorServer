@@ -277,6 +277,44 @@ function normalizeOutput(value) {
 }
 
 /**
+ * Sanitize a variable name to be a valid identifier
+ */
+function sanitizeVariableName(name) {
+  if (!name) return '_var';
+  // Replace invalid characters with underscores
+  let sanitized = name.replace(/[^a-zA-Z0-9_$]/g, '_');
+  // Ensure it doesn't start with a number
+  if (/^[0-9]/.test(sanitized)) {
+    sanitized = '_' + sanitized;
+  }
+  // Avoid reserved words
+  const reserved = ['input', 'output', 'console', 'process', 'require', 'module', 'exports'];
+  if (reserved.includes(sanitized)) {
+    sanitized = 'var_' + sanitized;
+  }
+  return sanitized || '_var';
+}
+
+/**
+ * Collect variables from flow's variable nodes
+ */
+function collectFlowVariables(nodes) {
+  const variables = {};
+  nodes.forEach(node => {
+    if (node?.data?.type === 'variable' && node.data.label) {
+      const varName = sanitizeVariableName(node.data.label);
+      const rawValue = node.data.value || '';
+      try {
+        variables[varName] = JSON.parse(rawValue);
+      } catch {
+        variables[varName] = rawValue;
+      }
+    }
+  });
+  return variables;
+}
+
+/**
  * Console capture with restore
  */
 function createLogCollector() {
@@ -405,6 +443,9 @@ async function executeFlowFile(
         const starter = flow.nodes.find((n) => n?.data?.isStarterNode);
         const starterId = starter ? starter.id : null;
 
+        // Collect variables from all Variable nodes in the flow
+        const flowVariables = collectFlowVariables(flow.nodes);
+
         const byId = (id) => nodeMap[id] || null;
         const incoming = (id) => incomingMap[id] || [];
         const outgoing = (id) => outgoingMap[id] || [];
@@ -481,8 +522,11 @@ async function executeFlowFile(
 
           executing.add(nodeId);
 
-          const preds = incoming(nodeId).map((e) => e.source);
-          for (const p of preds) await ensureExecuted(p, false);
+          // Skip predecessor execution if this is the starter node
+          if (nodeId !== starterId) {
+            const preds = incoming(nodeId).map((e) => e.source);
+            for (const p of preds) await ensureExecuted(p, false);
+          }
 
           let processedInputs;
           if (Object.prototype.hasOwnProperty.call(injectedInputs, nodeId)) {
@@ -536,8 +580,14 @@ async function executeFlowFile(
               timeout
             );
             nodeResults[nodeId] = nested?.output !== undefined ? nested.output : nested;
-          } else if (node?.data?.type === 'constant') {
-            nodeResults[nodeId] = node.data.value;
+          } else if (node?.data?.type === 'variable') {
+            // Parse JSON if possible, otherwise use raw value
+            const rawValue = node.data.value || '';
+            try {
+              nodeResults[nodeId] = JSON.parse(rawValue);
+            } catch {
+              nodeResults[nodeId] = rawValue;
+            }
           } else {
             const res = await executeRegularNode(
               node,
@@ -546,8 +596,20 @@ async function executeFlowFile(
               nodeResults,
               true,
               timeout,
-              basePath || path.dirname(flowFilePath)
+              basePath || path.dirname(flowFilePath),
+              flowVariables
             );
+            // Merge returned variables into flowVariables
+            if (res?.variables && Object.keys(res.variables).length > 0) {
+              Object.assign(flowVariables, res.variables);
+              // Also update nodeResults for variable nodes
+              for (const [varName, varValue] of Object.entries(res.variables)) {
+                const varNode = flow.nodes.find(n => n.data?.type === 'variable' && sanitizeVariableName(n.data.label) === varName);
+                if (varNode) {
+                  nodeResults[varNode.id] = varValue;
+                }
+              }
+            }
             nodeResults[nodeId] = res?.output !== undefined ? res.output : res;
           }
 
@@ -622,9 +684,12 @@ async function executeFlowFile(
 
 async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeout, jobId) {
   const { flow, nodeMap, incomingMap, outgoingMap, roots } = tempFlow;
-  
+
   const starter = flow.nodes.find((n) => n?.data?.isStarterNode);
   const starterId = starter ? starter.id : null;
+
+  // Collect variables from all Variable nodes in the flow
+  const flowVariables = collectFlowVariables(flow.nodes);
 
   const byId = (id) => nodeMap[id] || null;
   const incoming = (id) => incomingMap[id] || [];
@@ -703,8 +768,11 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
 
     executing.add(nodeId);
 
-    const preds = incoming(nodeId).map((e) => e.source);
-    for (const p of preds) await ensureExecuted(p, false);
+    // Skip predecessor execution if this is the starter node
+    if (nodeId !== starterId) {
+      const preds = incoming(nodeId).map((e) => e.source);
+      for (const p of preds) await ensureExecuted(p, false);
+    }
 
     let processedInputs;
     if (Object.prototype.hasOwnProperty.call(injectedInputs, nodeId)) {
@@ -742,8 +810,14 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
       if (decision && forward) {
         injectedInputs[decision] = processedInputs;
       }
-    } else if (node?.data?.type === 'constant') {
-      nodeResults[nodeId] = node.data.value;
+    } else if (node?.data?.type === 'variable') {
+      // Parse JSON if possible, otherwise use raw value
+      const rawValue = node.data.value || '';
+      try {
+        nodeResults[nodeId] = JSON.parse(rawValue);
+      } catch {
+        nodeResults[nodeId] = rawValue;
+      }
     } else {
       const res = await executeRegularNode(
         node,
@@ -752,8 +826,20 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
         nodeResults,
         true,
         timeout,
-        basePath
+        basePath,
+        flowVariables
       );
+      // Merge returned variables into flowVariables
+      if (res?.variables && Object.keys(res.variables).length > 0) {
+        Object.assign(flowVariables, res.variables);
+        // Also update nodeResults for variable nodes
+        for (const [varName, varValue] of Object.entries(res.variables)) {
+          const varNode = flow.nodes.find(n => n.data?.type === 'variable' && sanitizeVariableName(n.data.label) === varName);
+          if (varNode) {
+            nodeResults[varNode.id] = varValue;
+          }
+        }
+      }
       nodeResults[nodeId] = res?.output !== undefined ? res.output : res;
     }
 
@@ -959,7 +1045,7 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
   }
 }
 
-async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath) {
+async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath, variables = {}) {
   const nodeJobId = `flow-node-${nowUid()}`;
   const code = node.data.code || '';
   const type = node.data.type;
@@ -1066,13 +1152,13 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
         }
       })();
     } else if (type === 'groovy') {
-      processGroovyNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+      processGroovyNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'batch') {
-      processBatchNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+      processBatchNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'jsbackend' || type === 'playwright') {
-      processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+      processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'powershell') {
-      processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd);
+      processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'javascript' || type === 'js') {
       processJsNode(nodeJobId, code, nodeInput, finish);
     } else {
@@ -1096,6 +1182,10 @@ function finalizeJob(id, result) {
       job.log = result.log;
       job.executionTime = result.executionTime;
       job.endTime = new Date().toISOString();
+      // Store modified variables from execution
+      if (result.variables && Object.keys(result.variables).length > 0) {
+        job.variables = { ...(job.variables || {}), ...result.variables };
+      }
       if (result.dontWaitForOutput) {
         job.status = 'completed'; // or running? but since async, completed
       }
@@ -1250,26 +1340,43 @@ function processJobFile(filePath) {
    Language-Specific Runners
    =============================== */
 
-function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
+function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
   const uid = nowUid();
   const tempGroovyPath = path.join(INBOX, `node_groovy_${uid}.groovy`);
   const tempInputPath = path.join(INBOX, `node_groovy_${uid}.input`);
   const tempOutputPath = path.join(INBOX, `node_groovy_${uid}.output`);
+  const tempVariablesPath = path.join(INBOX, `node_groovy_${uid}.variables`);
   const libPath = _codeFilePath ? path.join(path.dirname(_codeFilePath), 'lib') : undefined;
 
   fs.writeFileSync(tempInputPath, JSON.stringify(input === undefined ? null : input), 'utf8');
+  fs.writeFileSync(tempVariablesPath, JSON.stringify(variables), 'utf8');
 
   const inputPathGroovy = tempInputPath.replace(/\\/g, '/');
   const outputPathGroovy = tempOutputPath.replace(/\\/g, '/');
+  const variablesPathGroovy = tempVariablesPath.replace(/\\/g, '/');
+
+  // Generate Groovy variable loading code
+  const varNames = Object.keys(variables);
+  const variableLoading = varNames.length > 0
+    ? `def __variables = new groovy.json.JsonSlurper().parseText(new File('${variablesPathGroovy}').text)\n` +
+      varNames.map(name => `def ${name} = __variables['${name}']`).join('\n')
+    : '';
+
+  // Generate variable capture code
+  const variableCapture = varNames.length > 0
+    ? `def __capturedVars = [${varNames.map(name => `'${name}': ${name}`).join(', ')}]\nnew File('${variablesPathGroovy}').text = groovy.json.JsonOutput.toJson(__capturedVars)`
+    : '';
 
   const groovyCode = `
   def smartParse = { s ->
       try { (s?.trim()?.startsWith('{') || s?.trim()?.startsWith('[')) && s?.contains('\"') ? new groovy.json.JsonSlurper().parseText(s) : Eval.me(s) }
       catch(e) { s }
   }
+  ${variableLoading}
   input = smartParse(new File('${inputPathGroovy}').text)
   def output = ""
   ${code}
+  ${variableCapture}
   def asJson = { obj ->
     try {
         groovy.json.JsonOutput.toJson(obj)
@@ -1283,7 +1390,7 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
   try {
     fs.writeFileSync(tempGroovyPath, groovyCode, 'utf8');
   } catch (err) {
-    finish({ output: null, log: `Failed to write Groovy script: ${err.message}`, error: err.message });
+    finish({ output: null, log: `Failed to write Groovy script: ${err.message}`, error: err.message, variables: {} });
     return;
   }
 
@@ -1309,6 +1416,18 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
       safeUnlinkSync(tempOutputPath);
     }
 
+    // Read modified variables
+    let modifiedVariables = {};
+    try {
+      if (fs.existsSync(tempVariablesPath)) {
+        const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+        modifiedVariables = JSON.parse(raw);
+        safeUnlinkSync(tempVariablesPath);
+      }
+    } catch {
+      modifiedVariables = {};
+    }
+
     if (typeof outputValue === 'string') {
       outputValue = outputValue.trim();
     }
@@ -1323,6 +1442,7 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
       log: errorInStdout === '' ? stdout.trim() : null,
       error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
       output: outputValue,
+      variables: modifiedVariables,
     });
   });
 
@@ -1334,21 +1454,28 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
-      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user' });
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
     }
   }, STOP_CHECK_INTERVAL_MS);
 
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processBatchNode(id, code, input, finish, _codeFilePath, execCwd) {
+function processBatchNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
   const uid = nowUid();
   const tempBatchPath = path.join(INBOX, `node_batch_${uid}.bat`);
   const tempOutputPath = path.join(INBOX, `node_batch_${uid}.output`);
   const inputVar = input !== undefined ? String(input).replace(/\\"/g, '\\\\\\"') : '';
 
+  // For batch, only support simple string/number variables via environment (read-only)
+  const variableEnvVars = Object.entries(variables)
+    .filter(([_, v]) => typeof v === 'string' || typeof v === 'number')
+    .map(([name, val]) => `set ${name}=${String(val).replace(/"/g, '\\"')}`)
+    .join('\n');
+
   const batchCode =
     `@echo off
+${variableEnvVars}
 set INPUT="${inputVar}"
 set OUTPUT="${tempOutputPath}"
 ${code}
@@ -1357,7 +1484,7 @@ ${code}
   try {
     fs.writeFileSync(tempBatchPath, batchCode, 'utf8');
   } catch (err) {
-    finish({ output: null, log: `Failed to write batch file: ${err.message}`, error: err.message });
+    finish({ output: null, log: `Failed to write batch file: ${err.message}`, error: err.message, variables: {} });
     return;
   }
 
@@ -1403,10 +1530,12 @@ ${code}
       errorInStdout = stdout;
     }
 
+    // Batch variables are read-only, return empty
     finish({
       log: errorInStdout === '' ? stdout.trim() : null,
       error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
       output: outputValue,
+      variables: {},
     });
   });
 
@@ -1418,18 +1547,19 @@ ${code}
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
-      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user' });
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
     }
   }, STOP_CHECK_INTERVAL_MS);
 
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processJsBackendNode(id, code, input, finish, codeFilePath, execCwd) {
+function processJsBackendNode(id, code, input, finish, codeFilePath, execCwd, variables = {}) {
   const uid = nowUid();
   const tempId = `node_jsbackend_${uid}`;
   const tempScriptPath = path.join(INBOX, `${tempId}.mjs`); // use ESM to support import
   const tempOutputPath = path.join(INBOX, `${tempId}.output`);
+  const tempVariablesPath = path.join(INBOX, `${tempId}.variables`);
 
   if (codeFilePath) {
     const baseFolder = path.dirname(codeFilePath);
@@ -1445,11 +1575,27 @@ function processJsBackendNode(id, code, input, finish, codeFilePath, execCwd) {
     code = rewriteImports(code, baseFolder);
   }
 
+  // Generate variable declarations
+  const varNames = Object.keys(variables);
+  const variableDeclarations = varNames.map(name => `let ${name} = __variables["${name}"];`).join('\n');
+  const variableCapture = varNames.length > 0
+    ? `const __capturedVariables = { ${varNames.join(', ')} };\nfs.writeFileSync(${JSON.stringify(tempVariablesPath)}, JSON.stringify(__capturedVariables), 'utf8');`
+    : '';
+
   const codeWithInput = `
 let output = "";
 const input = ${JSON.stringify(input)};
+const __variables = ${JSON.stringify(variables)};
 import fs from 'fs';
+
+// Inject variables (accessible by their node labels)
+${variableDeclarations}
+
 ${code}
+
+// Capture modified variables
+${variableCapture}
+
 fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf8');
 `;
 
@@ -1477,6 +1623,18 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
         outputValue = null;
       }
 
+      // Read modified variables
+      let modifiedVariables = {};
+      try {
+        if (fs.existsSync(tempVariablesPath)) {
+          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+          modifiedVariables = JSON.parse(raw);
+          safeUnlinkSync(tempVariablesPath);
+        }
+      } catch {
+        modifiedVariables = {};
+      }
+
       if (typeof outputValue === 'string') {
         outputValue = outputValue.trim();
       }
@@ -1489,6 +1647,7 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
         log: errorInStdout === '' ? stdout.trim() : null,
         error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
         output: outputValue,
+        variables: modifiedVariables,
       });
     }
   );
@@ -1501,27 +1660,50 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
-      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user' });
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
     }
   }, STOP_CHECK_INTERVAL_MS);
 
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processPowershellNode(id, code, input, finish, _codeFilePath, execCwd) {
+function processPowershellNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
   const uid = nowUid();
   const tempPs1Path = path.join(INBOX, `node_ps_${uid}.ps1`);
   const tempOutputPath = path.join(INBOX, `node_ps_${uid}.output`);
+  const tempVariablesPath = path.join(INBOX, `node_ps_${uid}.variables.json`);
   const inputVar = input !== undefined ? String(input).replace(/"/g, '""') : '';
-  const psCode = `$env:INPUT="${inputVar}"
+
+  // Write variables to JSON file
+  const varNames = Object.keys(variables);
+  try {
+    fs.writeFileSync(tempVariablesPath, JSON.stringify(variables), 'utf8');
+  } catch (err) {
+    // Continue without variables if file write fails
+  }
+
+  // Generate PowerShell variable loading code
+  const variableLoading = varNames.length > 0
+    ? `$__variablesJson = Get-Content -Path "${tempVariablesPath.replace(/\\/g, '\\\\')}" -Raw | ConvertFrom-Json\n` +
+      varNames.map(name => `$${name} = $__variablesJson.${name}`).join('\n')
+    : '';
+
+  // Generate variable capture code
+  const variableCapture = varNames.length > 0
+    ? `$__capturedVars = @{\n${varNames.map(name => `    '${name}' = $${name}`).join('\n')}\n}\n$__capturedVars | ConvertTo-Json -Depth 10 | Set-Content -Path "${tempVariablesPath.replace(/\\/g, '\\\\')}"`
+    : '';
+
+  const psCode = `${variableLoading}
+$env:INPUT="${inputVar}"
 $env:OUTPUT="${tempOutputPath}"
 ${code}
+${variableCapture}
 `;
 
   try {
     fs.writeFileSync(tempPs1Path, psCode, 'utf8');
   } catch (err) {
-    finish({ output: null, log: `Failed to write PowerShell file: ${err.message}`, error: err.message });
+    finish({ output: null, log: `Failed to write PowerShell file: ${err.message}`, error: err.message, variables: {} });
     return;
   }
 
@@ -1540,6 +1722,18 @@ ${code}
         }
       } catch {
         outputValue = null;
+      }
+
+      // Read modified variables
+      let modifiedVariables = {};
+      try {
+        if (fs.existsSync(tempVariablesPath)) {
+          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+          modifiedVariables = JSON.parse(raw);
+          safeUnlinkSync(tempVariablesPath);
+        }
+      } catch {
+        modifiedVariables = {};
       }
 
       if (!outputValue && stdout) outputValue = stdout.trim();
@@ -1561,6 +1755,7 @@ ${code}
         log: errorInStdout === '' ? stdout.trim() : null,
         error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
         output: outputValue,
+        variables: modifiedVariables,
       });
     }
   );
@@ -1573,7 +1768,7 @@ ${code}
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
-      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user' });
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
     }
   }, STOP_CHECK_INTERVAL_MS);
 
@@ -1661,7 +1856,7 @@ app.use(express.static(path.join(__dirname, '..')));
 // Job Management Routes
 app.post('/api/v1/jobs', (req, res) => {
   try {
-    const { type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId } = req.body;
+    const { type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId, variables } = req.body;
 
     if (!type) {
       return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job type is required' } });
@@ -1679,6 +1874,7 @@ app.post('/api/v1/jobs', (req, res) => {
       basePath,
       sessionId,
       runnerId,
+      variables: variables || {},
       status: 'queued',
       startTime: new Date().toISOString(),
       stopRequested: false,
@@ -1717,6 +1913,7 @@ app.get('/api/v1/jobs/:jobId', (req, res) => {
     executionTime: job.executionTime,
     startTime: job.startTime,
     endTime: job.endTime,
+    variables: job.variables || {},
   });
 });
 
@@ -1996,13 +2193,13 @@ function processJob(job) {
       }
     })();
   } else if (type === 'groovy') {
-    processGroovyNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
+    processGroovyNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else if (type === 'batch') {
-    processBatchNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
+    processBatchNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else if (type === 'jsbackend' || type === 'playwright') {
-    processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
+    processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else if (type === 'powershell') {
-    processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd);
+    processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else {
     processJsNode(jobId, code, input, wrappedFinish);
   }

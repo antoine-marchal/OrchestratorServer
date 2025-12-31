@@ -12,6 +12,7 @@ interface JobRequest {
   timeout?: number;
   dontWaitForOutput?: boolean;
   basePath?: string;
+  variables?: Record<string, any>;
 }
 
 interface JobResponse {
@@ -24,6 +25,7 @@ interface JobResponse {
   executionTime?: number;
   startTime: string;
   endTime?: string;
+  variables?: Record<string, any>;
 }
 
 class ApiClient {

@@ -32,8 +32,8 @@ Orchestrator is a web application built with React and Node.js. It enables you t
 
 ```bash
 # Clone the repository
-git clone https://github.com/antoine-marchal/Orchestrator.git
-cd Orchestrator
+git clone https://github.com/antoine-marchal/OrchestratorServer.git
+cd OrchestratorServer
 
 # Install dependencies
 npm install
@@ -86,8 +86,7 @@ Orchestrator supports various node types, each with a unique icon for quick iden
 | **Groovy** | Coffee (red) | Execute Groovy scripts via the backend |
 | **Batch** | Terminal (gray) | Run Windows batch scripts |
 | **PowerShell** | TerminalSquare (blue) | Execute PowerShell scripts |
-| **Playwright** | Browser | Automate browser tasks using Playwright |
-| **Constant** | Hash (purple) | Provide static values as node input |
+| **Variable** | Hash (purple) | Shared state accessible and modifiable by all nodes |
 | **Comment** | MessageSquare (gray) | Add documentation/comments to your flow |
 | **Flow** | GitBranch (green) | Execute another flow (linked to a session) |
 | **Goto** | CornerRightDown (yellow) | Conditional branching based on JS expressions |
@@ -205,6 +204,76 @@ Flow nodes operate by executing the workflow from their linked session:
 - **Business Process Automation**: Customer onboarding, order processing, approvals
 - **Integration Scenarios**: API handling, authentication flows, error handling
 
+## Variable Nodes
+
+Variable nodes provide shared state that can be read and modified by any node during flow execution.
+
+### Key Features
+
+- **JSON Parsing**: Values are automatically parsed as JSON objects when possible
+- **Dual Access**: Variables are accessible both via edge connections AND by name in code
+- **Real-time Updates**: When a script modifies a variable, subsequent nodes see the updated value immediately
+- **Cross-language Support**: Works with JavaScript (browser & backend), Groovy, PowerShell, and Batch
+
+### How to Use Variables
+
+1. **Create a Variable Node**: Add a Variable node and give it a name (e.g., "config")
+2. **Set Initial Value**: Enter a value in the node (JSON objects work: `{"timeout": 30, "retries": 3}`)
+3. **Access in Scripts**: The variable is automatically available in your scripts by its name
+
+### Language Examples
+
+**JavaScript (Browser & Backend):**
+```javascript
+// Read variable
+console.log(config.timeout);  // 30
+
+// Modify variable
+config.newField = "added";
+config.retries = 5;
+```
+
+**Groovy:**
+```groovy
+// Read variable
+println config.timeout  // 30
+
+// Modify variable
+config.newField = "added"
+config.retries = 5
+```
+
+**PowerShell:**
+```powershell
+# Read variable
+Write-Output $config.timeout  # 30
+
+# Modify variable
+$config.newField = "added"
+$config.retries = 5
+```
+
+**Batch (read-only):**
+```batch
+REM Variables available as environment variables (strings only)
+echo %config%
+```
+
+### Variable Behavior
+
+- **Persistence**: Changes persist throughout the flow execution
+- **Chaining**: When Node A modifies a variable, Node B (executed after) sees the changes
+- **Starter Nodes**: When a starter node is set, only nodes from that point forward execute
+- **Conflict Resolution**: Last write wins for parallel modifications
+- **Name Sanitization**: Variable names are sanitized for valid identifiers (spaces become underscores)
+
+### Best Practices
+
+- Use descriptive variable names that reflect their purpose
+- Initialize variables with proper JSON structure when storing objects
+- Use variables for configuration, counters, or shared state between nodes
+- Avoid reserved names: `input`, `output`, `console`, `process`, `require`, `module`, `exports`
+
 ## Goto Nodes
 
 Goto nodes enable conditional branching within your flows:
@@ -231,4 +300,4 @@ Contributions are welcome!
 - [Zustand](https://zustand-demo.pmnd.rs/)
 
 ---
-© 2024 Orchestrator. All rights reserved.
+© 2025 Orchestrator. All rights reserved.

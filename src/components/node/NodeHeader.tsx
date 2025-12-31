@@ -125,7 +125,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
 
           {(() => {
             switch (data.type) {
-              case 'constant':
+              case 'variable':
                 return <Hash className="w-5 h-5 text-purple-500 flex-shrink-0" />;
               case 'flow':
                 return <GitBranch className="w-5 h-5 text-emerald-500 flex-shrink-0" />;
@@ -171,7 +171,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           />
         </div>
         <div className="flex items-center gap-2">
-          {data.type !== 'constant' && data.type !== 'flow' && data.type !== 'goto' && (
+          {data.type !== 'variable' && data.type !== 'flow' && data.type !== 'goto' && (
             <button
               className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
               onClick={() => openEditorModal(nodeId)}
@@ -241,8 +241,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
         </div>
       </div>
-      {/* Value input below title for constants */}
-      {data.type === 'constant' && onValueChange && (
+      {/* Value input below title for variables */}
+      {data.type === 'variable' && onValueChange && (
         <input
           type="text"
           value={data.value || ''}
