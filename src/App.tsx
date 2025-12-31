@@ -1,49 +1,24 @@
 import React, { useEffect } from 'react';
 import FlowEditor from './components/FlowEditor';
 import CodeEditorModal from './components/CodeEditorModal.tsx';
-import { useFlowStore } from './store/flowStore';
+import SessionTabs from './components/SessionTabs';
+import { useFlowStore } from './store/sessionFlowStore';
+import { useSessionStore } from './store/sessionStore';
 
 
-// Make TS happy with the global
-declare global {
-  interface Window {
-    electronAPI?: {
-      onLoadFlowJson: (
-        callback: (payload: [string, string | null]) => void
-      ) => void;
-      setTitle?: (title: string) => void;
-      saveFlowToPath?: (path: string, data: string) => void;
-      openFlowFile?: () => Promise<{ filePath: string; data: string } | null>;
-      saveFlowAs?: (data: string) => Promise<string | null>;
-    }
-  }
-}
+// TODO: Remove preload dependencies - electronAPI will be replaced with HTTP APIs
 
 function App() {
   const { editorModal, nodes, closeEditorModal, setNodes, setEdges, setFlowPath, saveFlow, loadFlow } = useFlowStore();
+  const { loadSessions } = useSessionStore();
 
-
+  // Initialize sessions on app start
   useEffect(() => {
-    const api = window.electronAPI;
-    if (api && api.onLoadFlowJson) {
-      api.onLoadFlowJson(([filePath, data]) => {  
-        console.log(filePath);
-        if (data) {
-          try {
-            const flow = JSON.parse(data);
-            setNodes(flow.nodes || []);
-            setEdges(flow.edges || []);
-            setFlowPath(filePath);
-            // Set window title to include file path (or just filename)
-            const fileName = filePath.split(/[\\/]/).pop();
-            if (fileName) api.setTitle?.(fileName);
-          } catch (err) {
-            alert('Error loading flow from file: ' + err);
-          }
-        }
-      });
-    }
-  }, [setNodes, setEdges,]);
+    loadSessions();
+  }, [loadSessions]);
+
+  // TODO: Remove preload dependencies - flow loading will be handled via HTTP APIs
+  // Removed useEffect that listened for window.electronAPI.onLoadFlowJson
   useEffect(() => {
     function handleShortcuts(e: KeyboardEvent) {
       // Block global shortcuts if editor modal is open
@@ -69,9 +44,11 @@ function App() {
   const node = nodes.find(n => n.id === editorModal.nodeId);
 
   return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-
-        <FlowEditor />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+        <SessionTabs />
+        <div className="flex-1">
+          <FlowEditor />
+        </div>
         {editorModal.isOpen && node && (
           <CodeEditorModal
             nodeId={node.id}

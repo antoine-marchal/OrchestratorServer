@@ -1,17 +1,32 @@
 {
-    "name": "backend",
+    "name": "orchestrator-backend",
     "version": "1.0.0",
-    "description": "Backend for external Node-based poller with Playwright",
-    "main": "poller.js",
+    "description": "Orchestrator API Server - REST API for job execution and session management",
+    "main": "api-server.cjs",
+    "bin": "api-server.cjs",
     "type": "module",
     "scripts": {
-        "start": "node poller.cjs"
+        "start": "node api-server.cjs",
+        "build": "pkg . --targets node18-win-x64 --output dist/orchestrator-backend.exe",
+        "build:all": "pkg . --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --out-path dist"
+    },
+    "pkg": {
+        "scripts": "api-server.cjs",
+        "assets": [
+            "groovyExec.jar"
+        ],
+        "outputPath": "dist"
     },
     "dependencies": {
+        "cors": "^2.8.5",
         "dayjs": "^1.11.13",
+        "express": "^5.1.0",
         "lodash": "^4.17.21",
         "playwright": "^1.43.1",
         "tree-kill": "^1.2.2"
+    },
+    "devDependencies": {
+        "pkg": "^5.8.1"
     },
     "engines": {
         "node": ">=18"

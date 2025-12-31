@@ -1,5 +1,5 @@
 import React from 'react';
-import { useFlowStore } from '../store/flowStore';
+import { useFlowStore } from '../store/sessionFlowStore';
 import { Terminal, X, Trash2, Maximize2, Minimize2, Clock } from 'lucide-react';
 import { useTheme } from "../context/ThemeContext";
 
@@ -136,7 +136,7 @@ const Console: React.FC = () => {
               title="Node execution timeout"
             >
               <Clock className="w-4 h-4" />
-              <span className="ml-1 text-xs">{nodeExecutionTimeout / 1000}s</span>
+              <span className="ml-1 text-xs">{nodeExecutionTimeout === Infinity ? '∞' : `${nodeExecutionTimeout / 1000}s`}</span>
             </button>
             {timeoutDropdownOpen && (
               <div
@@ -146,7 +146,7 @@ const Console: React.FC = () => {
                 <div className="py-1 px-2 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-300 dark:border-gray-700">Execution Timeout</div>
                 {[5, 30, 60, 120, 600, 1200, Infinity].map((seconds) => (
                   <button
-                    key={seconds}
+                    key={String(seconds)}
                     className={`w-full text-left px-3 py-1 hover:bg-gray-700 hover:text-white ${
                       nodeExecutionTimeout === seconds * 1000 ? 'bg-gray-700 text-white' : ''
                     }`}
@@ -155,7 +155,7 @@ const Console: React.FC = () => {
                       setTimeoutDropdownOpen(false);
                     }}
                   >
-                    {seconds} seconds
+                    {seconds === Infinity ? 'No limit' : `${seconds} seconds`}
                   </button>
                 ))}
               </div>

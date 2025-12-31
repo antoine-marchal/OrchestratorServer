@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AceEditor from 'react-ace';
 import { X, FileCode, Save, ExternalLink } from 'lucide-react';
-import { useFlowStore } from '../store/flowStore';
+import { useFlowStore } from '../store/sessionFlowStore';
 import { pathUtils } from '../utils/pathUtils';
 import { useTheme } from "../context/ThemeContext";
 
@@ -40,7 +40,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
   onClose,
 }) => {
   const { theme } = useTheme();
-  const { updateNodeData, flowPath } = useFlowStore();
+  const { updateNodeData, flowPath, nodes } = useFlowStore();
   const [value, setValue] = React.useState(code);
   const [isValid, setIsValid] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
   const [externalFilePath, setExternalFilePath] = useState<string | null>(null);
   const editorRef = React.useRef<any>(null);
   // Get the node data to check if it has a codeFilePath
-  const node = useFlowStore(state => state.nodes.find(n => n.id === nodeId));
+  const node = nodes.find(n => n.id === nodeId);
 
   useEffect(() => {
     if (node?.data.codeFilePath) {
@@ -63,7 +63,9 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
 
   const handleSave = async () => {
     try {
+      // TODO: Replace with browser API for file operations
       // If this is an external file, update both the node data and the file
+      /*
       if (isExternalFile && externalFilePath) {
         let absoluteFilePath = externalFilePath;
 
@@ -84,6 +86,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
           }
         }
       }
+      */
 
       // Always update the node data with the new code
       updateNodeData(nodeId, { code: value });
@@ -96,19 +99,11 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
 
 
   const createExternalFile = async () => {
-    if (!flowPath) {
-      setError('Cannot create external file: the flow has not been saved yet');
-      return;
-    }
-
+    // In browser environment, download the code as a file instead of creating external files
     try {
-      // Create a folder with the same name as the .or file (without extension)
-      const flowFileName = flowPath.split(/[\\/]/).pop() || 'flow';
-      const flowFolderName = flowFileName.replace(/\.or$/, '');
-
-      // Determine file extension based on node type
+      // Determine file extension based on language
       let extension;
-      switch (language) {
+      switch (language.toLowerCase()) {
         case 'javascript':
         case 'jsbackend':
           extension = 'js';
@@ -126,44 +121,27 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
           extension = 'txt';
       }
 
-      // Create filename: {nodeId}.{extension}
-      const nodeName = node?.data?.label || nodeId;
-      const safeNodeName = nodeName.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_'); // Sanitize filename
-      const codeFileName = `${safeNodeName}.${extension}`;
-      const baseDir = pathUtils.dirname(flowPath);
-      const folderPath = pathUtils.join(baseDir, flowFolderName);
-      const codeFilePath = pathUtils.join(folderPath, codeFileName);
-      // Get the absolute path using the Electron API if available
-      let absoluteCodeFilePath;
-      if (window.electronAPI?.getAbsolutePath) {
-        absoluteCodeFilePath = window.electronAPI.getAbsolutePath(codeFilePath, flowPath);
-      } else {
-        // Fallback to path.join if the API is not available
-        absoluteCodeFilePath = pathUtils.join(pathUtils.dirname(flowPath), codeFilePath);
-      }
+      // Create filename based on node label or default
+      const node = nodes.find(n => n.id === nodeId);
+      const baseName = node?.data?.label?.replace(/[^a-zA-Z0-9_\-]/g, '_') || `node_${nodeId}`;
+      const fileName = `${baseName}.${extension}`;
 
-      // Ensure the directory exists
-      if (window.electronAPI?.ensureDirectoryExists) {
-        await window.electronAPI.ensureDirectoryExists(pathUtils.dirname(absoluteCodeFilePath));
-      }
+      // Create and download the file
+      const blob = new Blob([value], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
 
-      // Save the code to the file
-      if (window.electronAPI?.writeTextFile) {
-        await window.electronAPI.writeTextFile(absoluteCodeFilePath, value);
-        console.log(`Created external code file: ${absoluteCodeFilePath}`);
+      // Update the node to mark it as having an external file (for UI purposes)
+      updateNodeData(nodeId, { codeFilePath: fileName });
+      setIsExternalFile(true);
+      setExternalFilePath(fileName);
 
-        // Update the node data to include the codeFilePath
-        updateNodeData(nodeId, {
-          code: value,
-          codeFilePath: pathUtils.join(flowFolderName, codeFileName).replace(/\\/g, '/')
-        });
-
-        setIsExternalFile(true);
-        setExternalFilePath(codeFilePath);
-      }
     } catch (err) {
-      console.error('Error creating external file:', err);
-      setError(`Failed to create external file: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`Failed to download file: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
