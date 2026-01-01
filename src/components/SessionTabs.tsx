@@ -78,7 +78,7 @@ const SortableTab: React.FC<SortableTabProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center min-w-0 max-w-xs px-3 py-2 mr-1 rounded-t-lg cursor-pointer transition-colors ${
+      className={`flex items-center min-w-0 max-w-xs px-3 py-2 mr-1 rounded-t-lg cursor-pointer transition-colors dark:text-gray-200 ${
         isActive
           ? 'bg-white dark:bg-gray-700 border-t border-l border-r border-gray-300 dark:border-gray-600'
           : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'
@@ -295,8 +295,8 @@ const SessionTabs: React.FC = () => {
         title="Create new session"
         disabled={isLoading}
       >
-        <Plus size={14} />
-        <span className="ml-1 text-sm">New</span>
+        <Plus size={14} className="dark:text-gray-200" />
+        <span className="ml-1 text-sm dark:text-gray-200">New</span>
       </button>
     </div>
   );
