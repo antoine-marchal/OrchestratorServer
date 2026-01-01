@@ -1,7 +1,7 @@
 import { Node, Edge } from 'reactflow';
 import { useSessionStore } from './sessionStore';
 import { pathUtils } from '../utils/pathUtils';
-import { apiClient } from '../utils/apiClient';
+import { apiClient, StreamLogEntry } from '../utils/apiClient';
 
 function prettyFormat(val: any): string {
   if (val == null) return '';
@@ -421,44 +421,23 @@ export const useFlowStore = (): FlowStoreInterface => {
           try {
             const { jobId } = await apiClient.submitJob(jobRequest);
 
-            // Poll for job completion
-            const jobResult = await apiClient.pollJobStatus(jobId, (status) => {
-              // Optional: handle progress updates if needed
-              if (status.progress !== undefined) {
-                //addLog('log', `Flow execution progress: ${status.progress}%`);
+            // Poll for job completion with streaming logs
+            const jobResult = await apiClient.pollJobStatus(
+              jobId,
+              undefined, // onProgress
+              500, // poll interval (faster for real-time feel)
+              (logEntry: StreamLogEntry) => {
+                // Display streaming logs in real-time
+                if (logEntry.type === 'error') {
+                  addLog('error', logEntry.message);
+                } else {
+                  addLog('log', logEntry.message);
+                }
               }
-            });
+            );
 
             // Process the result from the flow execution
             result = jobResult.output;
-
-            // Process logs from nested flow execution
-            log = jobResult.log;
-
-            // If we have logs from nested flow execution, process them to display properly
-            if (log && typeof log === 'string' && log.includes('[Nested]')) {
-              // Split the log by lines to process each nested log entry
-              const logLines = log.split('\n');
-
-              // Process each line of the log
-              logLines.forEach(line => {
-                if (line.includes('[Nested]')) {
-                  // Extract the nested log message
-                  const nestedLogMessage = line.substring(line.indexOf('[Nested]') + 9).trim();
-
-                  // Determine if it's an error or regular log
-                  if (nestedLogMessage.startsWith('ERROR:')) {
-                    // It's an error log from a nested node
-                    const errorMessage = nestedLogMessage.substring(7).trim();
-                    addLog('error', `Nested: ${errorMessage}`);
-                  } else {
-                    // It's a regular log from a nested node
-                    addLog('log', `Nested: ${nestedLogMessage}`);
-                  }
-                }
-              });
-            }
-
             error = jobResult.error;
 
             // Calculate execution time - use the one from backend if available, otherwise calculate locally
@@ -664,16 +643,22 @@ export const useFlowStore = (): FlowStoreInterface => {
               return;
             }
 
-            // Poll for job completion
-            const jobResult = await apiClient.pollJobStatus(jobId, (status) => {
-              // Optional: handle progress updates if needed
-              if (status.progress !== undefined) {
-                //addLog('log', `Execution progress: ${status.progress}%`);
+            // Poll for job completion with streaming logs
+            const jobResult = await apiClient.pollJobStatus(
+              jobId,
+              undefined, // onProgress
+              500, // poll interval (faster for real-time feel)
+              (logEntry: StreamLogEntry) => {
+                // Display streaming logs in real-time
+                if (logEntry.type === 'error') {
+                  addLog('error', logEntry.message);
+                } else {
+                  addLog('log', logEntry.message);
+                }
               }
-            });
+            );
 
             result = jobResult.output !== '[]' ? jobResult.output : null;
-            log = jobResult.log;
             error = jobResult.error;
 
             // Update variable nodes with returned modified variables
@@ -697,10 +682,9 @@ export const useFlowStore = (): FlowStoreInterface => {
       if (!(node.data.dontWaitForOutput && result?.dontWaitForOutput)) {
         updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
       }
-      if (log) addLog('log', prettyFormat(log));
+      // Display final output (logs and errors are already streamed in real-time via polling)
       if (result !== undefined && result !== null && typeof result === 'object' && 'output' in result) addLog('output', prettyFormat(result.output));
       else if (result !== undefined && result !== null) addLog('output', prettyFormat(result));
-      if (error) addLog('error', prettyFormat(error));
 
       // For nodes with dontWaitForOutput, we need to keep the jobId
       // so that the node can be stopped later

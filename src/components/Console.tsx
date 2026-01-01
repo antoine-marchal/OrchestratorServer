@@ -81,7 +81,8 @@ const Console: React.FC = () => {
   ];
 
   function escapeHtml(text: string) {
-    return text
+    if (text == null) return '';
+    return String(text)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -103,6 +104,9 @@ const Console: React.FC = () => {
   };
 
   function ansiToHtml(text: string): string {
+    // Handle null/undefined
+    if (text == null) return '';
+
     // First escape HTML
     let escaped = escapeHtml(text);
 
@@ -307,7 +311,7 @@ const Console: React.FC = () => {
             <span
               className="whitespace-pre"
               dangerouslySetInnerHTML={{
-                __html: ansiToHtml(msg.message)
+                __html: ansiToHtml(msg.message || '')
               }}
             />
 

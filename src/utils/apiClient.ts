@@ -15,6 +15,13 @@ interface JobRequest {
   variables?: Record<string, any>;
 }
 
+interface StreamLogEntry {
+  type: 'log' | 'error' | 'output';
+  message: string;
+  nodeId?: string | null;
+  timestamp: number;
+}
+
 interface JobResponse {
   jobId: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
@@ -26,6 +33,8 @@ interface JobResponse {
   startTime: string;
   endTime?: string;
   variables?: Record<string, any>;
+  streamLogs?: StreamLogEntry[];
+  totalLogCount?: number;
 }
 
 class ApiClient {
@@ -110,8 +119,9 @@ class ApiClient {
     });
   }
 
-  async getJobStatus(jobId: string): Promise<JobResponse> {
-    return this.request<JobResponse>(`/jobs/${jobId}`);
+  async getJobStatus(jobId: string, lastLogIndex?: number): Promise<JobResponse> {
+    const query = lastLogIndex !== undefined ? `?lastLogIndex=${lastLogIndex}` : '';
+    return this.request<JobResponse>(`/jobs/${jobId}${query}`);
   }
 
   async stopJob(jobId: string): Promise<void> {
@@ -123,12 +133,27 @@ class ApiClient {
   async pollJobStatus(
     jobId: string,
     onProgress?: (status: JobResponse) => void,
-    pollInterval = 1000
+    pollInterval = 1000,
+    onStreamLog?: (log: StreamLogEntry) => void
   ): Promise<JobResponse> {
     return new Promise((resolve, reject) => {
+      let lastLogIndex = 0;
+
       const poll = async () => {
         try {
-          const status = await this.getJobStatus(jobId);
+          const status = await this.getJobStatus(jobId, lastLogIndex);
+
+          // Process new streaming logs
+          if (onStreamLog && status.streamLogs && status.streamLogs.length > 0) {
+            for (const log of status.streamLogs) {
+              onStreamLog(log);
+            }
+          }
+          // Update log index for next poll
+          if (status.totalLogCount !== undefined) {
+            lastLogIndex = status.totalLogCount;
+          }
+
           onProgress?.(status);
 
           if (status.status === 'completed' || status.status === 'failed' || status.status === 'stopped') {
@@ -156,3 +181,4 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+export type { StreamLogEntry };

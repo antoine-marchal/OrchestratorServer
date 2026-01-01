@@ -9,7 +9,7 @@
 
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
@@ -176,6 +176,66 @@ let isMasterFlowRunning = false;
 const runningProcesses = new Map(); // jobId -> ChildProcess
 const jobs = new Map(); // jobId -> job object
 const sessions = new Map(); // sessionId -> session object
+const jobLogListeners = new Map(); // jobId -> Set of SSE response objects
+const jobLogBuffers = new Map(); // jobId -> array of log entries
+
+/**
+ * Emit a log entry for a job (broadcasts to SSE clients and stores in buffer)
+ * @param {string} jobId - The job ID
+ * @param {string} type - 'log', 'error', or 'output'
+ * @param {string} message - The log message
+ * @param {string} [nodeId] - Optional node ID for flow execution
+ */
+function emitJobLog(jobId, type, message, nodeId = null) {
+  const entry = {
+    type,
+    message,
+    nodeId,
+    timestamp: Date.now(),
+  };
+
+  // Store in buffer
+  if (!jobLogBuffers.has(jobId)) {
+    jobLogBuffers.set(jobId, []);
+  }
+  jobLogBuffers.get(jobId).push(entry);
+
+  // Broadcast to SSE listeners
+  const listeners = jobLogListeners.get(jobId);
+  if (listeners && listeners.size > 0) {
+    const data = JSON.stringify(entry);
+    for (const res of listeners) {
+      try {
+        res.write(`data: ${data}\n\n`);
+      } catch (e) {
+        // Client disconnected, will be cleaned up
+      }
+    }
+  }
+}
+
+/**
+ * Clean up log listeners and buffers for a job
+ */
+function cleanupJobLogs(jobId) {
+  // Close all SSE connections
+  const listeners = jobLogListeners.get(jobId);
+  if (listeners) {
+    for (const res of listeners) {
+      try {
+        res.write('data: {"type":"end"}\n\n');
+        res.end();
+      } catch (e) {
+        // Already closed
+      }
+    }
+    jobLogListeners.delete(jobId);
+  }
+  // Keep buffer for a while for late subscribers, then clean up
+  setTimeout(() => {
+    jobLogBuffers.delete(jobId);
+  }, 60000); // Keep logs for 1 minute after job ends
+}
 
 /* ===============================
    Path & Resource Utilities
@@ -225,9 +285,15 @@ function terminateProcess(jobId) {
   }
 }
 
-function shouldStopJob(jobId) {
+function shouldStopJob(jobId, parentJobId = null) {
   const job = jobs.get(jobId);
-  return job && job.stopRequested;
+  if (job && job.stopRequested) return true;
+  // Also check parent job if this is a child process within a flow
+  if (parentJobId) {
+    const parentJob = jobs.get(parentJobId);
+    if (parentJob && parentJob.stopRequested) return true;
+  }
+  return false;
 }
 
 function cleanupStopSignal(jobId) {
@@ -580,7 +646,8 @@ async function executeFlowFile(
               currentFlowPath,
               nodeResults,
               currentDir,
-              timeout
+              timeout,
+              jobId
             );
             nodeResults[nodeId] = nested?.output !== undefined ? nested.output : nested;
           } else if (node?.data?.type === 'variable') {
@@ -600,7 +667,8 @@ async function executeFlowFile(
               true,
               timeout,
               basePath || path.dirname(flowFilePath),
-              flowVariables
+              flowVariables,
+              jobId
             );
             // Merge returned variables into flowVariables
             if (res?.variables && Object.keys(res.variables).length > 0) {
@@ -833,7 +901,8 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
         true,
         timeout,
         basePath,
-        flowVariables
+        flowVariables,
+        jobId
       );
       // Merge returned variables into flowVariables
       if (res?.variables && Object.keys(res.variables).length > 0) {
@@ -905,7 +974,7 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
    Node Executors
    =============================== */
 
-async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, currentFlowDir, timeout = 0) {
+async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, currentFlowDir, timeout = 0, jobId = null) {
   const startTime = Date.now();
   const { restore: restoreNestedConsole } = createLogCollector();
   
@@ -957,7 +1026,11 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
         const executionTime = Date.now() - startTime;
         const nestedLogs = restoreNestedConsole();
 
-        printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
+        const sectionTitle = colorize('cyan', `\n=== Node ${node.data.label || nodeId} (${node.data.type}) ===`);
+        console.log(sectionTitle);
+        if (jobId) {
+          emitJobLog(jobId, 'log', sectionTitle, nodeId);
+        }
 
         let formattedOutput;
         if (typeof nestedFlowResult === 'string') {
@@ -970,7 +1043,19 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
           }
         }
 
-        printOutputBlock(formattedOutput, 'cyan');
+        // Print and emit output block
+        const outputHeader = colorize('yellow', 'Output:');
+        const indentedOutput = formattedOutput.split(/\r?\n/).map(line => colorize('cyan', '  ' + line)).join('\n');
+        const outputFooter = colorize('yellow', '---');
+        console.log(outputHeader);
+        console.log(indentedOutput);
+        console.log(outputFooter);
+
+        if (jobId) {
+          emitJobLog(jobId, 'log', outputHeader, nodeId);
+          emitJobLog(jobId, 'log', indentedOutput, nodeId);
+          emitJobLog(jobId, 'log', outputFooter, nodeId);
+        }
 
         nodeResults[nodeId] = nestedFlowResult;
         nodeResults[`${nodeId}_executionTime`] = executionTime;
@@ -1020,7 +1105,11 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
       const executionTime = Date.now() - startTime;
       const nestedLogs = restoreNestedConsole();
 
-      printSectionTitle(`Node ${node.data.label || nodeId} (${node.data.type})`, 'cyan');
+      const sectionTitle = colorize('cyan', `\n=== Node ${node.data.label || nodeId} (${node.data.type}) ===`);
+      console.log(sectionTitle);
+      if (jobId) {
+        emitJobLog(jobId, 'log', sectionTitle, nodeId);
+      }
 
       if (nestedLogs.length > 0) {
         // logs have already been printed via overridden console; no need to duplicate here
@@ -1037,7 +1126,19 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
         }
       }
 
-      printOutputBlock(formattedOutput, 'cyan');
+      // Print and emit output block
+      const outputHeader = colorize('yellow', 'Output:');
+      const indentedOutput = formattedOutput.split(/\r?\n/).map(line => colorize('cyan', '  ' + line)).join('\n');
+      const outputFooter = colorize('yellow', '---');
+      console.log(outputHeader);
+      console.log(indentedOutput);
+      console.log(outputFooter);
+
+      if (jobId) {
+        emitJobLog(jobId, 'log', outputHeader, nodeId);
+        emitJobLog(jobId, 'log', indentedOutput, nodeId);
+        emitJobLog(jobId, 'log', outputFooter, nodeId);
+      }
 
       nodeResults[nodeId] = nestedFlowResult;
       nodeResults[`${nodeId}_executionTime`] = executionTime;
@@ -1051,14 +1152,23 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
   }
 }
 
-async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath, variables = {}) {
+async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath, variables = {}, jobId = null) {
   const nodeJobId = `flow-node-${nowUid()}`;
   const code = node.data.code || '';
   const type = node.data.type;
   const execCwd = jobBasePath || process.cwd();
 
-  printSectionTitle(`Executing node ${node.data.label || nodeId} (${type})`, 'cyan');
-  printLabeledLine('Input', JSON.stringify(nodeInput, null, 2), 'gray');
+  const sectionTitle = colorize('cyan', `\n=== Executing node ${node.data.label || nodeId} (${type}) ===`);
+  const inputLine = colorize('gray', 'Input: ') + JSON.stringify(nodeInput, null, 2);
+
+  console.log(sectionTitle);
+  console.log(inputLine);
+
+  // Emit to frontend if part of a flow execution
+  if (jobId) {
+    emitJobLog(jobId, 'log', sectionTitle, nodeId);
+    emitJobLog(jobId, 'log', inputLine, nodeId);
+  }
 
   const startTime = Date.now();
 
@@ -1082,10 +1192,23 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
       const executionTime = Date.now() - startTime;
 
       if (result.log) {
-        printLabeledLine('Log', result.log, 'gray');
+        const logLine = colorize('gray', 'Log: ') + result.log;
+        console.log(logLine);
+        if (jobId) {
+          emitJobLog(jobId, 'log', logLine, nodeId);
+        }
       }
       if (result.error) {
-        console.error(colorize('red', `Error: ${result.error}`));
+        const errorLine = colorize('red', `Error: ${result.error}`);
+        console.error(errorLine);
+        if (jobId) {
+          emitJobLog(jobId, 'error', errorLine, nodeId);
+        }
+        // If terminated by user, reject to stop the flow
+        if (result.error === 'Process terminated by user') {
+          rejectNode(new Error('Process terminated by user'));
+          return;
+        }
       }
 
       let formattedOutput;
@@ -1098,7 +1221,20 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
           formattedOutput = String(result.output);
         }
       }
-      printOutputBlock(formattedOutput, 'cyan');
+
+      // Print output block
+      const outputHeader = colorize('yellow', 'Output:');
+      const indentedOutput = formattedOutput.split(/\r?\n/).map(line => colorize('cyan', '  ' + line)).join('\n');
+      const outputFooter = colorize('yellow', '---');
+      console.log(outputHeader);
+      console.log(indentedOutput);
+      console.log(outputFooter);
+
+      if (jobId) {
+        emitJobLog(jobId, 'log', outputHeader, nodeId);
+        emitJobLog(jobId, 'log', indentedOutput, nodeId);
+        emitJobLog(jobId, 'log', outputFooter, nodeId);
+      }
 
       nodeResults[nodeId] = result.output;
       nodeResults[`${nodeId}_executionTime`] = executionTime;
@@ -1158,17 +1294,17 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
         }
       })();
     } else if (type === 'groovy') {
-      processGroovyNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processGroovyNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'batch') {
-      processBatchNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processBatchNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'jsbackend' || type === 'playwright') {
-      processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'powershell') {
-      processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'python') {
-      processPythonNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processPythonNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'javascript' || type === 'js') {
-      processJsNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+      processJsNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else {
       finish({ output: null, log: null, error: `Unknown node type: ${type}` });
     }
@@ -1198,6 +1334,8 @@ function finalizeJob(id, result) {
         job.status = 'completed'; // or running? but since async, completed
       }
     }
+    // Clean up SSE log listeners
+    cleanupJobLogs(id);
   } catch (err) {
     if (!isSilent) console.error(`Error during job finalize for ${id}: ${err.message}`);
   }
@@ -1350,7 +1488,7 @@ function processJobFile(filePath) {
    Language-Specific Runners
    =============================== */
 
-function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
+function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}, jobId = null) {
   const uid = nowUid();
   const tempGroovyPath = path.join(INBOX, `node_groovy_${uid}.groovy`);
   const tempInputPath = path.join(INBOX, `node_groovy_${uid}.input`);
@@ -1404,8 +1542,32 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, vari
     return;
   }
 
-  const javaCmd = `java -jar "${groovyJarPath}" "${tempGroovyPath}" "${libPath ? libPath : 'lib'}"`;
-  const child = exec(javaCmd, { cwd: execCwd }, (error, stdout, stderr) => {
+  // Use spawn for real-time log streaming
+  const child = spawn('java', ['-jar', groovyJarPath, tempGroovyPath, libPath || 'lib'], {
+    cwd: execCwd,
+    shell: true,
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) {
+      emitJobLog(jobId, 'log', text, id);
+    }
+  });
+
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) {
+      emitJobLog(jobId, 'error', text, id);
+    }
+  });
+
+  child.on('close', (exitCode) => {
     runningProcesses.delete(id);
     safeUnlinkSync(tempGroovyPath);
 
@@ -1450,17 +1612,23 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, vari
 
     finish({
       log: errorInStdout === '' ? stdout.trim() : null,
-      error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
+      error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null,
       output: outputValue,
       variables: modifiedVariables,
     });
   });
 
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempGroovyPath);
+    safeUnlinkSync(tempInputPath);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
 
   registerProcess(id, child);
 
   const checkStopInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
@@ -1471,7 +1639,7 @@ function processGroovyNode(id, code, input, finish, _codeFilePath, execCwd, vari
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processBatchNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
+function processBatchNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}, jobId = null) {
   const uid = nowUid();
   const tempBatchPath = path.join(INBOX, `node_batch_${uid}.bat`);
   const tempOutputPath = path.join(INBOX, `node_batch_${uid}.output`);
@@ -1498,7 +1666,38 @@ ${code}
     return;
   }
 
-  const child = exec(`cmd /C "${tempBatchPath}"`, { cwd: execCwd }, (error, stdout, stderr) => {
+  // Use spawn for real-time streaming
+  const child = spawn('cmd', ['/C', tempBatchPath], {
+    cwd: execCwd,
+    shell: false,
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) {
+      emitJobLog(jobId, 'log', text, id);
+    }
+  });
+
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) {
+      emitJobLog(jobId, 'error', text, id);
+    }
+  });
+
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempBatchPath);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
+
+  child.on('close', (exitCode) => {
     runningProcesses.delete(id);
     safeUnlinkSync(tempBatchPath);
     let outputValue = null;
@@ -1543,17 +1742,16 @@ ${code}
     // Batch variables are read-only, return empty
     finish({
       log: errorInStdout === '' ? stdout.trim() : null,
-      error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
+      error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null,
       output: outputValue,
       variables: {},
     });
   });
 
-
   registerProcess(id, child);
 
   const checkStopInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
@@ -1564,7 +1762,7 @@ ${code}
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processJsBackendNode(id, code, input, finish, codeFilePath, execCwd, variables = {}) {
+function processJsBackendNode(id, code, input, finish, codeFilePath, execCwd, variables = {}, jobId = null) {
   const uid = nowUid();
   const tempId = `node_jsbackend_${uid}`;
   const tempScriptPath = path.join(INBOX, `${tempId}.mjs`); // use ESM to support import
@@ -1611,62 +1809,91 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
 
   fs.writeFileSync(tempScriptPath, codeWithInput, 'utf8');
 
-  const child = exec(
-    `"${nodeExecutablePath}" "${tempScriptPath}"`,
-    { cwd: execCwd, timeout: JS_BACKEND_TIMEOUT_MS },
-    (error, stdout, stderr) => {
-      runningProcesses.delete(id);
-      safeUnlinkSync(tempScriptPath);
+  // Use spawn for real-time log streaming
+  const child = spawn(nodeExecutablePath, [tempScriptPath], {
+    cwd: execCwd,
+    shell: true,
+    timeout: JS_BACKEND_TIMEOUT_MS || undefined,
+  });
 
-      let outputValue = null;
-      try {
-        if (fs.existsSync(tempOutputPath)) {
-          let raw = fs.readFileSync(tempOutputPath, 'utf8').trim();
-          safeUnlinkSync(tempOutputPath);
-          try {
-            outputValue = JSON.parse(raw);
-          } catch {
-            outputValue = raw;
-          }
-        }
-      } catch {
-        outputValue = null;
-      }
+  let stdout = '';
+  let stderr = '';
 
-      // Read modified variables
-      let modifiedVariables = {};
-      try {
-        if (fs.existsSync(tempVariablesPath)) {
-          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
-          modifiedVariables = JSON.parse(raw);
-          safeUnlinkSync(tempVariablesPath);
-        }
-      } catch {
-        modifiedVariables = {};
-      }
-
-      if (typeof outputValue === 'string') {
-        outputValue = outputValue.trim();
-      }
-      outputValue = normalizeOutput(outputValue);
-
-      let errorInStdout = '';
-      if (/error|not found|failed|exception/i.test(stdout)) errorInStdout = stdout;
-
-      finish({
-        log: errorInStdout === '' ? stdout.trim() : null,
-        error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
-        output: outputValue,
-        variables: modifiedVariables,
-      });
+  // Stream stdout in real-time
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) {
+      emitJobLog(jobId, 'log', text, id);
     }
-  );
+  });
 
+  // Stream stderr in real-time
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) {
+      emitJobLog(jobId, 'error', text, id);
+    }
+  });
+
+  child.on('close', (code) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempScriptPath);
+
+    let outputValue = null;
+    try {
+      if (fs.existsSync(tempOutputPath)) {
+        let raw = fs.readFileSync(tempOutputPath, 'utf8').trim();
+        safeUnlinkSync(tempOutputPath);
+        try {
+          outputValue = JSON.parse(raw);
+        } catch {
+          outputValue = raw;
+        }
+      }
+    } catch {
+      outputValue = null;
+    }
+
+    // Read modified variables
+    let modifiedVariables = {};
+    try {
+      if (fs.existsSync(tempVariablesPath)) {
+        const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+        modifiedVariables = JSON.parse(raw);
+        safeUnlinkSync(tempVariablesPath);
+      }
+    } catch {
+      modifiedVariables = {};
+    }
+
+    if (typeof outputValue === 'string') {
+      outputValue = outputValue.trim();
+    }
+    outputValue = normalizeOutput(outputValue);
+
+    let errorInStdout = '';
+    if (/error|not found|failed|exception/i.test(stdout)) errorInStdout = stdout;
+
+    finish({
+      log: errorInStdout === '' ? stdout.trim() : null,
+      error: ((stderr || '') + (code !== 0 ? `Exit code: ${code}` : '') + errorInStdout).trim() || null,
+      output: outputValue,
+      variables: modifiedVariables,
+    });
+  });
+
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempScriptPath);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
 
   registerProcess(id, child);
 
   const checkStopInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
@@ -1677,7 +1904,7 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processPowershellNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
+function processPowershellNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}, jobId = null) {
   const uid = nowUid();
   const tempPs1Path = path.join(INBOX, `node_ps_${uid}.ps1`);
   const tempOutputPath = path.join(INBOX, `node_ps_${uid}.output`);
@@ -1717,64 +1944,90 @@ ${variableCapture}
     return;
   }
 
-  const child = exec(
-    `powershell -ExecutionPolicy Bypass -File "${tempPs1Path}"`,
-    { cwd: execCwd },
-    (error, stdout, stderr) => {
-      runningProcesses.delete(id);
-      safeUnlinkSync(tempPs1Path);
+  // Use spawn for real-time log streaming
+  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', tempPs1Path], {
+    cwd: execCwd,
+    shell: true,
+  });
 
-      let outputValue = null;
-      try {
-        if (fs.existsSync(tempOutputPath)) {
-          outputValue = fs.readFileSync(tempOutputPath, 'utf8').trim();
-          safeUnlinkSync(tempOutputPath);
-        }
-      } catch {
-        outputValue = null;
-      }
+  let stdout = '';
+  let stderr = '';
 
-      // Read modified variables
-      let modifiedVariables = {};
-      try {
-        if (fs.existsSync(tempVariablesPath)) {
-          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
-          modifiedVariables = JSON.parse(raw);
-          safeUnlinkSync(tempVariablesPath);
-        }
-      } catch {
-        modifiedVariables = {};
-      }
-
-      if (!outputValue && stdout) outputValue = stdout.trim();
-
-      if (typeof outputValue === 'string') {
-        const trimmed = outputValue.trim();
-        try {
-          outputValue = JSON.parse(trimmed);
-        } catch {
-          outputValue = trimmed;
-        }
-      }
-
-      outputValue = normalizeOutput(outputValue);
-
-      const errorInStdout = /error|not recognized|failed|exception|not found/i.test(stdout) ? stdout : '';
-
-      finish({
-        log: errorInStdout === '' ? stdout.trim() : null,
-        error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
-        output: outputValue,
-        variables: modifiedVariables,
-      });
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) {
+      emitJobLog(jobId, 'log', text, id);
     }
-  );
+  });
 
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) {
+      emitJobLog(jobId, 'error', text, id);
+    }
+  });
+
+  child.on('close', (exitCode) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempPs1Path);
+
+    let outputValue = null;
+    try {
+      if (fs.existsSync(tempOutputPath)) {
+        outputValue = fs.readFileSync(tempOutputPath, 'utf8').trim();
+        safeUnlinkSync(tempOutputPath);
+      }
+    } catch {
+      outputValue = null;
+    }
+
+    // Read modified variables
+    let modifiedVariables = {};
+    try {
+      if (fs.existsSync(tempVariablesPath)) {
+        const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+        modifiedVariables = JSON.parse(raw);
+        safeUnlinkSync(tempVariablesPath);
+      }
+    } catch {
+      modifiedVariables = {};
+    }
+
+    if (!outputValue && stdout) outputValue = stdout.trim();
+
+    if (typeof outputValue === 'string') {
+      const trimmed = outputValue.trim();
+      try {
+        outputValue = JSON.parse(trimmed);
+      } catch {
+        outputValue = trimmed;
+      }
+    }
+
+    outputValue = normalizeOutput(outputValue);
+
+    const errorInStdout = /error|not recognized|failed|exception|not found/i.test(stdout) ? stdout : '';
+
+    finish({
+      log: errorInStdout === '' ? stdout.trim() : null,
+      error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null,
+      output: outputValue,
+      variables: modifiedVariables,
+    });
+  });
+
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempPs1Path);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
 
   registerProcess(id, child);
 
   const checkStopInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
@@ -1785,7 +2038,7 @@ ${variableCapture}
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processPythonNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
+function processPythonNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}, jobId = null) {
   const uid = nowUid();
   const tempPythonPath = path.join(INBOX, `node_python_${uid}.py`);
   const tempInputPath = path.join(INBOX, `node_python_${uid}.input`);
@@ -1842,59 +2095,88 @@ with open('${outputPathPy}', 'w') as __f:
     return;
   }
 
-  const child = exec(
-    `python "${tempPythonPath}"`,
-    { cwd: execCwd, timeout: JS_BACKEND_TIMEOUT_MS },
-    (error, stdout, stderr) => {
-      runningProcesses.delete(id);
-      safeUnlinkSync(tempPythonPath);
-      safeUnlinkSync(tempInputPath);
+  // Use spawn for real-time log streaming
+  const child = spawn('python', [tempPythonPath], {
+    cwd: execCwd,
+    shell: true,
+    timeout: JS_BACKEND_TIMEOUT_MS || undefined,
+  });
 
-      // Read output
-      let outputValue = null;
-      try {
-        if (fs.existsSync(tempOutputPath)) {
-          const raw = fs.readFileSync(tempOutputPath, 'utf8').trim();
-          try { outputValue = JSON.parse(raw); } catch { outputValue = raw; }
-          safeUnlinkSync(tempOutputPath);
-        }
-      } catch { outputValue = null; }
+  let stdout = '';
+  let stderr = '';
 
-      // Read modified variables
-      let modifiedVariables = {};
-      try {
-        if (fs.existsSync(tempVariablesPath)) {
-          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
-          modifiedVariables = JSON.parse(raw);
-          safeUnlinkSync(tempVariablesPath);
-        }
-      } catch { modifiedVariables = {}; }
-
-      if (typeof outputValue === 'string') {
-        outputValue = outputValue.trim();
-      }
-      outputValue = normalizeOutput(outputValue);
-
-      // Check for Python errors in stdout
-      let errorInStdout = '';
-      if (/Traceback|Error|Exception/i.test(stdout)) {
-        errorInStdout = stdout;
-      }
-
-      finish({
-        log: errorInStdout === '' ? stdout.trim() : null,
-        error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
-        output: outputValue,
-        variables: modifiedVariables,
-      });
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) {
+      emitJobLog(jobId, 'log', text, id);
     }
-  );
+  });
+
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) {
+      emitJobLog(jobId, 'error', text, id);
+    }
+  });
+
+  child.on('close', (exitCode) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempPythonPath);
+    safeUnlinkSync(tempInputPath);
+
+    // Read output
+    let outputValue = null;
+    try {
+      if (fs.existsSync(tempOutputPath)) {
+        const raw = fs.readFileSync(tempOutputPath, 'utf8').trim();
+        try { outputValue = JSON.parse(raw); } catch { outputValue = raw; }
+        safeUnlinkSync(tempOutputPath);
+      }
+    } catch { outputValue = null; }
+
+    // Read modified variables
+    let modifiedVariables = {};
+    try {
+      if (fs.existsSync(tempVariablesPath)) {
+        const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+        modifiedVariables = JSON.parse(raw);
+        safeUnlinkSync(tempVariablesPath);
+      }
+    } catch { modifiedVariables = {}; }
+
+    if (typeof outputValue === 'string') {
+      outputValue = outputValue.trim();
+    }
+    outputValue = normalizeOutput(outputValue);
+
+    // Check for Python errors in stdout
+    let errorInStdout = '';
+    if (/Traceback|Error|Exception/i.test(stdout)) {
+      errorInStdout = stdout;
+    }
+
+    finish({
+      log: errorInStdout === '' ? stdout.trim() : null,
+      error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null,
+      output: outputValue,
+      variables: modifiedVariables,
+    });
+  });
+
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempPythonPath);
+    safeUnlinkSync(tempInputPath);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
 
   registerProcess(id, child);
 
   // Stop signal checking
   const checkStopInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(checkStopInterval);
       terminateProcess(id);
       cleanupStopSignal(id);
@@ -1905,17 +2187,29 @@ with open('${outputPathPy}', 'w') as __f:
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables = {}) {
+function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables = {}, jobId = null) {
   let logs = [];
   const customConsole = {
     log: (...args) => {
-      logs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
+      const msg = args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      logs.push(msg);
+      if (jobId) {
+        emitJobLog(jobId, 'log', msg, id);
+      }
     },
     warn: (...args) => {
-      logs.push('[WARN] ' + args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
+      const msg = '[WARN] ' + args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      logs.push(msg);
+      if (jobId) {
+        emitJobLog(jobId, 'log', msg, id);
+      }
     },
     error: (...args) => {
-      logs.push('[ERROR] ' + args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' '));
+      const msg = '[ERROR] ' + args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      logs.push(msg);
+      if (jobId) {
+        emitJobLog(jobId, 'error', msg, id);
+      }
     },
   };
 
@@ -1924,7 +2218,7 @@ function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables
   let stopCheckInterval = null;
 
   stopCheckInterval = setInterval(() => {
-    if (shouldStopJob(id)) {
+    if (shouldStopJob(id, jobId)) {
       clearInterval(stopCheckInterval);
       cleanupStopSignal(id);
       if (!finished) {
@@ -2033,15 +2327,21 @@ app.post('/api/v1/jobs', (req, res) => {
 
 app.get('/api/v1/jobs/:jobId', (req, res) => {
   const { jobId } = req.params;
+  const { lastLogIndex } = req.query;
   const job = jobs.get(jobId);
   if (!job) {
     return res.status(404).json({ error: { code: 'JOB_NOT_FOUND', message: 'Job not found' } });
   }
 
+  // Get streaming logs from buffer, optionally starting from lastLogIndex
+  const allLogs = jobLogBuffers.get(jobId) || [];
+  const startIndex = lastLogIndex ? parseInt(lastLogIndex, 10) : 0;
+  const newLogs = allLogs.slice(startIndex);
+
   res.json({
     jobId: job.jobId,
     status: job.status,
-    progress: job.progress || null,
+    //progress: job.progress || null,
     output: job.output,
     error: job.error,
     log: job.log,
@@ -2049,6 +2349,9 @@ app.get('/api/v1/jobs/:jobId', (req, res) => {
     startTime: job.startTime,
     endTime: job.endTime,
     variables: job.variables || {},
+    // Streaming logs
+    streamLogs: newLogs,
+    totalLogCount: allLogs.length,
   });
 });
 
@@ -2076,6 +2379,49 @@ app.post('/api/v1/jobs/:jobId/stop', (req, res) => {
     jobId,
     status: 'stopped',
     message: 'Job stopped successfully',
+  });
+});
+
+// SSE endpoint for real-time log streaming
+app.get('/api/v1/jobs/:jobId/logs/stream', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobs.get(jobId);
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  // Send any buffered logs first
+  const buffer = jobLogBuffers.get(jobId) || [];
+  for (const entry of buffer) {
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+
+  // If job is already done, send end signal
+  if (job && (job.status === 'completed' || job.status === 'failed' || job.status === 'stopped')) {
+    res.write('data: {"type":"end"}\n\n');
+    res.end();
+    return;
+  }
+
+  // Register this connection for future logs
+  if (!jobLogListeners.has(jobId)) {
+    jobLogListeners.set(jobId, new Set());
+  }
+  jobLogListeners.get(jobId).add(res);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    const listeners = jobLogListeners.get(jobId);
+    if (listeners) {
+      listeners.delete(res);
+      if (listeners.size === 0) {
+        jobLogListeners.delete(jobId);
+      }
+    }
   });
 });
 
@@ -2328,17 +2674,17 @@ function processJob(job) {
       }
     })();
   } else if (type === 'groovy') {
-    processGroovyNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+    processGroovyNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else if (type === 'batch') {
-    processBatchNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+    processBatchNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else if (type === 'jsbackend' || type === 'playwright') {
-    processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+    processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else if (type === 'powershell') {
-    processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+    processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else if (type === 'python') {
-    processPythonNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+    processPythonNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else {
-    processJsNode(jobId, code, input, wrappedFinish);
+    processJsNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   }
 }
 
