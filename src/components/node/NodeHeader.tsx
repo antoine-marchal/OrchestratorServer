@@ -139,6 +139,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
                 return <Terminal className="w-5 h-5 text-gray-400 flex-shrink-0" />;
               case 'powershell':
                 return <TerminalSquare className="w-5 h-5 text-blue-400 flex-shrink-0" />;
+              case 'python':
+                return <Code2 className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
               case 'goto':
                 return <CornerRightDown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />;   
               case 'comment':

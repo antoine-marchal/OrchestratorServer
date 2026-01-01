@@ -1159,6 +1159,8 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
       processJsBackendNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'powershell') {
       processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
+    } else if (type === 'python') {
+      processPythonNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'javascript' || type === 'js') {
       processJsNode(nodeJobId, code, nodeInput, finish);
     } else {
@@ -1331,6 +1333,8 @@ function processJobFile(filePath) {
     processJsBackendNode(id, code, input, finish, codeFilePath, execCwd);
   } else if (type === 'powershell') {
     processPowershellNode(id, code, input, finish, codeFilePath, execCwd);
+  } else if (type === 'python') {
+    processPythonNode(id, code, input, finish, codeFilePath, execCwd);
   } else {
     processJsNode(id, code, input, finish);
   }
@@ -1602,7 +1606,7 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
   fs.writeFileSync(tempScriptPath, codeWithInput, 'utf8');
 
   const child = exec(
-    `${nodeExecutablePath} "${tempScriptPath}"`,
+    `"${nodeExecutablePath}" "${tempScriptPath}"`,
     { cwd: execCwd, timeout: JS_BACKEND_TIMEOUT_MS },
     (error, stdout, stderr) => {
       runningProcesses.delete(id);
@@ -1763,6 +1767,126 @@ ${variableCapture}
 
   registerProcess(id, child);
 
+  const checkStopInterval = setInterval(() => {
+    if (shouldStopJob(id)) {
+      clearInterval(checkStopInterval);
+      terminateProcess(id);
+      cleanupStopSignal(id);
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
+    }
+  }, STOP_CHECK_INTERVAL_MS);
+
+  child.on('exit', () => clearInterval(checkStopInterval));
+}
+
+function processPythonNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}) {
+  const uid = nowUid();
+  const tempPythonPath = path.join(INBOX, `node_python_${uid}.py`);
+  const tempInputPath = path.join(INBOX, `node_python_${uid}.input`);
+  const tempOutputPath = path.join(INBOX, `node_python_${uid}.output`);
+  const tempVariablesPath = path.join(INBOX, `node_python_${uid}.variables.json`);
+
+  // Write input and variables to temp files
+  fs.writeFileSync(tempInputPath, JSON.stringify(input === undefined ? null : input), 'utf8');
+  fs.writeFileSync(tempVariablesPath, JSON.stringify(variables), 'utf8');
+
+  // Path conversion for Python (forward slashes)
+  const inputPathPy = tempInputPath.replace(/\\/g, '/');
+  const outputPathPy = tempOutputPath.replace(/\\/g, '/');
+  const variablesPathPy = tempVariablesPath.replace(/\\/g, '/');
+
+  // Variable injection code
+  const varNames = Object.keys(variables);
+  const variableLoading = varNames.length > 0
+    ? varNames.map(name => `${name} = __variables.get('${name}')`).join('\n')
+    : '';
+  const variableCapture = varNames.length > 0
+    ? `__captured_vars = {${varNames.map(name => `'${name}': ${name}`).join(', ')}}\nwith open('${variablesPathPy}', 'w') as __f:\n    json.dump(__captured_vars, __f)`
+    : '';
+
+  // Build Python script
+  const pythonCode = `import json
+
+# Load input
+with open('${inputPathPy}', 'r') as __f:
+    input = json.load(__f)
+
+# Load variables
+with open('${variablesPathPy}', 'r') as __f:
+    __variables = json.load(__f)
+${variableLoading}
+
+output = None
+
+# User code
+${code}
+
+# Capture variables
+${variableCapture}
+
+# Write output
+with open('${outputPathPy}', 'w') as __f:
+    json.dump(output, __f)
+`;
+
+  try {
+    fs.writeFileSync(tempPythonPath, pythonCode, 'utf8');
+  } catch (err) {
+    finish({ output: null, log: `Failed to write Python script: ${err.message}`, error: err.message, variables: {} });
+    return;
+  }
+
+  const child = exec(
+    `python "${tempPythonPath}"`,
+    { cwd: execCwd, timeout: JS_BACKEND_TIMEOUT_MS },
+    (error, stdout, stderr) => {
+      runningProcesses.delete(id);
+      safeUnlinkSync(tempPythonPath);
+      safeUnlinkSync(tempInputPath);
+
+      // Read output
+      let outputValue = null;
+      try {
+        if (fs.existsSync(tempOutputPath)) {
+          const raw = fs.readFileSync(tempOutputPath, 'utf8').trim();
+          try { outputValue = JSON.parse(raw); } catch { outputValue = raw; }
+          safeUnlinkSync(tempOutputPath);
+        }
+      } catch { outputValue = null; }
+
+      // Read modified variables
+      let modifiedVariables = {};
+      try {
+        if (fs.existsSync(tempVariablesPath)) {
+          const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+          modifiedVariables = JSON.parse(raw);
+          safeUnlinkSync(tempVariablesPath);
+        }
+      } catch { modifiedVariables = {}; }
+
+      if (typeof outputValue === 'string') {
+        outputValue = outputValue.trim();
+      }
+      outputValue = normalizeOutput(outputValue);
+
+      // Check for Python errors in stdout
+      let errorInStdout = '';
+      if (/Traceback|Error|Exception/i.test(stdout)) {
+        errorInStdout = stdout;
+      }
+
+      finish({
+        log: errorInStdout === '' ? stdout.trim() : null,
+        error: ((stderr || '') + (error ? error.message : '') + errorInStdout).trim() || null,
+        output: outputValue,
+        variables: modifiedVariables,
+      });
+    }
+  );
+
+  registerProcess(id, child);
+
+  // Stop signal checking
   const checkStopInterval = setInterval(() => {
     if (shouldStopJob(id)) {
       clearInterval(checkStopInterval);
@@ -2200,6 +2324,8 @@ function processJob(job) {
     processJsBackendNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else if (type === 'powershell') {
     processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
+  } else if (type === 'python') {
+    processPythonNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {});
   } else {
     processJsNode(jobId, code, input, wrappedFinish);
   }

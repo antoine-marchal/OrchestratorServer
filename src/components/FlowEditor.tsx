@@ -48,7 +48,8 @@ import {
   Clipboard,
   CornerRightDown,
   Sun,
-  Moon
+  Moon,
+  Code2
 } from 'lucide-react';
 import { useTheme } from "../context/ThemeContext";
 
@@ -100,6 +101,13 @@ const NODE_TYPES = [
     code: 'Write-Output "Hello $env:INPUT"\nSet-Content -Path $env:OUTPUT -Value $env:INPUT',
     icon: TerminalSquare,
     iconColor: 'text-blue-400'
+  },
+  {
+    id: 'python',
+    label: 'Python',
+    code: '# input contains the data from connected nodes\noutput = input\nprint(output)',
+    icon: Code2,
+    iconColor: 'text-yellow-500'
   },
   {
     id: 'variable',

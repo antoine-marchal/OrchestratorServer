@@ -2,7 +2,7 @@ import { Node, Edge } from 'reactflow';
 
 export interface NodeData {
   label: string;
-  type: 'variable' | 'javascript' | 'jsbackend' | 'groovy' | 'batch' | 'powershell' | 'flow' | 'comment' | 'goto';
+  type: 'variable' | 'javascript' | 'jsbackend' | 'groovy' | 'batch' | 'powershell' | 'python' | 'flow' | 'comment' | 'goto';
   language?: string;
   code?: string;
   codeFilePath?: string;
