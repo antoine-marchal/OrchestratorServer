@@ -1,26 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import AceEditor from 'react-ace';
+import React, { useState, useEffect, useRef } from 'react';
+import Editor, { OnMount, BeforeMount } from '@monaco-editor/react';
+import type { editor, IDisposable } from 'monaco-editor';
 import { X, FileCode, Save, ExternalLink } from 'lucide-react';
 import { useFlowStore } from '../store/sessionFlowStore';
-import { pathUtils } from '../utils/pathUtils';
 import { useTheme } from "../context/ThemeContext";
 
-// Import Ace Editor modes & themes
-import * as ace from 'ace-builds/src-noconflict/ace';
-import 'ace-builds/src-noconflict/mode-javascript';
-import 'ace-builds/src-noconflict/mode-java';
-import 'ace-builds/src-noconflict/ext-language_tools';
-import 'ace-builds/src-noconflict/mode-groovy';
-import 'ace-builds/src-noconflict/mode-batchfile';
-import 'ace-builds/src-noconflict/mode-powershell';
-import 'ace-builds/src-noconflict/theme-dracula';
-import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/snippets/groovy';
-import 'ace-builds/src-noconflict/snippets/javascript';
-import 'ace-builds/src-noconflict/snippets/powershell';
-import 'ace-builds/src-noconflict/snippets/batchfile';
-import SnippetsProvider from "../utils/SnippetsProvider";
-
+import { jsSnippets, groovySnippets, batchSnippets, powershellSnippets } from '../utils/monacoSnippets';
+import { pythonSnippets } from '../utils/pythonSnippets';
 
 import prettier from "prettier/standalone";
 import parserBabel from "prettier/plugins/babel";
@@ -33,6 +19,19 @@ interface CodeEditorModalProps {
   onClose: () => void;
 }
 
+// Map language to Monaco language ID
+const languageToMonacoLang: Record<string, string> = {
+  javascript: 'javascript',
+  jsbackend: 'javascript',
+  playwright: 'javascript',
+  groovy: 'java', // Groovy is similar to Java
+  batch: 'bat',
+  powershell: 'powershell',
+  python: 'python',
+};
+
+const FORMATTABLE_LANGS = new Set(["javascript", "jsbackend", "playwright"]);
+
 const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
   nodeId,
   code,
@@ -41,13 +40,15 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
 }) => {
   const { theme } = useTheme();
   const { updateNodeData, flowPath, nodes } = useFlowStore();
-  const [value, setValue] = React.useState(code);
+  const [value, setValue] = useState(code);
   const [isValid, setIsValid] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExternalFile, setIsExternalFile] = useState(false);
   const [externalFilePath, setExternalFilePath] = useState<string | null>(null);
-  const editorRef = React.useRef<any>(null);
-  // Get the node data to check if it has a codeFilePath
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
+  const disposablesRef = useRef<IDisposable[]>([]);
+
   const node = nodes.find(n => n.id === nodeId);
 
   useEffect(() => {
@@ -60,35 +61,16 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
     }
   }, [node]);
 
+  // Cleanup disposables on unmount
+  useEffect(() => {
+    return () => {
+      disposablesRef.current.forEach(d => d.dispose());
+      disposablesRef.current = [];
+    };
+  }, []);
 
   const handleSave = async () => {
     try {
-      // TODO: Replace with browser API for file operations
-      // If this is an external file, update both the node data and the file
-      /*
-      if (isExternalFile && externalFilePath) {
-        let absoluteFilePath = externalFilePath;
-
-        if (!pathUtils.isAbsolute(externalFilePath) && flowPath) {
-          const baseDir = pathUtils.dirname(flowPath);
-          absoluteFilePath = pathUtils.join(baseDir, externalFilePath);
-        }
-
-        if (window.electronAPI?.writeTextFile) {
-          try {
-            await window.electronAPI.writeTextFile(absoluteFilePath, value);
-            console.log(`Updated external code file: ${absoluteFilePath}`);
-          } catch (err) {
-            console.error(`Error writing to external file: ${err}`);
-            setIsValid(false);
-            setError(`Failed to update external file: ${err instanceof Error ? err.message : String(err)}`);
-            return;
-          }
-        }
-      }
-      */
-
-      // Always update the node data with the new code
       updateNodeData(nodeId, { code: value });
       onClose();
     } catch (err) {
@@ -97,15 +79,13 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
     }
   };
 
-
   const createExternalFile = async () => {
-    // In browser environment, download the code as a file instead of creating external files
     try {
-      // Determine file extension based on language
       let extension;
       switch (language.toLowerCase()) {
         case 'javascript':
         case 'jsbackend':
+        case 'playwright':
           extension = 'js';
           break;
         case 'groovy':
@@ -117,16 +97,17 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
         case 'powershell':
           extension = 'ps1';
           break;
+        case 'python':
+          extension = 'py';
+          break;
         default:
           extension = 'txt';
       }
 
-      // Create filename based on node label or default
       const node = nodes.find(n => n.id === nodeId);
       const baseName = node?.data?.label?.replace(/[^a-zA-Z0-9_\-]/g, '_') || `node_${nodeId}`;
       const fileName = `${baseName}.${extension}`;
 
-      // Create and download the file
       const blob = new Blob([value], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -135,62 +116,108 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
       a.click();
       URL.revokeObjectURL(url);
 
-      // Update the node to mark it as having an external file (for UI purposes)
       updateNodeData(nodeId, { codeFilePath: fileName });
       setIsExternalFile(true);
       setExternalFilePath(fileName);
-
     } catch (err) {
       setError(`Failed to download file: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
-  // Ace does not provide markers like Monaco, so skip handleEditorValidation
-
-  // Choose mode for Ace (js/java)
-  // map "language" -> Ace mode
-  const languageToAceMode: Record<string, string> = {
-
-    javascript: 'javascript',
-    jsbackend: 'javascript',
-    groovy: 'groovy',
-    batch: 'batchfile',
-    powershell: 'powershell',
-
-  };
-
-  const FORMATTABLE_LANGS = new Set(["javascript", "jsbackend"]);
-
-  // Seul JS est réellement supporté par Prettier ici
-  function modeToPrettierParserLimited(lang: string | undefined, modeId: string | undefined) {
-    const l = (lang || "").toLowerCase();
-    if (l !== "javascript") return null; // groovy/batch/powershell: pas de parser → null
-    const m = (modeId || "").toLowerCase();
-    if (m.includes("javascript")) return "babel";
-    return null;
-  }
-
-  async function formatWithPrettierEditor(editor: any, language: string) {
-    const code = editor.getValue();
+  const formatWithPrettier = async () => {
+    if (!editorRef.current) return;
+    const code = editorRef.current.getValue();
     const lang = (language || "").toLowerCase();
 
-    if (lang === "javascript") {
-      const formatted = await prettier.format(code, {
-        parser: "babel",
-        plugins: [parserBabel, pluginEstree], // <-- ajoute estree ici
-      });
-      const pos = editor.getCursorPosition();
-      editor.session.setValue(formatted);
-      editor.moveCursorToPosition(pos);
-      return;
+    if (lang === "javascript" || lang === "jsbackend" || lang === "playwright") {
+      try {
+        const formatted = await prettier.format(code, {
+          parser: "babel",
+          plugins: [parserBabel, pluginEstree],
+        });
+        const position = editorRef.current.getPosition();
+        editorRef.current.setValue(formatted);
+        if (position) {
+          editorRef.current.setPosition(position);
+        }
+      } catch (e) {
+        console.error('Prettier format error:', e);
+      }
     }
-  }
+  };
 
-  // normalise l’entrée et choisis le mode Ace, sinon fallback "text"
-  const aceMode =
-    languageToAceMode[(language || '').toLowerCase()] ?? 'javascript';
+  const monacoLang = languageToMonacoLang[(language || '').toLowerCase()] ?? 'javascript';
 
-  React.useEffect(() => {
+  // Register completion providers before mount
+  const handleEditorWillMount: BeforeMount = (monaco) => {
+    // Store monaco reference
+    monacoRef.current = monaco;
+
+    // Register snippet completion providers for each language
+    const registerSnippetProvider = (langId: string, snippets: typeof jsSnippets) => {
+      const provider = monaco.languages.registerCompletionItemProvider(langId, {
+        provideCompletionItems: (model: { getWordUntilPosition: (position: any) => any; }, position: { lineNumber: any; }) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+
+          const suggestions = snippets.map((s, idx) => ({
+            label: s.label,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: s.insertText,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: s.documentation || '',
+            sortText: `0${String(idx).padStart(4, '0')}`, // Prioritize snippets
+            range,
+          }));
+
+          return { suggestions };
+        },
+      });
+      disposablesRef.current.push(provider);
+    };
+
+    // Register for JavaScript
+    registerSnippetProvider('javascript', jsSnippets);
+    // Register for Java (used for Groovy)
+    registerSnippetProvider('java', groovySnippets);
+    // Register for Batch
+    registerSnippetProvider('bat', batchSnippets);
+    // Register for PowerShell
+    registerSnippetProvider('powershell', powershellSnippets);
+    // Register for Python
+    registerSnippetProvider('python', pythonSnippets);
+  };
+
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
+
+    // Add keyboard shortcuts
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      handleSave();
+    });
+
+    editor.addCommand(monaco.KeyCode.Escape, () => {
+      onClose();
+    });
+
+    // Format command for JS
+    if (FORMATTABLE_LANGS.has((language || "").toLowerCase())) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+        formatWithPrettier();
+      });
+    }
+
+    // Focus the editor
+    editor.focus();
+  };
+
+  // Handle keyboard events at modal level
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
       const isSave = (isMac && e.metaKey && e.key.toLowerCase() === 's')
@@ -207,13 +234,11 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
     }
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-    // Make sure to include handleSave and onClose in deps
-  }, [handleSave, onClose, value, isValid]);
+  }, [value, isValid]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="rounded-lg w-[90vw] h-[90vh] flex flex-col bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="flex items-center">
             <h2 className="text-xl font-semibold dark:text-white light:text-black">Edit Code</h2>
@@ -239,7 +264,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
             )}
             {FORMATTABLE_LANGS.has((language || "").toLowerCase()) && (
               <button
-                onClick={() => editorRef.current && formatWithPrettierEditor(editorRef.current, 'javascript')}
+                onClick={formatWithPrettier}
                 title="Format with Prettier (Ctrl/Cmd+Shift+F)"
                 className="flex items-center px-3 py-1.5 rounded-lg text-white text-sm bg-purple-600 hover:bg-purple-700"
               >
@@ -247,11 +272,10 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
                 Format
               </button>
             )}
-
             <button
               onClick={handleSave}
               disabled={!isValid}
-              className={`flex items-center px-3 py-1.5 rounded-lg  text-white text-sm ${isValid
+              className={`flex items-center px-3 py-1.5 rounded-lg text-white text-sm ${isValid
                 ? 'bg-blue-500 hover:bg-blue-600'
                 : 'bg-gray-600 cursor-not-allowed'
                 }`}
@@ -268,65 +292,35 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
           </div>
         </div>
         <div className="flex-1 overflow-hidden">
-          <SnippetsProvider>
-            <AceEditor
-              mode={aceMode}
-              theme={theme === "dark" ? "dracula" : "github"}
-              name="code-editor"
-              width="100%"
-              height="100%"
-              fontSize={14}
-              value={value}
-              onChange={(val) => setValue(val ?? '')}
-              onLoad={(editor: any) => {
-                const langTools = (ace as any).require('ace/ext/language_tools');
-                const { snippetManager } = (ace as any).require('ace/snippets');
-
-                editorRef.current = editor;
-                editor.commands.addCommand({
-                  name: 'expandSnippetTab',
-                  bindKey: { win: 'Tab', mac: 'Tab' },
-                  exec: (ed: any) => (snippetManager && snippetManager.expandWithTab(ed)) || ed.indent(),
-                  multiSelect: true,
-                });
-                if (aceMode === 'javascript' || aceMode === 'jsbackend') {
-                  editor.commands.addCommand({
-                    name: "formatDoc",
-                    bindKey: { win: "Ctrl-Shift-F", mac: "Command-Shift-F" },
-                    exec: (ed: any) => formatWithPrettierEditor(ed, 'javascript'),
-                  });
-                }
-                const withScore = (completer: any, score: number) => ({
-                  getCompletions(ed: any, sess: any, pos: any, prefix: string, cb: any) {
-                    completer.getCompletions(ed, sess, pos, prefix, (err: any, results: any[] = []) => {
-                      if (err) return cb(err);
-                      results.forEach((r: any) => { if (typeof r.score !== 'number') r.score = score; });
-                      cb(null, results);
-                    });
-                  }
-                });
-
-                // Priorités
-                const snippetC = withScore(langTools.snippetCompleter, 10000); // 1) snippets
-                const localC = withScore(langTools.textCompleter, 5000);     // 3) local
-                const keywordC = withScore(langTools.keyWordCompleter, 100);  // 4) keywords
-                editor.completers = [snippetC, localC, keywordC];
-
-
-              }}
-
-              setOptions={{
-                enableBasicAutocompletion: true,
-                enableLiveAutocompletion: true,
-                showLineNumbers: true,
-                tabSize: 2,
-                enableSnippets: true,
-                useWorker: false,
-                wrap: true,
-              }}
-              editorProps={{ $blockScrolling: true }}
-            />
-          </SnippetsProvider>
+          <Editor
+            height="100%"
+            language={monacoLang}
+            value={value}
+            theme={theme === "dark" ? "vs-dark" : "light"}
+            onChange={(val) => setValue(val ?? '')}
+            beforeMount={handleEditorWillMount}
+            onMount={handleEditorMount}
+            options={{
+              fontSize: 14,
+              minimap: { enabled: true, side: 'right' },
+              lineNumbers: 'on',
+              tabSize: 2,
+              wordWrap: 'on',
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              snippetSuggestions: 'top',
+              suggestOnTriggerCharacters: true,
+              quickSuggestions: true,
+              acceptSuggestionOnEnter: 'on',
+              tabCompletion: 'on',
+              parameterHints: { enabled: true },
+              suggest: {
+                showSnippets: true,
+                snippetsPreventQuickSuggestions: false,
+                localityBonus: true,
+              },
+            }}
+          />
         </div>
       </div>
     </div>

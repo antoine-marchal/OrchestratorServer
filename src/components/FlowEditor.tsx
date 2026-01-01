@@ -691,8 +691,8 @@ const displayEdges = useMemo<Edge[]>(() => {
         alert(`Error opening flow: ${error instanceof Error ? error.message : String(error)}`);
       }
       return;
-    } else if (node.data.type !== 'goto') {
-      // For other node types, open the regular editor modal
+    } else if (node.data.type !== 'goto' && node.data.type !== 'variable') {
+      // For other node types (not goto, variable), open the regular editor modal
       openEditorModal(node.id);
     }
   };
