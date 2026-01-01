@@ -1426,12 +1426,15 @@ export const useFlowStore = (): FlowStoreInterface => {
       const toNumberIfNumeric = (v: any) =>
         (typeof v === 'string' && v.trim() !== '' && !isNaN(+v) ? +v : v);
 
-      const evalGotoExpr = (expr: string, input: any): boolean => {
+      const evalGotoExpr = (expr: string, input: any, variables: Record<string, any> = {}): boolean => {
         try {
           const cleaned = stripTrailingSemis(expr);
           const ninput = toNumberIfNumeric(input);
-          const fn = new Function('input', 'ninput', `return !!(${cleaned});`);
-          return !!fn(input, ninput);
+          // Build variable declarations for injection
+          const varNames = Object.keys(variables);
+          const varDeclarations = varNames.map(name => `var ${name} = __vars__[${JSON.stringify(name)}];`).join('\n');
+          const fn = new Function('input', 'ninput', '__vars__', `${varDeclarations}\nreturn !!(${cleaned});`);
+          return !!fn(input, ninput, variables);
         } catch {
           return false;
         }
@@ -1536,9 +1539,13 @@ export const useFlowStore = (): FlowStoreInterface => {
           let decision: string | null = null;
           let forward = false;
 
+          // Collect variables from all Variable nodes for condition evaluation
+          activeFlowState = sessionStore.getActiveFlowState()!;
+          const gotoVariables = collectVariables(activeFlowState.nodes);
+
           for (const r of rules) {
             if (r?.expr && r?.goto) {
-              if (evalGotoExpr(r.expr, processedInputs)) {
+              if (evalGotoExpr(r.expr, processedInputs, gotoVariables)) {
                 decision = r.goto;
                 forward = !!r.forwardInput; // per-condition forwarding
                 //break; // evaluate ALL conditions, the last one is the good one.

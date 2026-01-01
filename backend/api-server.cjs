@@ -482,13 +482,16 @@ async function executeFlowFile(
 
         const stripSemis = (s) => (s ?? '').trim().replace(/;+\\s*$/, '');
         const toNumberIfNumeric = (v) => (typeof v === 'string' && v.trim() !== '' && !isNaN(+v) ? +v : v);
-        const evalGotoExpr = (expr, input) => {
+        const evalGotoExpr = (expr, input, variables = {}) => {
           try {
             const cleaned = stripSemis(expr);
             const ninput = toNumberIfNumeric(input);
+            // Build variable declarations for injection
+            const varNames = Object.keys(variables);
+            const varDeclarations = varNames.map(name => `var ${name} = __vars__[${JSON.stringify(name)}];`).join('\n');
             // eslint-disable-next-line no-new-func
-            const fn = new Function('input', 'ninput', `return !!(${cleaned});`);
-            return !!fn(input, ninput);
+            const fn = new Function('input', 'ninput', '__vars__', `${varDeclarations}\nreturn !!(${cleaned});`);
+            return !!fn(input, ninput, variables);
           } catch {
             return false;
           }
@@ -552,7 +555,7 @@ async function executeFlowFile(
 
             for (const r of rules) {
               if (r?.expr && r?.goto) {
-                if (evalGotoExpr(r.expr, processedInputs)) {
+                if (evalGotoExpr(r.expr, processedInputs, flowVariables)) {
                   decision = r.goto;
                   forward = !!r.forwardInput;
                   break;
@@ -729,12 +732,15 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
 
   const stripSemis = (s) => (s ?? '').trim().replace(/;+\\s*$/, '');
   const toNumberIfNumeric = (v) => (typeof v === 'string' && v.trim() !== '' && !isNaN(+v) ? +v : v);
-  const evalGotoExpr = (expr, input) => {
+  const evalGotoExpr = (expr, input, variables = {}) => {
     try {
       const cleaned = stripSemis(expr);
       const ninput = toNumberIfNumeric(input);
-      const fn = new Function('input', 'ninput', `return !!(${cleaned});`);
-      return !!fn(input, ninput);
+      // Build variable declarations for injection
+      const varNames = Object.keys(variables);
+      const varDeclarations = varNames.map(name => `var ${name} = __vars__[${JSON.stringify(name)}];`).join('\n');
+      const fn = new Function('input', 'ninput', '__vars__', `${varDeclarations}\nreturn !!(${cleaned});`);
+      return !!fn(input, ninput, variables);
     } catch {
       return false;
     }
@@ -796,7 +802,7 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
 
       for (const r of rules) {
         if (r?.expr && r?.goto) {
-          if (evalGotoExpr(r.expr, processedInputs)) {
+          if (evalGotoExpr(r.expr, processedInputs, flowVariables)) {
             decision = r.goto;
             forward = !!r.forwardInput;
             break;
@@ -1162,7 +1168,7 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
     } else if (type === 'python') {
       processPythonNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else if (type === 'javascript' || type === 'js') {
-      processJsNode(nodeJobId, code, nodeInput, finish);
+      processJsNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables);
     } else {
       finish({ output: null, log: null, error: `Unknown node type: ${type}` });
     }
@@ -1899,7 +1905,7 @@ with open('${outputPathPy}', 'w') as __f:
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
-function processJsNode(id, code, input, finish) {
+function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables = {}) {
   let logs = [];
   const customConsole = {
     log: (...args) => {
@@ -1928,9 +1934,14 @@ function processJsNode(id, code, input, finish) {
     }
   }, STOP_CHECK_INTERVAL_MS);
 
+  // Generate variable declarations for injection
+  const varNames = Object.keys(variables);
+  const variableDeclarations = varNames.map(name => `let ${name} = __variables[${JSON.stringify(name)}];`).join('\n');
+
   try {
-    const fn = new AsyncFunction('input', 'console', `${code}\nreturn typeof process === "function" ? await process(input) : undefined;`);
-    fn(input, customConsole)
+    const wrappedCode = `${variableDeclarations}\n${code}\nreturn typeof process === "function" ? await process(input) : undefined;`;
+    const fn = new AsyncFunction('input', 'console', '__variables', wrappedCode);
+    fn(input, customConsole, variables)
       .then((output) => {
         clearInterval(stopCheckInterval);
         if (!finished) {
