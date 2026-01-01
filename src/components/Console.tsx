@@ -103,6 +103,31 @@ const Console: React.FC = () => {
     104: '#0000ff', 105: '#ff00ff', 106: '#00ffff', 107: '#ffffff',
   };
 
+  // Group consecutive log entries with the same timestamp, nodeId, and type
+  function groupConsoleMessages(messages: typeof consoleMessages) {
+    const grouped: typeof consoleMessages = [];
+
+    for (const msg of messages) {
+      const lastGroup = grouped[grouped.length - 1];
+
+      // Group if same nodeId, type, and timestamp within 100ms
+      if (
+        lastGroup &&
+        lastGroup.nodeId === msg.nodeId &&
+        lastGroup.type === msg.type &&
+        Math.abs(lastGroup.timestamp - msg.timestamp) < 100
+      ) {
+        // Append message to the last group
+        lastGroup.message = lastGroup.message + '\n' + msg.message;
+      } else {
+        // Start a new group (clone the object to avoid mutating original)
+        grouped.push({ ...msg });
+      }
+    }
+
+    return grouped;
+  }
+
   function ansiToHtml(text: string): string {
     // Handle null/undefined
     if (text == null) return '';
@@ -293,10 +318,10 @@ const Console: React.FC = () => {
         ref={consoleRef}
         className={`overflow-y-auto p-4 font-mono text-sm transition-all duration-200 ${fullscreen ? 'h-[calc(100vh-48px)]' : 'h-64'}`}
       >
-        {consoleMessages.filter(msg => visibleTypes.includes(msg.type)).map((msg, i) => (
+        {groupConsoleMessages(consoleMessages.filter(msg => visibleTypes.includes(msg.type))).map((msg, i) => (
           <div
             key={i}
-            className={`mb-2 ${msg.type === 'error'
+            className={`mb-2 flex ${msg.type === 'error'
                 ? 'text-red-600 dark:text-red-400'
                 : msg.type === 'input'
                   ? 'text-blue-600 dark:text-blue-400'
@@ -305,17 +330,15 @@ const Console: React.FC = () => {
                     : 'text-green-600 dark:text-green-400'
               }`}
           >
-            <span className="text-gray-500">
-              [{new Date(msg.timestamp).toLocaleTimeString()}] {getNodeLabel(msg.nodeId)}:{' '}
+            <span className="text-gray-500 shrink-0 pr-2 select-none">
+              [{new Date(msg.timestamp).toLocaleTimeString()}] {getNodeLabel(msg.nodeId)}:
             </span>
             <span
-              className="whitespace-pre"
+              className="whitespace-pre-wrap break-words min-w-0"
               dangerouslySetInnerHTML={{
                 __html: ansiToHtml(msg.message || '')
               }}
             />
-
-
           </div>
         ))}
       </div>

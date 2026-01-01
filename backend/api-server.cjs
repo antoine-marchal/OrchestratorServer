@@ -178,6 +178,7 @@ const jobs = new Map(); // jobId -> job object
 const sessions = new Map(); // sessionId -> session object
 const jobLogListeners = new Map(); // jobId -> Set of SSE response objects
 const jobLogBuffers = new Map(); // jobId -> array of log entries
+const childJobIds = new Map(); // parentJobId -> Set of child job IDs (for flow execution)
 
 /**
  * Emit a log entry for a job (broadcasts to SSE clients and stores in buffer)
@@ -282,6 +283,38 @@ function terminateProcess(jobId) {
   } catch (err) {
     if (!isSilent) console.error(`Error in terminateProcess for job ${jobId}:`, err);
     runningProcesses.delete(jobId);
+  }
+}
+
+function registerChildJob(parentJobId, childJobId) {
+  if (!parentJobId) return;
+  if (!childJobIds.has(parentJobId)) {
+    childJobIds.set(parentJobId, new Set());
+  }
+  childJobIds.get(parentJobId).add(childJobId);
+}
+
+function terminateJobAndChildren(jobId) {
+  // Terminate the main process
+  if (runningProcesses.has(jobId)) {
+    terminateProcess(jobId);
+  }
+
+  // Terminate all child processes
+  const children = childJobIds.get(jobId);
+  if (children) {
+    for (const childId of children) {
+      if (runningProcesses.has(childId)) {
+        terminateProcess(childId);
+      }
+    }
+    childJobIds.delete(jobId);
+  }
+
+  // Mark the job as stopped
+  const job = jobs.get(jobId);
+  if (job) {
+    job.stopRequested = true;
   }
 }
 
@@ -834,6 +867,12 @@ async function executeInlineFlow(tempFlow, flowInput, flowPath, basePath, timeou
   const MAX_STEPS = 1000;
 
   const ensureExecuted = async (nodeId, force = false) => {
+    // Check if job was stopped before executing any node
+    if (jobId) {
+      const flowJob = jobs.get(jobId);
+      if (flowJob && flowJob.stopRequested) return;
+    }
+
     if (executing.has(nodeId)) return;
     if (executed.has(nodeId) && !force) return;
 
@@ -1154,6 +1193,10 @@ async function executeFlowNode(node, nodeId, nodeInput, flowPath, nodeResults, c
 
 async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForResult = true, timeout = 0, jobBasePath, variables = {}, jobId = null) {
   const nodeJobId = `flow-node-${nowUid()}`;
+
+  // Register this child job with the parent so it can be terminated if parent is stopped/timed out
+  registerChildJob(jobId, nodeJobId);
+
   const code = node.data.code || '';
   const type = node.data.type;
   const execCwd = jobBasePath || process.cwd();
@@ -2366,14 +2409,11 @@ app.post('/api/v1/jobs/:jobId/stop', (req, res) => {
     return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job is not running' } });
   }
 
-  job.stopRequested = true;
   job.status = 'stopped';
   job.endTime = new Date().toISOString();
 
-  // Terminate if running
-  if (runningProcesses.has(jobId)) {
-    terminateProcess(jobId);
-  }
+  // Terminate this job and all child jobs (for flow nodes)
+  terminateJobAndChildren(jobId);
 
   res.json({
     jobId,
@@ -2598,9 +2638,8 @@ function processJob(job) {
   if (effectiveTimeout > 0) {
     timeoutId = setTimeout(() => {
       timedOut = true;
-      if (runningProcesses.has(jobId)) {
-        terminateProcess(jobId);
-      }
+      // Terminate this job and all child jobs (for flow nodes)
+      terminateJobAndChildren(jobId);
       finish({
         output: null,
         log: null,

@@ -327,6 +327,7 @@ export const useFlowStore = (): FlowStoreInterface => {
 
     try {
       let result: any, log: any, error: any;
+      let hasStreamedError = false; // Track if errors were already streamed via polling
       if (node.data.type === 'goto') {
         // When executing individually, goto nodes just pass through their input
         // They don't evaluate conditions or forward input
@@ -421,6 +422,14 @@ export const useFlowStore = (): FlowStoreInterface => {
           try {
             const { jobId } = await apiClient.submitJob(jobRequest);
 
+            // Store the job ID in the node data for potential termination
+            activeFlowState = sessionStore.getActiveFlowState()!;
+            updateFlowState({
+              nodes: activeFlowState.nodes.map(n =>
+                n.id === nodeId ? { ...n, data: { ...n.data, jobId } } : n
+              ),
+            });
+
             // Poll for job completion with streaming logs
             const jobResult = await apiClient.pollJobStatus(
               jobId,
@@ -430,6 +439,7 @@ export const useFlowStore = (): FlowStoreInterface => {
                 // Display streaming logs in real-time
                 if (logEntry.type === 'error') {
                   addLog('error', logEntry.message);
+                  hasStreamedError = true;
                 } else {
                   addLog('log', logEntry.message);
                 }
@@ -446,14 +456,22 @@ export const useFlowStore = (): FlowStoreInterface => {
             // Store execution time in node data
             node.data.executionTime = executionTime;
 
-            // Ensure the node data is updated with the nested flow execution result
+            // Ensure the node data is updated with the nested flow execution result and clear jobId
+            activeFlowState = sessionStore.getActiveFlowState()!;
             updateFlowState({
               nodes: activeFlowState.nodes.map(n =>
-                n.id === nodeId ? { ...n, data: { ...n.data, output: result, executionTime } } : n
+                n.id === nodeId ? { ...n, data: { ...n.data, output: result, executionTime, jobId: undefined } } : n
               ),
             });
           } catch (err) {
             error = (err as Error).message;
+            // Clear jobId on error as well
+            activeFlowState = sessionStore.getActiveFlowState()!;
+            updateFlowState({
+              nodes: activeFlowState.nodes.map(n =>
+                n.id === nodeId ? { ...n, data: { ...n.data, jobId: undefined } } : n
+              ),
+            });
           }
         } catch (err) {
           error = (err as Error).message;
@@ -652,6 +670,7 @@ export const useFlowStore = (): FlowStoreInterface => {
                 // Display streaming logs in real-time
                 if (logEntry.type === 'error') {
                   addLog('error', logEntry.message);
+                  hasStreamedError = true;
                 } else {
                   addLog('log', logEntry.message);
                 }
@@ -682,9 +701,14 @@ export const useFlowStore = (): FlowStoreInterface => {
       if (!(node.data.dontWaitForOutput && result?.dontWaitForOutput)) {
         updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
       }
-      // Display final output (logs and errors are already streamed in real-time via polling)
+      // Display final output
       if (result !== undefined && result !== null && typeof result === 'object' && 'output' in result) addLog('output', prettyFormat(result.output));
       else if (result !== undefined && result !== null) addLog('output', prettyFormat(result));
+
+      // Log error if job failed or timed out (only if not already streamed)
+      if (error && !hasStreamedError) {
+        addLog('error', error);
+      }
 
       // For nodes with dontWaitForOutput, we need to keep the jobId
       // so that the node can be stopped later
