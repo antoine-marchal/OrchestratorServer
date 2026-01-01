@@ -2,7 +2,7 @@ import { Node, Edge } from 'reactflow';
 
 export interface NodeData {
   label: string;
-  type: 'constant' | 'javascript' | 'jsbackend' | 'groovy' | 'batch' | 'powershell' | 'flow' | 'comment' | 'goto';
+  type: 'variable' | 'javascript' | 'jsbackend' | 'groovy' | 'batch' | 'powershell' | 'python' | 'flow' | 'comment' | 'goto';
   language?: string;
   code?: string;
   codeFilePath?: string;
@@ -22,6 +22,9 @@ export interface NodeData {
     forwardInput?: boolean;
   }>;
   gotoDecision?: string | null; // transient decision during "run entire flow"
+  
+  // Linked session for editing flow nodes
+  linkedSessionId?: string;
 }
 
 export interface ConnectionItemProps {

@@ -1,88 +1,19 @@
 {
-  "main": "electron-main.js",
-  "name": "orchestrator",
+  "name": "orchestrator_server",
   "private": true,
-  "version": "0.5.1",
-  "build": {
-    "appId": "house.marchal.orchestrator",
-    "productName": "Orchestrator",
-    "files": [
-      "dist/",
-      "preload.js",
-      "electron-main.js",
-      "splash.html",
-      "package.json",
-      "node_modules/"
-    ],
-    "fileAssociations": [
-      {
-        "ext": "or",
-        "name": "Orchestrator Flow File",
-        "description": "Orchestrator Flow JSON",
-        "role": "Editor",
-        "icon": "build/icon.ico"
-      }
-    ],
-    "extraResources": [
-      {
-        "from": "backend/",
-        "to": "backend",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "backend/node_modules/",
-        "to": "backend/node_modules",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "preload/",
-        "to": "preload",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "logo.png",
-        "to": "logo.png"
-      }
-    ],
-    "directories": {
-      "buildResources": "build"
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
-    },
-    "nsis": {
-      "include": "build/installer-modify-path.nsh",
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "runAfterFinish": true
-    }
-  },
+  "version": "0.1.2",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "start": "npm run dev",
-    "electron": "electron electron-main.js",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron-main.js\"",
-    "pack": "npm run build && electron-builder --dir",
-    "pre:dist": "cd backend && npm install",
-    "dist": "npm run build && electron-builder"
+    "build": "tsc && vite build",
+    "build:backend": "cd backend && npm run build",
+    "build:backend:all": "cd backend && npm run build:all",
+    "backend": "node backend/api-server.cjs",
+    "start": "npm run dev"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
     "@dnd-kit/sortable": "^8.0.0",
     "ace-builds": "^1.41.0",
-    "concurrently": "^9.1.2",
     "dagre": "^0.8.5",
     "lucide-react": "^0.344.0",
     "prettier": "^3.6.2",
@@ -104,8 +35,6 @@
     "@types/react-resizable": "^3.0.7",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.18",
-    "electron": "13.6.9",
-    "electron-builder": "22.14.13",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
@@ -116,6 +45,6 @@
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
     "vite": "^5.4.2",
-    "wait-on": "^8.0.3"
+    "vite-plugin-singlefile": "^2.3.0"
   }
 }

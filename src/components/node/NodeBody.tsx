@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, memo } from "react";
 import { NodeData } from '../../types/node';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
+import { useSessionStore } from '../../store/sessionStore';
 
 // Function to format execution time in seconds or minutes
 const formatExecutionTime = (timeMs: number): string => {
@@ -49,11 +50,49 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     return () => { if (el) el.removeEventListener('wheel', handleWheel); };
   }, []);
 
-  if (data.type === 'constant') return null;
+  // VARIABLE node - show current runtime value if modified
+  if (data.type === 'variable') {
+    // If the variable has been modified (output differs from value), show it
+    if (data.output !== undefined && data.output !== data.value) {
+      const displayValue = typeof data.output === 'object'
+        ? JSON.stringify(data.output, null, 2)
+        : String(data.output);
+      return (
+        <div
+          className="flex-1 overflow-hidden px-3 py-2 border-b border-gray-400"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div className="text-[10px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-medium mb-1">
+            Current Value
+          </div>
+          <div
+            ref={outputRef}
+            className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs p-2 font-mono whitespace-pre-wrap w-full break-words max-h-32 overflow-y-auto select-text rounded"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onWheel={(e) => {
+              e.stopPropagation();
+              const div = e.currentTarget;
+              div.scrollTop += e.deltaY;
+            }}
+          >
+            {displayValue}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
 
   // FLOW node
   if (data.type === 'flow') {
-    const flowPath = data.code || '';
+    const { sessions } = useSessionStore();
+    const linkedSession = data.linkedSessionId
+      ? sessions.find(s => s.id === data.linkedSessionId)
+      : null;
+    const displayName = linkedSession?.name || data.label || 'Unlinked Flow';
+
     return (
       <div
         className="flex-1 overflow-hidden p-4 border-b border-gray-400"
@@ -61,11 +100,11 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
         onMouseLeave={handleMouseLeave}
       >
         <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
-          Flow File
+          {linkedSession ? 'Linked Session' : 'Flow'}
         </div>
         <div className="text-sm text-gray-400 space-y-2 relative">
           <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded p-2 border border-emerald-700/30">
-            <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{flowPath}</div>
+            <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{displayName}</div>
           </div>
           <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
             {data.executionTime !== undefined ? <>Output ({formatExecutionTime(data.executionTime)}): <br /></> : <>Output: <br /></>}

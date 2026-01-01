@@ -1,13 +1,13 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { NodeResizer, NodeProps } from 'reactflow';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
 import { NodeHeader } from './NodeHeader';
 import { NodeBody } from './NodeBody';
 import { NodeFooter } from './NodeFooter';
 import { Loader2, ExternalLink } from 'lucide-react';
 
 const CustomNode = ({ data, id, selected }: NodeProps) => {
-  const { updateNodeData,updateCodeFilePath, executeNode, edges, removeNode, nodes, nodeLoading, stopNodeExecution } = useFlowStore();
+  const { updateNodeData,updateCodeFilePath, executeNode, edges, removeNode, nodes, nodeLoading, stopNodeExecution, outputClearCounter } = useFlowStore();
   const isLoading = nodeLoading?.[id];
   
   // Check if this node has dontWaitForOutput enabled
@@ -23,7 +23,6 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
 
   const inputEdges = edges.filter(edge => edge.target === id);
   const outputEdges = edges.filter(edge => edge.source === id);
-  const outputClearCounter = useFlowStore(state => state.outputClearCounter);
   const contentRef = useRef<HTMLDivElement>(null);
   const [minHeight, setMinHeight] = useState(148);
   const [maxHeight, setMaxHeight] = useState(10000);

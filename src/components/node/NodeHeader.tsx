@@ -18,7 +18,8 @@ import {
   CornerRightDown
 } from 'lucide-react';
 import { NodeData } from '../../types/node';
-import { useFlowStore } from '../../store/flowStore';
+import { useFlowStore } from '../../store/sessionFlowStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { pathUtils } from '../../utils/pathUtils';
 interface NodeHeaderProps {
   data: NodeData;
@@ -37,46 +38,86 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   onExecute,
   onDelete,
 }) => {
-  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution } = useFlowStore();
-  
+  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, toggleDontWaitForOutput, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath, updateNodeData } = useFlowStore();
+  const sessionStore = useSessionStore();
+
   // Check if the node is currently loading/executing
   const isNodeExecuting = nodeLoading?.[nodeId] || false;
-  
+
   // Check if this node has dontWaitForOutput enabled
   const hasDontWaitForOutput = data.dontWaitForOutput;
-  const openFlowNodeInNewWindow = async() => {
-      if (data.code) {
-        // If the flow node already has a file path, open it in a new window
-        let flowPath = data.code;
-        
-        // If the path is relative, convert it to absolute for opening
-        if (data.isRelativePath) {
-          const { flowPath: rootFlowPath } = useFlowStore.getState();
-          if (rootFlowPath && window.electronAPI?.getAbsolutePath) {
-            const baseDir = pathUtils.dirname(rootFlowPath || '');
-            flowPath = window.electronAPI.getAbsolutePath(flowPath, baseDir);
-          } else if (rootFlowPath) {
-            console.error("getAbsolutePath API not available");
-          }
-        }
-        
-        //console.log('Attempting to open flow node in new window');
-        //console.log('electronAPI available:', !!window.electronAPI);
-        //console.log('openFlowInNewWindow available:', !!(window.electronAPI?.openFlowInNewWindow));
-        //console.log('Flow path:', flowPath);
-        
-        if (window.electronAPI?.openFlowInNewWindow) {
-          try {
-            const result = await window.electronAPI.openFlowInNewWindow(flowPath);
-            //console.log('Open flow result:', result);
-          } catch (error) {
-            console.error('Error opening flow in new window:', error);
-          }
-        } else {
-          console.error('openFlowInNewWindow API not available');
-        }
+
+  const handleEditFlowNode = async () => {
+    // If flow node has a linked session that exists, switch to it
+    if (data.linkedSessionId) {
+      const existingSession = sessionStore.sessions.find(s => s.id === data.linkedSessionId);
+      if (existingSession) {
+        sessionStore.switchSession(data.linkedSessionId);
+        return;
       }
-  }
+    }
+
+    // No linked session or it doesn't exist - create a new session with the flow content
+    const flowCode = data.code || '';
+    const sessionName = data.label || 'Flow Session';
+
+    // Save the original session ID before creating new session (which switches to it)
+    const originalSessionId = sessionStore.activeSessionId;
+
+    // Create new session (this switches to the new session)
+    const newSessionId = await sessionStore.createSession(sessionName);
+
+    // If there's flow content, parse and load it into the new session
+    if (flowCode.trim()) {
+      try {
+        const flowData = JSON.parse(flowCode);
+        if (flowData.nodes && flowData.edges) {
+          // Process nodes to ensure they have proper structure
+          const processedNodes = flowData.nodes.map((node: any) => ({
+            ...node,
+            data: {
+              ...node.data,
+              output: undefined,
+              executionTime: undefined
+            }
+          }));
+
+          sessionStore.updateActiveFlowState({
+            nodes: processedNodes,
+            edges: flowData.edges,
+            flowPath: sessionName,
+            history: [],
+            historyIndex: -1
+          });
+        }
+      } catch (e) {
+        console.error('Failed to parse flow content:', e);
+      }
+    }
+
+    // Link the flow node to the new session in the ORIGINAL session
+    // We need to update the original session's flow state directly
+    if (originalSessionId) {
+      useSessionStore.setState((state) => ({
+        sessions: state.sessions.map(session =>
+          session.id === originalSessionId
+            ? {
+                ...session,
+                flowState: {
+                  ...session.flowState,
+                  nodes: session.flowState.nodes.map(n =>
+                    n.id === nodeId
+                      ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } }
+                      : n
+                  )
+                }
+              }
+            : session
+        )
+      }));
+      sessionStore.saveSessions();
+    }
+  };
   return (
     <div className="p-4 border-b border-gray-700 dark:border-gray-300">
       <div className="flex items-center justify-between">
@@ -84,7 +125,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
 
           {(() => {
             switch (data.type) {
-              case 'constant':
+              case 'variable':
                 return <Hash className="w-5 h-5 text-purple-500 flex-shrink-0" />;
               case 'flow':
                 return <GitBranch className="w-5 h-5 text-emerald-500 flex-shrink-0" />;
@@ -98,6 +139,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
                 return <Terminal className="w-5 h-5 text-gray-400 flex-shrink-0" />;
               case 'powershell':
                 return <TerminalSquare className="w-5 h-5 text-blue-400 flex-shrink-0" />;
+              case 'python':
+                return <Code2 className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
               case 'goto':
                 return <CornerRightDown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />;   
               case 'comment':
@@ -112,11 +155,11 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
             onChange={(e) => onLabelChange(e.target.value)}
             onFocus={(e) => {
               e.target.select();
-              useFlowStore.getState().setTitleEditing(true);
+              setTitleEditing(true);
             }}
             onBlur={(e) => {
-              useFlowStore.getState().setTitleEditing(false);
-              useFlowStore.getState().updateCodeFilePath(nodeId,e.target.value);
+              setTitleEditing(false);
+              updateCodeFilePath(nodeId,e.target.value);
             }}
             onMouseEnter={() => {
               updateNodeDraggable(nodeId, false);
@@ -130,7 +173,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           />
         </div>
         <div className="flex items-center gap-2">
-          {data.type !== 'constant' && data.type !== 'flow' && data.type !== 'goto' && (
+          {data.type !== 'variable' && data.type !== 'flow' && data.type !== 'goto' && (
             <button
               className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
               onClick={() => openEditorModal(nodeId)}
@@ -141,7 +184,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           {data.type === 'flow' && (
             <button
               className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
-              onClick={() => openFlowNodeInNewWindow()}
+              onClick={handleEditFlowNode}
+              title={data.linkedSessionId ? "Switch to linked session" : "Create session from flow content"}
             >
               <Edit2 className="w-4 h-4 text-blue-500" />
             </button>
@@ -199,8 +243,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
         </div>
       </div>
-      {/* Value input below title for constants */}
-      {data.type === 'constant' && onValueChange && (
+      {/* Value input below title for variables */}
+      {data.type === 'variable' && onValueChange && (
         <input
           type="text"
           value={data.value || ''}
@@ -209,10 +253,10 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           placeholder="Value…"
           onFocus={(e) => {
             e.target.select();
-            useFlowStore.getState().setTitleEditing(true);
+            setTitleEditing(true);
           }}
           onBlur={() => {
-            useFlowStore.getState().setTitleEditing(false);
+            setTitleEditing(false);
           }}
           onMouseEnter={() => {
             updateNodeDraggable(nodeId, false);
