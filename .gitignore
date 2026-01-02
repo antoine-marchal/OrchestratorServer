@@ -28,3 +28,5 @@ backend/testing
 *.zip
 scriptsTest
 /CLAUDE.md
+/docs
+.claude

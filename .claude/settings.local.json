@@ -6,7 +6,12 @@
       "Bash(node -c:*)",
       "Bash(npm install:*)",
       "Bash(npm run lint:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(find:*)",
+      "Bash(git -C /mnt/c/workspace/OrchestratorServer log --oneline -10)",
+      "Bash(mkdir:*)",
+      "Bash(timeout 10 npm run dev)",
+      "Bash(tree:*)"
     ]
   }
 }
