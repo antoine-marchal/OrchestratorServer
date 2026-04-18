@@ -95,13 +95,14 @@ if (isPackaged) {
   console.log(`[Packaged Mode] Using Node.js: ${nodeExecutablePath}`);
 }
 
-// Use temp directory for INBOX/OUTBOX when packaged, otherwise use __dirname
+// Use exe directory for INBOX/OUTBOX when packaged so that node_modules next to the exe
+// are discoverable by ESM resolution (walks up from inbox/ → exe dir → finds node_modules/)
 const getWorkDir = () => {
   if (isPackaged) {
-    // Use a directory next to the executable or in temp
-    const os = require('os');
-    const workDir = process.env.ORCHESTRATOR_WORK_DIR || path.join(os.tmpdir(), 'orchestrator-backend');
-    return workDir;
+    // ORCHESTRATOR_WORK_DIR override takes precedence
+    if (process.env.ORCHESTRATOR_WORK_DIR) return process.env.ORCHESTRATOR_WORK_DIR;
+    // Default: directory next to the executable (mirrors Groovy lib/ pattern)
+    return path.dirname(process.execPath);
   }
   return __dirname;
 };

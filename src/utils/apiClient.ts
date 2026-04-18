@@ -121,16 +121,25 @@ class ApiClient {
       await this.createSession();
     }
 
-    // Include sessionId in the job request
-    const requestWithSession = {
-      ...jobRequest,
-      sessionId: this.session?.sessionId,
+    const doSubmit = () => {
+      const requestWithSession = { ...jobRequest, sessionId: this.session?.sessionId };
+      return this.request<{ jobId: string }>('/jobs', {
+        method: 'POST',
+        body: JSON.stringify(requestWithSession),
+      });
     };
 
-    return this.request<{ jobId: string }>('/jobs', {
-      method: 'POST',
-      body: JSON.stringify(requestWithSession),
-    });
+    try {
+      return await doSubmit();
+    } catch (error) {
+      // Session token is stale (backend restarted) — recreate and retry once
+      if (error instanceof Error && error.message.includes('Invalid session token')) {
+        this.session = null;
+        await this.createSession();
+        return doSubmit();
+      }
+      throw error;
+    }
   }
 
   async getJobStatus(jobId: string, lastLogIndex?: number): Promise<JobResponse> {

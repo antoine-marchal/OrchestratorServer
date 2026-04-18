@@ -7,8 +7,8 @@
     "type": "module",
     "scripts": {
         "start": "node api-server.cjs",
-        "build": "pkg . --targets node18-win-x64 --output dist/orchestrator-backend.exe",
-        "build:all": "pkg . --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --out-path dist"
+        "build": "pkg . --targets node18-win-x64 --output dist/orchestrator-backend.exe && node scripts/patch-exe.mjs",
+        "build:all": "pkg . --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --out-path dist && node scripts/patch-exe.mjs"
     },
     "pkg": {
         "scripts": "api-server.cjs",
@@ -26,8 +26,8 @@
         "tree-kill": "^1.2.2"
     },
     "devDependencies": {
-        "pkg": "^5.8.1"
-        
+        "pkg": "^5.8.1",
+        "resedit": "^3.0.2"
     },
     "engines": {
         "node": ">=18"
