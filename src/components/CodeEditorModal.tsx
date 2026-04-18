@@ -253,7 +253,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
             {!isValid && (
               <span className="text-red-500 text-sm">{error}</span>
             )}
-            {!isExternalFile && flowPath && (
+            {/** !isExternalFile && flowPath && (
               <button
                 onClick={createExternalFile}
                 className="flex items-center px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm"
@@ -261,7 +261,7 @@ const CodeEditorModal: React.FC<CodeEditorModalProps> = ({
                 <FileCode className="w-4 h-4 mr-1" />
                 Create External File
               </button>
-            )}
+            )*/}
             {FORMATTABLE_LANGS.has((language || "").toLowerCase()) && (
               <button
                 onClick={formatWithPrettier}

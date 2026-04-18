@@ -75,7 +75,7 @@ export async function saveFlow(sessionStore: SessionStoreGetter): Promise<void> 
   }
 
   const flow = { nodes: nodesToSave, edges: activeFlowState.edges };
-  const flowJson = JSON.stringify(flow, null, 2);
+  const flowJson = JSON.stringify(flow, null, 1);
 
   // Get the current session name for the suggested filename
   const activeSession = sessionStore().getActiveSession();

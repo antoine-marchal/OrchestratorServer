@@ -298,6 +298,7 @@ const SessionTabs: React.FC = () => {
         <Plus size={14} className="dark:text-gray-200" />
         <span className="ml-1 text-sm dark:text-gray-200">New</span>
       </button>
+      
     </div>
   );
 };

@@ -114,10 +114,20 @@ const STOP_CHECK_INTERVAL_MS = Number(process.env.STOP_CHECK_INTERVAL_MS ?? 500)
 const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_MS ?? 0);   // 0 = infinite
 const JS_BACKEND_TIMEOUT_MS = Number(process.env.JS_BACKEND_TIMEOUT_MS ?? 0);    // 0 = infinite
 
-// Ensure directories exist
+// Ensure directories exist and clear inbox/outbox on startup
 if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
-if (!fs.existsSync(INBOX)) fs.mkdirSync(INBOX, { recursive: true });
-if (!fs.existsSync(OUTBOX)) fs.mkdirSync(OUTBOX, { recursive: true });
+
+// Clear and recreate inbox/outbox directories on startup
+function clearDirectory(dirPath) {
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+  }
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+clearDirectory(INBOX);
+clearDirectory(OUTBOX);
+console.log('[Startup] Cleared inbox and outbox directories');
 
 // Command line arguments
 const argv = process.argv;
@@ -1853,12 +1863,13 @@ fs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf
   fs.writeFileSync(tempScriptPath, codeWithInput, 'utf8');
 
   // Use spawn for real-time log streaming
-  const child = spawn(nodeExecutablePath, [tempScriptPath], {
+
+  const child = spawn(`"${nodeExecutablePath}"`, [tempScriptPath], {
     cwd: execCwd,
     shell: true,
     timeout: JS_BACKEND_TIMEOUT_MS || undefined,
   });
-
+  
   let stdout = '';
   let stderr = '';
 

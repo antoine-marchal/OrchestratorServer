@@ -71,8 +71,14 @@ npm run preview
 | `src/` | React source code (frontend) |
 | `src/components/` | UI components (FlowEditor, CodeEditorModal, Console, SessionTabs, etc.) |
 | `src/components/node/` | Node-specific components (CustomNode, NodeHeader, NodeBody, etc.) |
-| `src/store/` | Zustand state management for sessions and flows |
+| `src/constants/` | Constant definitions (nodeTypes.ts) |
+| `src/hooks/` | Custom React hooks (useKeyboardShortcuts.ts) |
+| `src/store/` | Modular Zustand state management |
+| `src/store/executors/` | Node and flow execution logic |
+| `src/store/actions/` | History and clipboard actions |
+| `src/store/operations/` | File save/load operations |
 | `src/types/` | TypeScript types for nodes and edges |
+| `src/utils/` | Utilities (apiClient, pathUtils, flowLayout, etc.) |
 | `backend/` | Node.js/Express backend for script execution |
 
 ## Node Types

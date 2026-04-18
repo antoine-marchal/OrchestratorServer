@@ -55,7 +55,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     // If the variable has been modified (output differs from value), show it
     if (data.output !== undefined && data.output !== data.value) {
       const displayValue = typeof data.output === 'object'
-        ? JSON.stringify(data.output, null, 2)
+        ? JSON.stringify(data.output, null, 1)
         : String(data.output);
       return (
         <div
@@ -134,10 +134,10 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                 {typeof data.output === 'object' && data.output !== null && 'output' in data.output
                   ? (typeof (data.output as any).output === 'string'
                     ? (data.output as any).output
-                    : JSON.stringify((data.output as any).output, null, 2))
+                    : JSON.stringify((data.output as any).output, null, 1))
                   : (typeof data.output === 'string'
                     ? data.output
-                    : JSON.stringify(data.output, null, 2))}
+                    : JSON.stringify(data.output, null, 1))}
               </div>
               <button
                 className="absolute right-5 top-[66px] dark:bg-gray-900 rounded hover:bg-gray-300 dark:hover:bg-gray-800"
@@ -302,10 +302,10 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
               {typeof data.output === 'object' && data.output !== null && 'output' in data.output
                 ? (typeof (data.output as any).output === 'string'
                   ? (data.output as any).output
-                  : JSON.stringify((data.output as any).output, null, 2))
+                  : JSON.stringify((data.output as any).output, null, 1))
                 : (typeof data.output === 'string'
                   ? data.output
-                  : JSON.stringify(data.output, null, 2))}
+                  : JSON.stringify(data.output, null, 1))}
             </div>
             <button
               className="absolute right-5 top-6 dark:bg-gray-900 rounded hover:bg-gray-300 dark:hover:bg-gray-800"
