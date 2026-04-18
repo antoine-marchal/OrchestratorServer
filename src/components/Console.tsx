@@ -1,10 +1,12 @@
 import React from 'react';
 import { useFlowStore } from '../store/sessionFlowStore';
-import { Terminal, X, Trash2, Maximize2, Minimize2, Clock } from 'lucide-react';
+import { useSessionStore } from '../store/sessionStore';
+import { Terminal, X, Trash2, Maximize2, Minimize2, Clock, Download } from 'lucide-react';
 import { useTheme } from "../context/ThemeContext";
 
 const Console: React.FC = () => {
   const { theme } = useTheme();
+  const activeSession = useSessionStore(s => s.getActiveSession());
   const {
     consoleMessages,
     showConsole,
@@ -61,6 +63,23 @@ const Console: React.FC = () => {
   const getNodeLabel = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     return node?.data?.label || nodeId;
+  };
+
+  const handleExportLogs = () => {
+    const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, '');
+    const lines = consoleMessages.map(msg => {
+      const time = new Date(msg.timestamp).toLocaleTimeString();
+      return `[${time}] [${msg.type.toUpperCase()}] ${getNodeLabel(msg.nodeId)}: ${stripAnsi(msg.message || '')}`;
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const sessionName = (activeSession?.name || 'session').replace(/[^a-z0-9_-]/gi, '_');
+    const date = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    a.href = url;
+    a.download = `${sessionName}_${date}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (!showConsole) {
@@ -304,6 +323,14 @@ const Console: React.FC = () => {
             </div>
           )}
 
+
+          <button
+            onClick={handleExportLogs}
+            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            title="Export logs"
+          >
+            <Download className="w-4 h-4" />
+          </button>
 
           <button
             onClick={toggleConsole}

@@ -116,10 +116,10 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
       updateNodeDraggable(nodeId, true);
       setConnecting(false)
       }}>
-      
+      {type !== 'variable' && (
       <div className="flex justify-between">
         <div className="w-1/2 pr-2">
-          {type !== 'variable' && (
+          
             <div className="relative">
               <Handle
                 type="target"
@@ -138,7 +138,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
                 />
               </div>
             </div>
-          )}
+          
         </div>
         <div className="w-1/2 pl-2">
           <div className="relative">
@@ -161,6 +161,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

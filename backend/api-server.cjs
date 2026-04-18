@@ -13,6 +13,7 @@ const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
+const crypto = require('crypto');
 const kill = require('tree-kill');
 
 /* ===============================
@@ -267,6 +268,48 @@ const getResourcePath = () => {
 };
 
 const groovyJarPath = path.join(getResourcePath(), 'groovyExec.jar');
+
+/* ===============================
+   Auth - Server API Key
+   =============================== */
+
+const API_KEY_FILE = path.join(process.cwd(), 'server-api-key.txt');
+
+function loadOrGenerateApiKey() {
+  try {
+    if (fs.existsSync(API_KEY_FILE)) {
+      const key = fs.readFileSync(API_KEY_FILE, 'utf8').trim();
+      if (key.length >= 32) return key;
+    }
+  } catch { /* fall through to generate */ }
+  const key = crypto.randomBytes(32).toString('hex');
+  try { fs.writeFileSync(API_KEY_FILE, key, { mode: 0o600 }); } catch { /* non-fatal */ }
+  return key;
+}
+
+const SERVER_API_KEY = loadOrGenerateApiKey();
+
+function requireApiKey(req, res, next) {
+  const provided = req.headers['x-api-key'];
+  if (!provided || provided !== SERVER_API_KEY) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or missing API key' } });
+  }
+  next();
+}
+
+function requireSessionToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Missing session token' } });
+  }
+  const token = authHeader.slice(7);
+  const session = Array.from(sessions.values()).find(s => s.token === token);
+  if (!session) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid session token' } });
+  }
+  req.session = session;
+  next();
+}
 
 /* ===============================
    Core Utilities
@@ -2285,9 +2328,11 @@ function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables
   // Generate variable declarations for injection
   const varNames = Object.keys(variables);
   const variableDeclarations = varNames.map(name => `let ${name} = __variables[${JSON.stringify(name)}];`).join('\n');
+  // Capture variable changes back to __variables after user code runs (even if user used return)
+  const varCapture = varNames.map(name => `try { __variables[${JSON.stringify(name)}] = ${name}; } catch(e) {}`).join('\n');
 
   try {
-    const wrappedCode = `${variableDeclarations}\n${code}\nreturn typeof process === "function" ? await process(input) : undefined;`;
+    const wrappedCode = `${variableDeclarations}\nlet __userReturn;\ntry {\n  __userReturn = await (async () => { ${code} })();\n} finally {\n  ${varCapture || '//'}\n}\nif (typeof process === "function") return await process(input);\nreturn __userReturn;`;
     const fn = new AsyncFunction('input', 'console', '__variables', wrappedCode);
     fn(input, customConsole, variables)
       .then((output) => {
@@ -2295,7 +2340,7 @@ function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables
         if (!finished) {
           finished = true;
           output = normalizeOutput(output);
-          finish({ output, log: logs.length > 0 ? logs.join('\n').trim() : '', error: null });
+          finish({ output, log: logs.length > 0 ? logs.join('\n').trim() : '', error: null, variables });
         }
       })
       .catch((err) => {
@@ -2337,7 +2382,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..')));
 
 // Job Management Routes
-app.post('/api/v1/jobs', (req, res) => {
+app.post('/api/v1/jobs', requireSessionToken, (req, res) => {
   try {
     const { type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId, variables } = req.body;
 
@@ -2379,7 +2424,7 @@ app.post('/api/v1/jobs', (req, res) => {
   }
 });
 
-app.get('/api/v1/jobs/:jobId', (req, res) => {
+app.get('/api/v1/jobs/:jobId', requireSessionToken, (req, res) => {
   const { jobId } = req.params;
   const { lastLogIndex } = req.query;
   const job = jobs.get(jobId);
@@ -2409,7 +2454,7 @@ app.get('/api/v1/jobs/:jobId', (req, res) => {
   });
 });
 
-app.post('/api/v1/jobs/:jobId/stop', (req, res) => {
+app.post('/api/v1/jobs/:jobId/stop', requireSessionToken, (req, res) => {
   const { jobId } = req.params;
   const job = jobs.get(jobId);
   if (!job) {
@@ -2434,7 +2479,7 @@ app.post('/api/v1/jobs/:jobId/stop', (req, res) => {
 });
 
 // SSE endpoint for real-time log streaming
-app.get('/api/v1/jobs/:jobId/logs/stream', (req, res) => {
+app.get('/api/v1/jobs/:jobId/logs/stream', requireSessionToken, (req, res) => {
   const { jobId } = req.params;
   const job = jobs.get(jobId);
 
@@ -2476,7 +2521,7 @@ app.get('/api/v1/jobs/:jobId/logs/stream', (req, res) => {
   });
 });
 
-app.get('/api/v1/jobs', (req, res) => {
+app.get('/api/v1/jobs', requireSessionToken, (req, res) => {
   const { status, limit = 50, offset = 0 } = req.query;
   let jobList = Array.from(jobs.values());
 
@@ -2499,8 +2544,13 @@ app.get('/api/v1/jobs', (req, res) => {
   });
 });
 
+// Ping / health-check
+app.get('/api/v1/ping', (req, res) => {
+  res.json({ status: 'ok', version: require('./package.json').version });
+});
+
 // Session Management Routes
-app.post('/api/v1/sessions', (req, res) => {
+app.post('/api/v1/sessions', requireApiKey, (req, res) => {
   try {
     const { metadata } = req.body;
     const sessionId = nowUid();
@@ -2530,7 +2580,7 @@ app.post('/api/v1/sessions', (req, res) => {
   }
 });
 
-app.get('/api/v1/sessions/:sessionId', (req, res) => {
+app.get('/api/v1/sessions/:sessionId', requireSessionToken, (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
   if (!session) {
@@ -2552,7 +2602,7 @@ app.get('/api/v1/sessions/:sessionId', (req, res) => {
   });
 });
 
-app.post('/api/v1/sessions/:sessionId/extend', (req, res) => {
+app.post('/api/v1/sessions/:sessionId/extend', requireSessionToken, (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
   if (!session) {
@@ -2568,7 +2618,7 @@ app.post('/api/v1/sessions/:sessionId/extend', (req, res) => {
   });
 });
 
-app.delete('/api/v1/sessions/:sessionId', (req, res) => {
+app.delete('/api/v1/sessions/:sessionId', requireSessionToken, (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
   if (!session) {
@@ -2745,7 +2795,9 @@ function processJob(job) {
 const server = app.listen(PORT, () => {
   if (!isSilent) console.log(colorize('green', `\n🚀 Orchestrator API Server started on port ${PORT}`));
   if (!isSilent) console.log(colorize('cyan', `   API endpoint: http://localhost:${PORT}/api/v1`));
-  if (!isSilent) console.log(colorize('gray', `   Environment: ${process.env.NODE_ENV || 'development'}\n`));
+  if (!isSilent) console.log(colorize('gray', `   Environment: ${process.env.NODE_ENV || 'development'}`));
+  if (!isSilent) console.log(colorize('yellow', `   API Key: ${SERVER_API_KEY}`));
+  if (!isSilent) console.log(colorize('gray', `   Key file: ${API_KEY_FILE}\n`));
 });
 
 const shutdown = (signal) => {

@@ -1,6 +1,7 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { NodeResizer, NodeProps } from 'reactflow';
 import { useFlowStore } from '../../store/sessionFlowStore';
+import { useSessionStore } from '../../store/sessionStore';
 import { NodeHeader } from './NodeHeader';
 import { NodeBody } from './NodeBody';
 import { NodeFooter } from './NodeFooter';
@@ -8,7 +9,65 @@ import { Loader2, ExternalLink } from 'lucide-react';
 
 const CustomNode = ({ data, id, selected }: NodeProps) => {
   const { updateNodeData,updateCodeFilePath, executeNode, edges, removeNode, nodes, nodeLoading, stopNodeExecution, outputClearCounter } = useFlowStore();
+  const sessionStore = useSessionStore();
   const isLoading = nodeLoading?.[id];
+
+  const handleFlowNodeDoubleClick = async (e: React.MouseEvent) => {
+    if (data.type !== 'flow') return;
+    e.stopPropagation();
+
+    if (data.linkedSessionId) {
+      const existing = sessionStore.sessions.find(s => s.id === data.linkedSessionId);
+      if (existing) {
+        sessionStore.switchSession(data.linkedSessionId);
+        return;
+      }
+    }
+
+    const flowCode = data.code || '';
+    const sessionName = data.label || 'Flow Session';
+    const originalSessionId = sessionStore.activeSessionId;
+    const newSessionId = await sessionStore.createSession(sessionName);
+
+    if (flowCode.trim()) {
+      try {
+        const flowData = JSON.parse(flowCode);
+        if (flowData.nodes && flowData.edges) {
+          sessionStore.updateActiveFlowState({
+            nodes: flowData.nodes.map((node: any) => ({
+              ...node,
+              data: { ...node.data, output: undefined, executionTime: undefined },
+            })),
+            edges: flowData.edges,
+            flowPath: sessionName,
+            history: [],
+            historyIndex: -1,
+          });
+        }
+      } catch (e) {
+        console.error('Failed to parse flow content:', e);
+      }
+    }
+
+    if (originalSessionId) {
+      useSessionStore.setState((state) => ({
+        sessions: state.sessions.map(session =>
+          session.id === originalSessionId
+            ? {
+                ...session,
+                flowState: {
+                  ...session.flowState,
+                  nodes: session.flowState.nodes.map(n =>
+                    n.id === id ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } } : n
+                  ),
+                },
+              }
+            : session
+        ),
+      }));
+      sessionStore.saveSessions();
+    }
+  };
   
   // Check if this node has dontWaitForOutput enabled
   const hasDontWaitForOutput = data.dontWaitForOutput;
@@ -61,6 +120,7 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
             : 'ring-2 ring-blue-500'
           : ''
       }`}
+      onDoubleClick={data.type === 'flow' ? handleFlowNodeDoubleClick : undefined}
     >
       {/* External file indicator */}
       {data.codeFilePath && (

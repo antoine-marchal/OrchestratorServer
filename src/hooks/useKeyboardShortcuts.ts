@@ -46,8 +46,10 @@ export const useKeyboardShortcuts = (config: KeyboardShortcutsConfig) => {
         // Get current state of output zone, title editing, and mouse over console
         const isModalOpen = editorModal.isOpen;
 
-        // Skip handling CTRL+C and CTRL+V when modal editor is open, output zone is active, title is being edited, or mouse is over console
-        const shouldSkipCopyPaste = isModalOpen || isOutputZoneActive || isTitleEditing || isMouseOverConsole;
+        const activeTag = (document.activeElement as HTMLElement)?.tagName?.toLowerCase();
+        const isInputFocused = activeTag === 'input' || activeTag === 'textarea';
+        // Skip handling CTRL+C and CTRL+V when modal editor is open, output zone is active, title is being edited, mouse is over console, or an input is focused
+        const shouldSkipCopyPaste = isModalOpen || isOutputZoneActive || isTitleEditing || isMouseOverConsole || isInputFocused;
 
         switch (event.key.toLowerCase()) {
           case 'n':

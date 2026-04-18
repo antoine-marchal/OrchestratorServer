@@ -40,6 +40,15 @@ interface JobResponse {
 class ApiClient {
   private baseUrl = import.meta.env.VITE_API_BASE || '/api/v1';
   private session: Session | null = null;
+  private apiKey: string = '';
+
+  setApiKey(key: string): void {
+    this.apiKey = key.trim();
+  }
+
+  getApiKey(): string {
+    return this.apiKey;
+  }
 
   setBaseUrl(address: string): void {
     // Format the address to create a proper base URL
@@ -86,10 +95,15 @@ class ApiClient {
     return response.json();
   }
 
+  async ping(): Promise<{ status: string; version: string }> {
+    return this.request<{ status: string; version: string }>('/ping');
+  }
+
   async createSession(metadata?: any): Promise<Session> {
     const session = await this.request<Session>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ metadata: metadata || {} }),
+      headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {},
     });
     this.session = session;
     return session;

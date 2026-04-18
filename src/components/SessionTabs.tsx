@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
-import { X, Plus, Edit2, Server, GripVertical } from 'lucide-react';
+import { X, Plus, Edit2, Server, GripVertical, KeyRound } from 'lucide-react';
 import { apiClient } from '../utils/apiClient';
 import {
   DndContext,
@@ -17,6 +17,9 @@ import {
   horizontalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
+
+const APP_VERSION = '0.1.5';
+type ConnectionStatus = 'connected' | 'disconnected' | 'checking';
 
 interface SortableTabProps {
   session: {
@@ -150,6 +153,20 @@ const SessionTabs: React.FC = () => {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [backendAddress, setBackendAddress] = useState('localhost:3000');
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [connStatus, setConnStatus] = useState<ConnectionStatus>('checking');
+  const pingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pingBackend = useCallback(async () => {
+    setConnStatus('checking');
+    try {
+      await apiClient.ping();
+      setConnStatus('connected');
+    } catch {
+      setConnStatus('disconnected');
+    }
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -162,37 +179,65 @@ const SessionTabs: React.FC = () => {
     })
   );
 
-  // Load backend address from localStorage on mount
+  // Load backend address and API key from localStorage on mount and ping
   useEffect(() => {
     const savedAddress = localStorage.getItem('orchestrator-backend-address');
     if (savedAddress) {
       setBackendAddress(savedAddress);
       apiClient.setBaseUrl(savedAddress);
     } else {
-      // Set default and save it
       localStorage.setItem('orchestrator-backend-address', 'localhost:3000');
       apiClient.setBaseUrl('localhost:3000');
     }
-  }, []);
+    const savedKey = localStorage.getItem('orchestrator-api-key');
+    if (savedKey) {
+      setApiKey(savedKey);
+      apiClient.setApiKey(savedKey);
+    }
+    pingBackend();
+  }, [pingBackend]);
 
   const handleBackendAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newAddress = e.target.value;
     setBackendAddress(newAddress);
   };
 
+  const applyBackendAddress = useCallback((addr: string) => {
+    localStorage.setItem('orchestrator-backend-address', addr);
+    apiClient.setBaseUrl(addr);
+    if (pingTimeoutRef.current) clearTimeout(pingTimeoutRef.current);
+    pingTimeoutRef.current = setTimeout(pingBackend, 300);
+  }, [pingBackend]);
+
   const handleBackendAddressBlur = () => {
-    // Save to localStorage and update apiClient
-    localStorage.setItem('orchestrator-backend-address', backendAddress);
-    apiClient.setBaseUrl(backendAddress);
+    applyBackendAddress(backendAddress);
   };
 
   const handleBackendAddressKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      localStorage.setItem('orchestrator-backend-address', backendAddress);
-      apiClient.setBaseUrl(backendAddress);
+      applyBackendAddress(backendAddress);
       (e.target as HTMLInputElement).blur();
     }
   };
+
+
+  const applyApiKey = useCallback((key: string) => {
+    const trimmed = key.trim();
+    localStorage.setItem('orchestrator-api-key', trimmed);
+    apiClient.setApiKey(trimmed);
+  }, []);
+
+  const handleApiKeyBlur = () => {
+    applyApiKey(apiKey);
+  };
+
+  const handleApiKeyKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      applyApiKey(apiKey);
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
 
   const handleCreateSession = async () => {
     await createSession();
@@ -243,10 +288,24 @@ const SessionTabs: React.FC = () => {
     }
   };
 
+  const connDot =
+    connStatus === 'connected'
+      ? 'bg-green-500'
+      : connStatus === 'checking'
+      ? 'bg-yellow-400 animate-pulse'
+      : 'bg-red-500';
+
+  const connTitle =
+    connStatus === 'connected'
+      ? 'Backend connected'
+      : connStatus === 'checking'
+      ? 'Checking connection…'
+      : 'Backend unreachable';
+
   return (
     <div className="flex items-center bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 px-2 py-1 overflow-x-auto">
-      {/* Backend Address Input */}
-      <div className="flex items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
+      {/* Backend Address Input + connection indicator */}
+      <div className="flex items-center mr-2 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
         <Server size={14} className="mr-2 text-gray-500 dark:text-gray-400" />
         <input
           type="text"
@@ -258,6 +317,32 @@ const SessionTabs: React.FC = () => {
           className="bg-transparent border-none outline-none text-sm w-40 text-gray-700 dark:text-gray-200"
           title="Backend server address"
         />
+        <span
+          className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${connDot}`}
+          title={connTitle}
+        />
+      </div>
+
+      {/* API Key Input */}
+      <div className="flex items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
+        <KeyRound size={14} className="mr-2 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+        <input
+          type={showApiKey ? 'text' : 'password'}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          onBlur={handleApiKeyBlur}
+          onKeyPress={handleApiKeyKeyPress}
+          placeholder="API key"
+          className="bg-transparent border-none outline-none text-sm w-32 text-gray-700 dark:text-gray-200"
+          title="Server API key (shown in backend console)"
+        />
+        <button
+          onClick={() => setShowApiKey(v => !v)}
+          className="ml-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs"
+          title={showApiKey ? 'Hide key' : 'Show key'}
+        >
+          {showApiKey ? '●' : '○'}
+        </button>
       </div>
 
       <DndContext
@@ -298,7 +383,11 @@ const SessionTabs: React.FC = () => {
         <Plus size={14} className="dark:text-gray-200" />
         <span className="ml-1 text-sm dark:text-gray-200">New</span>
       </button>
-      
+
+      {/* Hero title */}
+      <div className="ml-auto pl-4 whitespace-nowrap text-l font-semibold text-gray-900 dark:text-gray-200 select-none">
+        Orchestrator - WebClient v.{APP_VERSION}
+      </div>
     </div>
   );
 };

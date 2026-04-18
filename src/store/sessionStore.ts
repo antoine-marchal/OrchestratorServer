@@ -60,6 +60,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     if (!session) return;
 
+    // Stop all running jobs in this session before closing
+    const runningJobIds = session.flowState.nodes
+      .map(n => n.data?.jobId)
+      .filter((id): id is string => !!id);
+    await Promise.allSettled(runningJobIds.map(jobId => apiClient.stopJob(jobId)));
+
     // Terminate session on backend
     try {
       await apiClient.deleteSession(sessionId);
