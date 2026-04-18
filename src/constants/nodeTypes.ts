@@ -8,7 +8,8 @@ import {
   MessageSquare,
   GitBranch,
   CornerRightDown,
-  Code2
+  Code2,
+  FileTerminal
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 
@@ -69,6 +70,13 @@ export const NODE_TYPES: NodeTypeDefinition[] = [
     code: '# input contains the data from connected nodes\noutput = input\nprint(output)',
     icon: Code2,
     iconColor: 'text-yellow-500'
+  },
+  {
+    id: 'shell',
+    label: 'Shell',
+    code: '# $INPUT contains the input value, write result to $OUTPUT\necho "$INPUT" > "$OUTPUT"',
+    icon: FileTerminal,
+    iconColor: 'text-green-500'
   },
   {
     id: 'variable',

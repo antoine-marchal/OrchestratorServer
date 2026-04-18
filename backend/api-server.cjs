@@ -254,21 +254,38 @@ function cleanupJobLogs(jobId) {
    Path & Resource Utilities
    =============================== */
 
-const getResourcePath = () => {
-  if (isPackaged) {
-    // In pkg, assets are bundled and accessible via __dirname (snapshot path)
-    // But for external files like groovyExec.jar, check next to executable first
-    const exeDir = path.dirname(process.execPath);
-    if (fs.existsSync(path.join(exeDir, 'groovyExec.jar'))) {
-      return exeDir;
-    }
-    // Fallback to snapshot path (if bundled as asset)
-    return __dirname;
+const resolveGroovyJar = () => {
+  if (!isPackaged) return path.join(__dirname, 'groovyExec.jar');
+
+  const exeDir = path.dirname(process.execPath);
+  const jarNextToExe = path.join(exeDir, 'groovyExec.jar');
+
+  // If a real (non-snapshot) file exists next to the exe, use it directly
+  if (!jarNextToExe.includes('snapshot') && fs.existsSync(jarNextToExe)) {
+    return jarNextToExe;
   }
-  return __dirname;
+
+  // Check if previously extracted to WORK_DIR
+  const jarInWorkDir = path.join(WORK_DIR, 'groovyExec.jar');
+  if (fs.existsSync(jarInWorkDir)) return jarInWorkDir;
+
+  // Extract the bundled snapshot copy to the real filesystem so Java can access it
+  const jarInSnapshot = path.join(__dirname, 'groovyExec.jar');
+  if (fs.existsSync(jarInSnapshot)) {
+    try {
+      const data = fs.readFileSync(jarInSnapshot);
+      fs.writeFileSync(jarInWorkDir, data);
+      if (!isSilent) console.log(`[Groovy] Extracted groovyExec.jar to ${jarInWorkDir}`);
+      return jarInWorkDir;
+    } catch (err) {
+      console.error(`[Groovy] Failed to extract JAR: ${err.message}`);
+    }
+  }
+
+  return jarNextToExe;
 };
 
-const groovyJarPath = path.join(getResourcePath(), 'groovyExec.jar');
+const groovyJarPath = resolveGroovyJar();
 
 /* ===============================
    Auth - Server API Key
@@ -1400,6 +1417,8 @@ async function executeRegularNode(node, nodeId, nodeInput, nodeResults, waitForR
       processPowershellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'python') {
       processPythonNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
+    } else if (type === 'shell') {
+      processShellNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else if (type === 'javascript' || type === 'js') {
       processJsNode(nodeJobId, code, nodeInput, finish, null, execCwd, variables, jobId);
     } else {
@@ -1576,6 +1595,8 @@ function processJobFile(filePath) {
     processPowershellNode(id, code, input, finish, codeFilePath, execCwd);
   } else if (type === 'python') {
     processPythonNode(id, code, input, finish, codeFilePath, execCwd);
+  } else if (type === 'shell') {
+    processShellNode(id, code, input, finish, codeFilePath, execCwd);
   } else {
     processJsNode(id, code, input, finish);
   }
@@ -2285,6 +2306,135 @@ with open('${outputPathPy}', 'w') as __f:
   child.on('exit', () => clearInterval(checkStopInterval));
 }
 
+function shellQuote(str) {
+  return "'" + String(str).replace(/'/g, "'\\''") + "'";
+}
+
+function processShellNode(id, code, input, finish, _codeFilePath, execCwd, variables = {}, jobId = null) {
+  const uid = nowUid();
+  const tempShPath = path.join(INBOX, `node_sh_${uid}.sh`);
+  const tempOutputPath = path.join(INBOX, `node_sh_${uid}.output`);
+  const tempVariablesPath = path.join(INBOX, `node_sh_${uid}.variables.json`);
+  const tempCapturePath = path.join(INBOX, `node_sh_${uid}.capture.cjs`);
+  const inputVar = input !== undefined ? String(input) : '';
+
+  const varNames = Object.keys(variables);
+
+  try {
+    fs.writeFileSync(tempVariablesPath, JSON.stringify(variables), 'utf8');
+  } catch (err) { /* continue without variables */ }
+
+  // Inject string/number variables as exported env vars
+  const variableExports = Object.entries(variables)
+    .filter(([_, v]) => typeof v === 'string' || typeof v === 'number')
+    .map(([name, val]) => `export ${name}=${shellQuote(String(val))}`)
+    .join('\n');
+
+  // Write a Node.js capture helper that reads env vars and writes them back as JSON
+  if (varNames.length > 0) {
+    const captureScript = `const fs=require('fs');const names=${JSON.stringify(varNames)};const v={};names.forEach(k=>{if(process.env[k]!==undefined)v[k]=process.env[k]});fs.writeFileSync(${JSON.stringify(tempVariablesPath)},JSON.stringify(v));`;
+    try {
+      fs.writeFileSync(tempCapturePath, captureScript, 'utf8');
+    } catch (err) { /* skip capture on error */ }
+  }
+
+  const variableCapture = varNames.length > 0
+    ? `${shellQuote(nodeExecutablePath)} ${shellQuote(tempCapturePath)} 2>/dev/null || true`
+    : '';
+
+  const shCode = `#!/bin/bash
+${variableExports}
+export INPUT=${shellQuote(inputVar)}
+export OUTPUT=${shellQuote(tempOutputPath)}
+${code}
+${variableCapture}
+`;
+
+  try {
+    fs.writeFileSync(tempShPath, shCode, 'utf8');
+    fs.chmodSync(tempShPath, '755');
+  } catch (err) {
+    finish({ output: null, log: `Failed to write shell script: ${err.message}`, error: err.message, variables: {} });
+    return;
+  }
+
+  const child = spawn('bash', [tempShPath], { cwd: execCwd });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (data) => {
+    const text = data.toString();
+    stdout += text;
+    if (jobId) emitJobLog(jobId, 'log', text, id);
+  });
+
+  child.stderr.on('data', (data) => {
+    const text = data.toString();
+    stderr += text;
+    if (jobId) emitJobLog(jobId, 'error', text, id);
+  });
+
+  child.on('close', (exitCode) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempShPath);
+    safeUnlinkSync(tempCapturePath);
+
+    let outputValue = null;
+    try {
+      if (fs.existsSync(tempOutputPath)) {
+        outputValue = fs.readFileSync(tempOutputPath, 'utf8').trim();
+        safeUnlinkSync(tempOutputPath);
+      }
+    } catch { outputValue = null; }
+
+    let modifiedVariables = {};
+    try {
+      if (fs.existsSync(tempVariablesPath)) {
+        const raw = fs.readFileSync(tempVariablesPath, 'utf8').trim();
+        modifiedVariables = JSON.parse(raw);
+        safeUnlinkSync(tempVariablesPath);
+      }
+    } catch { modifiedVariables = {}; }
+
+    if (!outputValue && stdout) outputValue = stdout.trim();
+
+    if (typeof outputValue === 'string') {
+      const trimmed = outputValue.trim();
+      try { outputValue = JSON.parse(trimmed); } catch { outputValue = trimmed; }
+    }
+
+    outputValue = normalizeOutput(outputValue);
+
+    finish({
+      log: stdout.trim() || null,
+      error: ((stderr || '') + (exitCode !== 0 ? `\nExit code: ${exitCode}` : '')).trim() || null,
+      output: outputValue,
+      variables: modifiedVariables,
+    });
+  });
+
+  child.on('error', (err) => {
+    runningProcesses.delete(id);
+    safeUnlinkSync(tempShPath);
+    safeUnlinkSync(tempCapturePath);
+    finish({ output: null, log: null, error: err.message, variables: {} });
+  });
+
+  registerProcess(id, child);
+
+  const checkStopInterval = setInterval(() => {
+    if (shouldStopJob(id, jobId)) {
+      clearInterval(checkStopInterval);
+      terminateProcess(id);
+      cleanupStopSignal(id);
+      finish({ output: null, log: 'Process terminated by user', error: 'Process terminated by user', variables: {} });
+    }
+  }, STOP_CHECK_INTERVAL_MS);
+
+  child.on('exit', () => clearInterval(checkStopInterval));
+}
+
 function processJsNode(id, code, input, finish, codeFilePath, execCwd, variables = {}, jobId = null) {
   let logs = [];
   const customConsole = {
@@ -2784,6 +2934,8 @@ function processJob(job) {
     processPowershellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else if (type === 'python') {
     processPythonNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
+  } else if (type === 'shell') {
+    processShellNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   } else {
     processJsNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   }

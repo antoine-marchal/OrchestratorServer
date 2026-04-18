@@ -8,7 +8,9 @@
     "scripts": {
         "start": "node api-server.cjs",
         "build": "pkg . --targets node18-win-x64 --output dist/orchestrator-backend.exe && node scripts/patch-exe.mjs",
-        "build:all": "pkg . --targets node18-win-x64,node18-linux-x64,node18-macos-x64 --out-path dist && node scripts/patch-exe.mjs"
+        "build:linux": "pkg . --targets node18-linux-x64 --output dist/orchestrator-backend-linux",
+        "build:mac": "pkg . --targets node18-macos-x64 --output dist/orchestrator-backend-mac",
+        "build:all": "pkg . --targets node18-win-x64 --output dist/orchestrator-backend.exe && node scripts/patch-exe.mjs && pkg . --targets node18-linux-x64 --output dist/orchestrator-backend-linux && pkg . --targets node18-macos-x64 --output dist/orchestrator-backend-mac"
     },
     "pkg": {
         "scripts": "api-server.cjs",
