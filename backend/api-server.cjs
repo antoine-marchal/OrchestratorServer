@@ -20,7 +20,10 @@ const kill = require('tree-kill');
    Configuration & Environment
    =============================== */
 
-const PORT = process.env.PORT || 3000;
+const _portArgIndex = process.argv.findIndex(a => a === '--port' || a === '-p');
+const PORT = (_portArgIndex !== -1 && process.argv[_portArgIndex + 1])
+  ? parseInt(process.argv[_portArgIndex + 1], 10)
+  : (process.env.PORT || 3000);
 
 // Detect if running in packaged environment (pkg bundles to snapshot)
 const isPackaged = (() => {
