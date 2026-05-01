@@ -184,6 +184,11 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
 
   // Load backend address and API key from localStorage on mount and ping
   useEffect(() => {
+    if (compact) {
+      pingBackend();
+      return;
+    }
+
     const savedAddress = localStorage.getItem('orchestrator-backend-address');
     if (savedAddress) {
       setBackendAddress(savedAddress);

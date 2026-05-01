@@ -33,6 +33,7 @@ import FlowEditor from '../FlowEditor';
 import CodeEditorModal from '../CodeEditorModal';
 import SessionTabs from '../SessionTabs';
 import { ansiToHtml } from '../../utils/ansiToHtml';
+import { apiClient } from '../../utils/apiClient';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 
 type TabId = 'executions' | 'edit';
@@ -236,6 +237,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges, editorModal, closeEditorModal, showConsole, toggleConsole } = useFlowStore();
   const { sessions, activeSessionId, createSession, switchSession, updateActiveFlowState } = useSessionStore();
   const { updateFlow } = useFlowLibraryStore();
+  const { getWorker } = useWorkerStore();
 
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -245,6 +247,13 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const isFlowSession = activeSession?.linkedFlowId === flow.id;
+  const worker = getWorker(flow.workerId);
+
+  useEffect(() => {
+    if (!worker) return;
+    apiClient.setBaseUrl(worker.url);
+    apiClient.setApiKey(worker.apiKey);
+  }, [worker?.url, worker?.apiKey]);
 
   useEffect(() => {
     if (initializedRef.current === flow.id) return;

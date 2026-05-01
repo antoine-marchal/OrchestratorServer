@@ -128,5 +128,49 @@
     "createdAt": "2026-05-01T20:46:40.764Z",
     "updatedAt": "2026-05-01T20:46:52.753Z",
     "lastExecution": null
+  },
+  "mondzwlafxglds": {
+    "id": "mondzwlafxglds",
+    "name": "CAO",
+    "namespace": "CAO",
+    "description": "",
+    "nodes": [
+      {
+        "id": "node-1777668708639",
+        "type": "custom",
+        "position": {
+          "x": -375,
+          "y": -255
+        },
+        "data": {
+          "label": "CAO",
+          "type": "flow",
+          "code": "{\"nodes\":[{\"id\":\"node-1777668643198\",\"type\":\"custom\",\"position\":{\"x\":210,\"y\":45},\"data\":{\"label\":\"Groovy\",\"type\":\"groovy\",\"language\":\"groovy\",\"code\":\"println \\\"beginning processing with $input\\\"\\noutput= 1\",\"isStarterNode\":true},\"draggable\":true,\"width\":423,\"height\":146,\"selected\":true,\"positionAbsolute\":{\"x\":210,\"y\":45},\"dragging\":false}],\"edges\":[]}",
+          "isRelativePath": false,
+          "output": [],
+          "executionTime": 1098
+        },
+        "draggable": true,
+        "width": 423,
+        "height": 263,
+        "selected": false,
+        "positionAbsolute": {
+          "x": -375,
+          "y": -255
+        },
+        "dragging": false
+      }
+    ],
+    "edges": [],
+    "schedule": null,
+    "createdAt": "2026-05-01T20:50:18.456Z",
+    "updatedAt": "2026-05-01T20:55:11.253Z",
+    "lastExecution": {
+      "id": "20260501225245_bz3vcxy74_e2q157xa21k",
+      "status": "SUCCESS",
+      "startTime": "2026-05-01T20:52:45.725Z",
+      "endTime": "2026-05-01T20:52:46.740Z",
+      "duration": 1015
+    }
   }
 }
