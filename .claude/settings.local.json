@@ -14,7 +14,12 @@
       "Bash(tree:*)",
       "Bash(node *)",
       "Bash(npm uninstall *)",
-      "Bash(wc *)"
+      "Bash(wc *)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(npx tauri *)",
+      "Bash(Copy-Item *)",
+      "PowerShell(Copy-Item *)"
     ]
   }
 }

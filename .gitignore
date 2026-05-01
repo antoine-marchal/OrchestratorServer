@@ -32,3 +32,4 @@ scriptsTest
 .claude
 server-api-key.txt
 plan.md
+src-tauri/target/*
