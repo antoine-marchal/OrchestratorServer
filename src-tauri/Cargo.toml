@@ -1,10 +1,12 @@
 [package]
-name = "orchestrator"
+name = "orchestrator-client"
 version = "0.2.0"
 description = "Orchestrator Desktop App"
-copyright = "Antoine Marchal 2026"
 authors = ["Antoine Marchal"]
 edition = "2021"
+
+[package.metadata]
+copyright = "Antoine Marchal 2026"
 
 [lib]
 name = "orchestrator_lib"

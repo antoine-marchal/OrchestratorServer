@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "copyright": "© Antoine Marchal 2026",
     "icon": [
       "icons/icon.ico"
     ]

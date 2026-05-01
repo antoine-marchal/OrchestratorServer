@@ -595,6 +595,7 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
         onNodeDoubleClick={readOnly ? undefined : handleNodeDoubleClick}
         onSelectionChange={readOnly ? undefined : onSelectionChange}
         multiSelectionKeyCode="Shift"
+        panActivationKeyCode={null}
         defaultEdgeOptions={{
           type: 'smoothstep',
           style: { strokeDasharray: '6 4', strokeWidth: 2 },
