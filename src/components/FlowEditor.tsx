@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
-import ToolbarButton from './ToolbarButton';
-import { pathUtils } from '../utils/pathUtils';
 import FlowNodeCreationModal from './FlowNodeCreationModal';
 import FlowEditorToolbar from './FlowEditorToolbar';
 import NodeCreationMenu from './NodeCreationMenu';
@@ -24,7 +22,6 @@ import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
-import { Sun, Moon } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { NODE_TYPES } from '../constants/nodeTypes';
 import { getLayoutedElements } from '../utils/flowLayout';
@@ -41,8 +38,14 @@ const nodeTypes: NodeTypes = {
   comment: CommentNode,
 };
 
-function Flow() {
-  const { theme, toggleTheme } = useTheme();
+interface FlowEditorProps {
+  embedded?: boolean;
+  readOnly?: boolean;
+  flowId?: string;
+}
+
+function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
+  const { theme } = useTheme();
   const edgeLabelStyles = useMemo(() => {
     const isDark = theme === 'dark';
     return {
@@ -378,6 +381,7 @@ function Flow() {
   };
 
   const addNewNode = async (type: string, pos?: { x: number; y: number }) => {
+    if (readOnly) return;
     // Handle flow node type - show modal for selection
     if (type === 'flow') {
       setFlowNodeModal({ isOpen: true, position: pos });
@@ -457,6 +461,7 @@ function Flow() {
 
   // Handle opening the editor modal for flow nodes
   const handleNodeDoubleClick = async (event: React.MouseEvent, node: Node) => {
+    if (readOnly) return;
     // In browser environment, we can't access external files directly
     // The code is already stored in the node data, so we just open the editor
 
@@ -479,7 +484,8 @@ function Flow() {
 
         // Create a new linked session
         const sessionName = `Flow: ${node.data.label || 'Untitled'}`;
-        const newSessionId = await sessionStore.createSession(sessionName);
+        const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
+        const newSessionId = await sessionStore.createSession(sessionName, parentFlowId);
 
         // Parse the flow content from code field
         let flowData: { nodes: Node[]; edges: Edge[] } | null = null;
@@ -554,19 +560,20 @@ function Flow() {
         position: flowNodeModal.position || { x: 100, y: 100 },
         setNodes,
         currentSessionId: useSessionStore.getState().activeSessionId,
+        parentFlowId: flowId,
       });
     },
-    [flowNodeModal.position, setNodes]
+    [flowNodeModal.position, setNodes, flowId]
   );
 
   return (
-    <div className="w-full" style={{ height: 'calc(100vh - 46px)' }}>
+    <div className="w-full h-full" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
       <ReactFlow
         className="react-flow__dark"
         nodes={nodes}
         edges={displayEdges}
-        onNodesChange={onNodesChange}
-        onConnect={onConnect}
+        onNodesChange={readOnly ? undefined : onNodesChange}
+        onConnect={readOnly ? undefined : onConnect}
         nodeTypes={nodeTypes}
         fitView
         snapToGrid={true}
@@ -575,17 +582,20 @@ function Flow() {
         onPaneClick={handlePaneClick}
         minZoom={0.1}
         maxZoom={2}
-        nodesDraggable={false}
-        panOnDrag={panOnDrag}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        elementsSelectable={!readOnly}
+        panOnDrag={readOnly ? true : panOnDrag}
         panOnScroll={false}
         zoomOnScroll={zoomOnScroll}
         zoomOnPinch={false}
         onlyRenderVisibleElements={true}
         isValidConnection={isValidConnection}
-        onPaneContextMenu={handlePaneContextMenu}
-        onNodeDoubleClick={handleNodeDoubleClick}
-        onSelectionChange={onSelectionChange}
+        onPaneContextMenu={readOnly ? undefined : handlePaneContextMenu}
+        onNodeDoubleClick={readOnly ? undefined : handleNodeDoubleClick}
+        onSelectionChange={readOnly ? undefined : onSelectionChange}
         multiSelectionKeyCode="Shift"
+        panActivationKeyCode={null}
         defaultEdgeOptions={{
           type: 'smoothstep',
           style: { strokeDasharray: '6 4', strokeWidth: 2 },
@@ -594,16 +604,9 @@ function Flow() {
         proOptions={{ hideAttribution: true }}
       >
         <Background />
-        <div className="absolute top-4 left-4 flex items-center gap-2 z-50">
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-full bg-gray-700 dark:bg-gray-200 text-white dark:text-black shadow hover:scale-105 transition"
-            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-        </div>
         <FlowEditorToolbar
+          embedded={embedded}
+          readOnly={readOnly}
           createNewFlow={createNewFlow}
           saveFlow={saveFlow}
           loadFlow={loadFlow}
@@ -623,7 +626,7 @@ function Flow() {
           dropdownMenu={dropdownMenu}
           addNewNode={addNewNode}
         />
-        {contextMenu && (
+        {contextMenu && !readOnly && (
           <NodeCreationMenu
             onAddNode={addNewNode}
             position={{ x: contextMenu.x, y: contextMenu.y }}
@@ -632,23 +635,24 @@ function Flow() {
           />
         )}
       </ReactFlow>
-      <Console />
+      {!readOnly && <Console />}
 
       {/* Flow Node Creation Modal */}
-      <FlowNodeCreationModal
+      {!readOnly && <FlowNodeCreationModal
         isOpen={flowNodeModal.isOpen}
         onClose={() => setFlowNodeModal({ isOpen: false })}
         onSelectSession={handleFlowNodeFromSession}
         onUploadFile={handleFlowNodeFromFile}
-      />
+        flowId={flowId}
+      />}
     </div>
   );
 }
 
-export default function FlowEditor() {
+export default function FlowEditor(props: FlowEditorProps) {
   return (
     <ReactFlowProvider>
-      <Flow />
+      <Flow {...props} />
     </ReactFlowProvider>
   );
 }

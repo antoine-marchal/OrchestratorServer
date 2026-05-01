@@ -1,309 +1,194 @@
 # ![Orchestrator Logo](logo-full.png)
 
-Orchestrator is a web application built with React and Node.js. It enables you to visually orchestrate, edit, and execute custom scripts or nodes (JavaScript, Batch, Groovy, PowerShell, Playwright) through a modern, interactive graphical interface.
+Orchestrator is a web-based visual workflow orchestration platform built with React and Node.js. It lets you design, edit, execute, schedule, import, export, and monitor node-based flows across configurable backend workers.
 
 ![Orchestrator](captures/main.jpg)
 
 ## Features
 
-- Intuitive drag-and-drop GUI for building and managing node-based flows
-- Execute scripts in JavaScript (frontend & backend), Groovy, Batch, PowerShell, and Playwright
-- Visualize, edit, and connect nodes with custom code or constants
-- Save, load, and version flows as `.or` or `.json` files
-- Add comments and documentation nodes to your flows
-- Built-in code editor with syntax highlighting for multiple languages
-- Advanced console for real-time logs, outputs, and error tracking per node
-- Multi-session support with drag-and-drop tab reordering
-- Comprehensive keyboard shortcuts for all operations (save, load, undo, redo, copy, paste)
-- Resizable, customizable nodes and flow layout auto-arrangement
-- Execution time display for performance monitoring
-- Flow history navigation with undo/redo functionality
-- Copy/paste functionality for nodes and configurations
-- Flow nodes linked to sessions for live editing
+- Visual drag-and-drop flow editor powered by ReactFlow
+- Flow library at `/#/flows`
+- Per-flow edit mode with autosave
+- Per-flow executions view with live ANSI-colored logs
+- Global executions history at `/#/executions`
+- Configurable backend workers at `/#/workers`
+- Worker assignment per flow
+- Duplicate, delete, schedule, import, and export flows
+- `.or` import/export support
+- Nested flow nodes linked to per-flow session tabs
+- Code editor support for JavaScript, backend JavaScript, Groovy, Batch, PowerShell, Python, and Playwright
+- Real-time console output, log export, and clearable execution history
+- Dark/light mode
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or higher recommended)
-- [npm](https://www.npmjs.com/) (usually included with Node.js)
+- Node.js 18+
+- npm
 
-### Installation
+### Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/antoine-marchal/OrchestratorServer.git
-cd OrchestratorServer
-
-# Install dependencies
 npm install
 ```
 
-### Development Usage
+### Run In Development
+
+Start the backend:
 
 ```bash
-# Start the backend (Node.js) - runs on port 3000
 npm run backend
-
-# Start the frontend (React) - runs on port 5173
-npm run dev
-
-# Or use all-in-one (backend + frontend)
-npm run start
 ```
 
-> **Tip:** In development mode, the interface opens at `http://localhost:5173`.
-
-### Production Usage
+Start the frontend in another terminal:
 
 ```bash
-# Build the frontend
-npm run build
-
-# Serve the built application
-npm run preview
+npm run dev
 ```
 
-## Project Structure
+Open:
 
-| Directory/File | Description |
-|----------------|-------------|
-| `src/` | React source code (frontend) |
-| `src/components/` | UI components (FlowEditor, CodeEditorModal, Console, SessionTabs, etc.) |
-| `src/components/node/` | Node-specific components (CustomNode, NodeHeader, NodeBody, etc.) |
-| `src/constants/` | Constant definitions (nodeTypes.ts) |
-| `src/hooks/` | Custom React hooks (useKeyboardShortcuts.ts) |
-| `src/store/` | Modular Zustand state management |
-| `src/store/executors/` | Node and flow execution logic |
-| `src/store/actions/` | History and clipboard actions |
-| `src/store/operations/` | File save/load operations |
-| `src/types/` | TypeScript types for nodes and edges |
-| `src/utils/` | Utilities (apiClient, pathUtils, flowLayout, etc.) |
-| `backend/` | Node.js/Express backend for script execution |
+```text
+http://localhost:5173
+```
+
+The backend runs on:
+
+```text
+http://localhost:3000
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+## Main Screens
+
+| Route | Purpose |
+| --- | --- |
+| `/#/flows` | Flow library |
+| `/#/flows/:id?tab=edit` | Edit a flow |
+| `/#/flows/:id?tab=executions&exec=:executionId` | Flow execution logs |
+| `/#/executions` | Global execution history |
+| `/#/workers` | Worker configuration |
+
+The old standalone `/#/editor` route redirects to `/#/flows`; the editor is used inside flow edit mode.
+
+## Flow Library
+
+The flow library is the primary workspace. From `/#/flows` you can:
+
+- Create a new flow
+- Import a flow from a `.or` file
+- Export a flow to `.or`
+- Duplicate an existing flow
+- Change the worker assigned to a flow
+- Schedule a flow
+- Execute a flow
+- Delete a flow
+
+Flow edit mode autosaves graph changes. There is no manual save button in embedded flow edit mode.
+
+## Executions
+
+Executions are visible globally and per flow.
+
+Per-flow execution view supports:
+
+- Selecting an execution
+- Live log updates
+- Automatic scroll-to-bottom on new logs
+- ANSI color rendering
+- Editable display name for an execution
+- Exporting selected execution logs
+- Killing running executions
+- Clearing execution history
+
+Backend-generated execution ids are prefixed with `YYYYMMDDHHMMSS`.
+
+## Workers
+
+Workers are backend servers that execute flow jobs. Each flow is assigned to one worker. A worker includes:
+
+- Name
+- URL
+- API key
+- Color
+
+The flow library syncs definitions to the assigned worker before execution.
+
+## Flow Nodes And Sessions
+
+Flow nodes let one flow execute another flow.
+
+You can create flow nodes from:
+
+- Existing sessions in the current flow
+- Uploaded `.or` files
+
+When a flow node creates a session inside flow edit mode, the session is tied to that parent flow and appears in that flow's compact session tab strip.
 
 ## Node Types
 
-Orchestrator supports various node types, each with a unique icon for quick identification:
+| Type | Purpose |
+| --- | --- |
+| JavaScript | Frontend JavaScript execution |
+| Backend JS | Node.js backend execution |
+| Groovy | Groovy script execution |
+| Batch | Windows batch execution |
+| PowerShell | PowerShell execution |
+| Python | Python execution |
+| Playwright | Browser automation |
+| Variable | Shared flow state |
+| Comment | Documentation |
+| Flow | Nested flow execution |
+| Goto | Conditional branching |
 
-| Node Type | Icon | Description |
-|-----------|------|-------------|
-| **JavaScript** | FileCode (yellow) | Run code in the frontend context |
-| **Backend JS** | Server (blue) | Run JavaScript in the backend context |
-| **Groovy** | Coffee (red) | Execute Groovy scripts via the backend |
-| **Batch** | Terminal (gray) | Run Windows batch scripts |
-| **PowerShell** | TerminalSquare (blue) | Execute PowerShell scripts |
-| **Variable** | Hash (purple) | Shared state accessible and modifiable by all nodes |
-| **Comment** | MessageSquare (gray) | Add documentation/comments to your flow |
-| **Flow** | GitBranch (green) | Execute another flow (linked to a session) |
-| **Goto** | CornerRightDown (yellow) | Conditional branching based on JS expressions |
+## Project Structure
 
-## Core Features
+| Path | Purpose |
+| --- | --- |
+| `src/App.tsx` | App routing |
+| `src/components/flows/` | Flow library, flow detail, executions, workers UI |
+| `src/components/FlowEditor.tsx` | Embedded graph editor |
+| `src/components/SessionTabs.tsx` | Session tab UI |
+| `src/components/node/` | Node rendering components |
+| `src/store/flowLibraryStore.ts` | Flow library and executions state |
+| `src/store/sessionStore.ts` | Editor session state |
+| `src/store/sessionFlowStore.ts` | Graph editor store facade |
+| `src/utils/workerApi.ts` | Worker flow/execution API client |
+| `src/utils/apiClient.ts` | Generic job/session API client |
+| `backend/api-server.cjs` | Backend server |
 
-### Code Editing
+## API Summary
 
-- Edit node code with syntax highlighting (Ace Editor)
-- Supports JavaScript, Groovy, Batch, PowerShell
-- Keyboard shortcuts: Save (Ctrl/Cmd+S), Close (Esc)
+Backend API groups:
 
-### Console & Logging
+- `/api/v1/sessions`
+- `/api/v1/jobs`
+- `/api/v1/flows`
+- `/api/v1/executions`
 
-- Real-time per-node logs, input/output, and error tracking
-- Filter log types (input, output, log, error)
-- Expand/collapse and fullscreen console view
-- Clear Output button and keyboard shortcut (Ctrl+W)
-- Configurable timeout parameter dropdown for long-running operations
-- Execution time display for each node operation
+Flow library endpoints use worker API keys directly. Job/session APIs use bearer sessions created through the backend.
 
-### Multi-Session Support
+## Development Notes
 
-- Work on multiple flows simultaneously with tabbed interface
-- Drag-and-drop tab reordering
-- Sessions persist to localStorage
-- Configurable backend server address per browser
-
-### Backend Execution
-
-- Content-based execution - flows are sent as JSON, not file paths
-- Direct processor calls for each node type
-- Support for nested flow execution
-- Groovy, Batch, PowerShell, Playwright, and Node.js backend execution
-
-### Keyboard Shortcuts
-
-- **Ctrl+S**: Save flow
-- **Ctrl+O**: Open flow
-- **Ctrl+W**: Clear console output
-- **Ctrl+Z**: Undo last action
-- **Ctrl+Y**: Redo action
-- **Ctrl+C**: Copy selected node(s)
-- **Ctrl+V**: Paste copied node(s)
-- **Ctrl+D**: Duplicate selected node
-- **Ctrl+R**: Run/execute current flow
-- **Ctrl+P**: Open project settings
-- **Esc**: Close modals/editor
-
-All keyboard shortcuts are context-aware, meaning they intelligently adapt based on your current focus in the application.
-
-### Flow History & Node Management
-
-- Comprehensive undo/redo system for all flow modifications
-- Copy and paste functionality for nodes with all configurations preserved
-- Starter node selection feature for quick flow initialization
-- Context-aware keyboard shortcut handling based on current focus
-
-## Flow Nodes
-
-Flow nodes are a powerful feature that allows you to create reusable, modular workflows by linking to other sessions.
-
-### What are Flow Nodes?
-
-Flow nodes act as containers that execute another flow, enabling hierarchical workflow composition and code reuse. They serve as building blocks for complex workflows, allowing you to:
-
-- Break down complex processes into manageable, reusable components
-- Create modular workflows that can be nested within other workflows
-- Edit linked flows in their own session tab with live synchronization
-- Reuse common workflow patterns across multiple projects
-
-### Creating Flow Nodes
-
-1. **From Existing Session**:
-   - Click the **Add Node** button and select **Flow**
-   - Choose an existing session from the dropdown
-   - The flow node links directly to that session (no new session created)
-
-2. **From File Upload**:
-   - Click the **Add Node** button and select **Flow**
-   - Choose "Upload File" and select a `.or` file
-   - A new session is created with the flow content and linked to the flow node
-
-### Editing Flow Nodes
-
-Click the edit button (pencil icon) on a flow node:
-- If the flow node is already linked to an existing session, you'll switch to that session
-- If not linked, a new session is created with the flow content, linked, and you switch to it
-
-Any changes made in the linked session are **automatically reflected** when you execute the flow node - no manual sync required.
-
-### How Flow Nodes Execute
-
-Flow nodes operate by executing the workflow from their linked session:
-
-1. **Input Processing**: The flow node receives input data from connected input nodes
-2. **Content Retrieval**: If linked to a session, fetches the current flow state from that session
-3. **Dependency Resolution**: The system determines the execution order
-4. **Sequential Execution**: Each node in the flow is executed
-5. **Result Collection**: The output from the last node becomes the output of the flow node
-6. **Output Passing**: This output is passed to connected nodes
-
-### Best Practices
-
-- **Single Responsibility**: Design each flow to perform a specific task
-- **Meaningful Names**: Use descriptive session names for your flows
-- **Hierarchical Structure**: Create a logical hierarchy of flows
-- **Consistent Inputs/Outputs**: Maintain consistent formats for compatibility
-- **Complexity Management**: Break complex workflows into smaller flows
-- **Documentation**: Add comment nodes to document purpose and expected inputs/outputs
-
-### Example Use Cases
-
-- **Data Processing Pipelines**: Data cleaning, format conversion, enrichment
-- **Business Process Automation**: Customer onboarding, order processing, approvals
-- **Integration Scenarios**: API handling, authentication flows, error handling
-
-## Variable Nodes
-
-Variable nodes provide shared state that can be read and modified by any node during flow execution.
-
-### Key Features
-
-- **JSON Parsing**: Values are automatically parsed as JSON objects when possible
-- **Dual Access**: Variables are accessible both via edge connections AND by name in code
-- **Real-time Updates**: When a script modifies a variable, subsequent nodes see the updated value immediately
-- **Cross-language Support**: Works with JavaScript (browser & backend), Groovy, PowerShell, and Batch
-
-### How to Use Variables
-
-1. **Create a Variable Node**: Add a Variable node and give it a name (e.g., "config")
-2. **Set Initial Value**: Enter a value in the node (JSON objects work: `{"timeout": 30, "retries": 3}`)
-3. **Access in Scripts**: The variable is automatically available in your scripts by its name
-
-### Language Examples
-
-**JavaScript (Browser & Backend):**
-```javascript
-// Read variable
-console.log(config.timeout);  // 30
-
-// Modify variable
-config.newField = "added";
-config.retries = 5;
-```
-
-**Groovy:**
-```groovy
-// Read variable
-println config.timeout  // 30
-
-// Modify variable
-config.newField = "added"
-config.retries = 5
-```
-
-**PowerShell:**
-```powershell
-# Read variable
-Write-Output $config.timeout  # 30
-
-# Modify variable
-$config.newField = "added"
-$config.retries = 5
-```
-
-**Batch (read-only):**
-```batch
-REM Variables available as environment variables (strings only)
-echo %config%
-```
-
-### Variable Behavior
-
-- **Persistence**: Changes persist throughout the flow execution
-- **Chaining**: When Node A modifies a variable, Node B (executed after) sees the changes
-- **Starter Nodes**: When a starter node is set, only nodes from that point forward execute
-- **Conflict Resolution**: Last write wins for parallel modifications
-- **Name Sanitization**: Variable names are sanitized for valid identifiers (spaces become underscores)
-
-### Best Practices
-
-- Use descriptive variable names that reflect their purpose
-- Initialize variables with proper JSON structure when storing objects
-- Use variables for configuration, counters, or shared state between nodes
-- Avoid reserved names: `input`, `output`, `console`, `process`, `require`, `module`, `exports`
-
-## Goto Nodes
-
-Goto nodes enable conditional branching within your flows:
-
-- Define multiple conditions using JavaScript expressions
-- Each condition specifies a target node to jump to
-- Optionally forward the input value to the target node
-- Useful for loops, error handling, and dynamic flow control
-
-## Contributing
-
-Contributions are welcome!
-- Fork the project
-- Create a branch
-- Open a Pull Request
+- Run `npm run build` after TypeScript or routing changes.
+- Restart the backend after editing `backend/api-server.cjs`.
+- Flow ids and execution ids are backend/internal identifiers; editable execution names are display labels only.
+- `.or` files are JSON flow definitions containing name, namespace, description, nodes, and edges.
 
 ## Useful Links
 
 - [React](https://react.dev/)
+- [ReactFlow](https://reactflow.dev/)
 - [Node.js](https://nodejs.org/)
 - [Playwright](https://playwright.dev/)
-- [Ace Editor](https://ace.c9.io/)
-- [ReactFlow](https://reactflow.dev/)
 - [Zustand](https://zustand-demo.pmnd.rs/)
 
 ---
-© 2025 Orchestrator. All rights reserved.
+
+© 2026 Orchestrator.

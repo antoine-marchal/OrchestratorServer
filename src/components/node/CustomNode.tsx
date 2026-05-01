@@ -27,7 +27,8 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
     const flowCode = data.code || '';
     const sessionName = data.label || 'Flow Session';
     const originalSessionId = sessionStore.activeSessionId;
-    const newSessionId = await sessionStore.createSession(sessionName);
+    const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
+    const newSessionId = await sessionStore.createSession(sessionName, parentFlowId);
 
     if (flowCode.trim()) {
       try {

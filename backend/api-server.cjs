@@ -339,7 +339,16 @@ function requireSessionToken(req, res, next) {
 const nowUid = () => {
   // Unique-ish id across processes
   const n = process.hrtime.bigint();
-  return `${Date.now()}_${n.toString(36)}_${Math.random().toString(36).slice(2)}`;
+  const d = new Date();
+  const prefix = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+    String(d.getHours()).padStart(2, '0'),
+    String(d.getMinutes()).padStart(2, '0'),
+    String(d.getSeconds()).padStart(2, '0'),
+  ].join('');
+  return `${prefix}_${n.toString(36)}_${Math.random().toString(36).slice(2)}`;
 };
 
 function registerProcess(jobId, child) {
@@ -2943,6 +2952,343 @@ function processJob(job) {
     processJsNode(jobId, code, input, wrappedFinish, codeFilePath, execCwd, job.variables || {}, jobId);
   }
 }
+
+/* ===============================
+   Flow Library - Management & Scheduling
+   =============================== */
+
+const FLOWS_DATA_DIR = path.join(WORK_DIR, 'flows-data');
+const FLOWS_FILE = path.join(FLOWS_DATA_DIR, 'flows.json');
+const EXECUTIONS_FILE = path.join(FLOWS_DATA_DIR, 'executions.json');
+
+let orchFlows = {};
+let orchExecs = {};
+
+function ensureFlowsDir() {
+  const legacyDir = path.join(WORK_DIR, 'legacy-flow-data');
+  if (!fs.existsSync(FLOWS_DATA_DIR) && fs.existsSync(legacyDir)) {
+    try { fs.renameSync(legacyDir, FLOWS_DATA_DIR); } catch { fs.mkdirSync(FLOWS_DATA_DIR, { recursive: true }); }
+  } else if (!fs.existsSync(FLOWS_DATA_DIR)) {
+    fs.mkdirSync(FLOWS_DATA_DIR, { recursive: true });
+  }
+}
+
+function loadFlowsData() {
+  ensureFlowsDir();
+  try {
+    if (fs.existsSync(FLOWS_FILE)) orchFlows = JSON.parse(fs.readFileSync(FLOWS_FILE, 'utf8'));
+  } catch (e) { console.warn('[Flows] Could not load flows:', e.message); }
+  try {
+    if (fs.existsSync(EXECUTIONS_FILE)) orchExecs = JSON.parse(fs.readFileSync(EXECUTIONS_FILE, 'utf8'));
+  } catch (e) { console.warn('[Flows] Could not load executions:', e.message); }
+  console.log(`[Flows] Loaded ${Object.keys(orchFlows).length} flows, ${Object.keys(orchExecs).length} executions`);
+}
+
+function saveFlows() {
+  ensureFlowsDir();
+  try { fs.writeFileSync(FLOWS_FILE, JSON.stringify(orchFlows, null, 2)); } catch (e) { console.error('[Flows] Save flows error:', e.message); }
+}
+
+function saveExecs() {
+  ensureFlowsDir();
+  try { fs.writeFileSync(EXECUTIONS_FILE, JSON.stringify(orchExecs, null, 2)); } catch (e) { console.error('[Flows] Save executions error:', e.message); }
+}
+
+// Simple 5-field cron parser (minute hour dayMonth month dayWeek)
+function parseCronField(field, value) {
+  if (field === '*') return true;
+  if (field.includes('/')) {
+    const [range, step] = field.split('/');
+    const s = parseInt(step, 10);
+    if (range === '*') return value % s === 0;
+    return value >= parseInt(range, 10) && (value - parseInt(range, 10)) % s === 0;
+  }
+  if (field.includes(',')) return field.split(',').some(f => parseInt(f.trim(), 10) === value);
+  if (field.includes('-')) {
+    const [start, end] = field.split('-').map(Number);
+    return value >= start && value <= end;
+  }
+  return parseInt(field, 10) === value;
+}
+
+function shouldRunCron(cronExpr, now) {
+  try {
+    const [minute, hour, dayMonth, month, dayWeek] = cronExpr.trim().split(/\s+/);
+    return (
+      parseCronField(minute, now.getMinutes()) &&
+      parseCronField(hour, now.getHours()) &&
+      parseCronField(dayMonth, now.getDate()) &&
+      parseCronField(month, now.getMonth() + 1) &&
+      parseCronField(dayWeek, now.getDay())
+    );
+  } catch { return false; }
+}
+
+function executeOrchestratorFlow(flowId, triggeredBy = 'manual') {
+  const flow = orchFlows[flowId];
+  if (!flow) return null;
+
+  const executionId = nowUid();
+  const startTime = new Date().toISOString();
+
+  const execution = {
+    id: executionId,
+    flowId,
+    flowName: flow.name,
+    namespace: flow.namespace || 'default',
+    status: 'RUNNING',
+    triggeredBy,
+    startTime,
+    endTime: null,
+    duration: null,
+    jobId: null,
+    logs: [],
+    output: null,
+    error: null,
+  };
+
+  orchExecs[executionId] = execution;
+  orchFlows[flowId].lastExecution = { id: executionId, status: 'RUNNING', startTime, endTime: null, duration: null };
+  saveFlows();
+  saveExecs();
+
+  const jobId = nowUid();
+  const flowContent = JSON.stringify({ nodes: flow.nodes || [], edges: flow.edges || [] });
+
+  const job = {
+    jobId,
+    sessionId: 'flows-internal',
+    type: 'flow',
+    code: flowContent,
+    codeFilePath: null,
+    input: null,
+    timeout: 0,
+    dontWaitForOutput: false,
+    basePath: WORK_DIR,
+    variables: {},
+    status: 'queued',
+    startTime: new Date().toISOString(),
+    stopRequested: false,
+  };
+
+  jobs.set(jobId, job);
+  execution.jobId = jobId;
+  orchExecs[executionId] = execution;
+  saveExecs();
+
+  setTimeout(() => processJob(job), 0);
+
+  // Monitor job completion
+  const monitor = setInterval(() => {
+    const j = jobs.get(jobId);
+    if (!j) { clearInterval(monitor); return; }
+    if (!['completed', 'failed', 'stopped'].includes(j.status)) return;
+    clearInterval(monitor);
+
+    const endTime = new Date().toISOString();
+    const duration = new Date(endTime) - new Date(startTime);
+    const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
+
+    const exec = orchExecs[executionId];
+    if (exec) {
+      Object.assign(exec, { status, endTime, duration, output: j.output, error: j.error, logs: jobLogBuffers.get(jobId) || [] });
+      saveExecs();
+    }
+    if (orchFlows[flowId]) {
+      orchFlows[flowId].lastExecution = { id: executionId, status, startTime, endTime, duration };
+      saveFlows();
+    }
+  }, 1000);
+
+  return executionId;
+}
+
+function startFlowScheduler() {
+  setInterval(() => {
+    const now = new Date();
+    for (const flow of Object.values(orchFlows)) {
+      if (flow.schedule?.enabled && flow.schedule?.cron && shouldRunCron(flow.schedule.cron, now)) {
+        console.log(`[Flows] Scheduled trigger: ${flow.name}`);
+        executeOrchestratorFlow(flow.id, 'schedule');
+      }
+    }
+  }, 60000);
+}
+
+// --- Flow Library REST Endpoints ---
+
+app.get('/api/v1/flows', requireApiKey, (_req, res) => {
+  const flows = Object.values(orchFlows).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  res.json({ flows, total: flows.length });
+});
+
+app.post('/api/v1/flows', requireApiKey, (req, res) => {
+  const { name, namespace = 'default', description = '', nodes = [], edges = [] } = req.body;
+  if (!name) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } });
+  const now = new Date().toISOString();
+  const flow = { id: nowUid(), name, namespace, description, nodes, edges, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+  orchFlows[flow.id] = flow;
+  saveFlows();
+  res.status(201).json(flow);
+});
+
+app.get('/api/v1/flows/:id', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
+  if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  res.json(flow);
+});
+
+app.put('/api/v1/flows/:id', requireApiKey, (req, res) => {
+  const now = new Date().toISOString();
+  let flow = orchFlows[req.params.id];
+  if (!flow) {
+    // Upsert: create with the provided ID so clients can use their own stable IDs
+    const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [] } = req.body;
+    flow = { id: req.params.id, name, namespace, description, nodes, edges, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+  } else {
+    for (const key of ['name', 'namespace', 'description', 'nodes', 'edges']) {
+      if (req.body[key] !== undefined) flow[key] = req.body[key];
+    }
+    flow.updatedAt = now;
+  }
+  orchFlows[req.params.id] = flow;
+  saveFlows();
+  res.json(flow);
+});
+
+app.delete('/api/v1/flows/:id', requireApiKey, (req, res) => {
+  if (!orchFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  delete orchFlows[req.params.id];
+  saveFlows();
+  res.json({ message: 'Flow deleted' });
+});
+
+app.post('/api/v1/flows/:id/execute', requireApiKey, (req, res) => {
+  if (!orchFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  const executionId = executeOrchestratorFlow(req.params.id, 'manual');
+  res.json({ executionId, message: 'Execution started' });
+});
+
+app.put('/api/v1/flows/:id/schedule', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
+  if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  const { cron, enabled = true, timezone = 'UTC' } = req.body;
+  if (!cron) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'cron is required' } });
+  flow.schedule = { cron, enabled, timezone };
+  flow.updatedAt = new Date().toISOString();
+  saveFlows();
+  res.json(flow);
+});
+
+app.delete('/api/v1/flows/:id/schedule', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
+  if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  flow.schedule = null;
+  flow.updatedAt = new Date().toISOString();
+  saveFlows();
+  res.json(flow);
+});
+
+app.get('/api/v1/executions', requireApiKey, (req, res) => {
+  let execs = Object.values(orchExecs);
+  if (req.query.flowId) execs = execs.filter(e => e.flowId === req.query.flowId);
+  if (req.query.status) execs = execs.filter(e => e.status === req.query.status);
+  if (req.query.since) { const since = new Date(req.query.since); execs = execs.filter(e => new Date(e.startTime) > since); }
+  execs.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+  const limit = parseInt(req.query.limit || '50', 10);
+  const offset = parseInt(req.query.offset || '0', 10);
+  res.json({ executions: execs.slice(offset, offset + limit), total: execs.length });
+});
+
+app.delete('/api/v1/executions', requireApiKey, (req, res) => {
+  const flowId = req.query.flowId ? String(req.query.flowId) : null;
+  const removed = [];
+
+  for (const [id, exec] of Object.entries(orchExecs)) {
+    if (flowId && exec.flowId !== flowId) continue;
+    removed.push(id);
+    if (exec.jobId) jobLogBuffers.delete(exec.jobId);
+    delete orchExecs[id];
+  }
+
+  if (flowId) {
+    if (orchFlows[flowId]) orchFlows[flowId].lastExecution = null;
+  } else {
+    for (const flow of Object.values(orchFlows)) flow.lastExecution = null;
+  }
+
+  saveExecs();
+  saveFlows();
+  res.json({ deleted: removed.length });
+});
+
+app.get('/api/v1/executions/:id', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
+  if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
+
+  if (exec.status === 'RUNNING' && exec.jobId) {
+    const j = jobs.get(exec.jobId);
+    if (j) {
+      exec.logs = jobLogBuffers.get(exec.jobId) || [];
+      if (['completed', 'failed', 'stopped'].includes(j.status)) {
+        const endTime = new Date().toISOString();
+        const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
+        Object.assign(exec, { status, endTime, duration: new Date(endTime) - new Date(exec.startTime), output: j.output, error: j.error });
+        orchExecs[req.params.id] = exec;
+        saveExecs();
+        if (orchFlows[exec.flowId]) {
+          orchFlows[exec.flowId].lastExecution = { id: exec.id, status, startTime: exec.startTime, endTime, duration: exec.duration };
+          saveFlows();
+        }
+      }
+    }
+  }
+  res.json(exec);
+});
+
+app.patch('/api/v1/executions/:id', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
+  if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'displayName')) {
+    const displayName = String(req.body.displayName || '').trim();
+    if (displayName) {
+      exec.displayName = displayName.slice(0, 160);
+    } else {
+      delete exec.displayName;
+    }
+  }
+
+  orchExecs[req.params.id] = exec;
+  saveExecs();
+  res.json(exec);
+});
+
+app.post('/api/v1/executions/:id/kill', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
+  if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
+  if (exec.status !== 'RUNNING') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Execution is not running' } });
+
+  if (exec.jobId) {
+    const j = jobs.get(exec.jobId);
+    if (j) { j.stopRequested = true; terminateJobAndChildren(exec.jobId); }
+  }
+
+  const endTime = new Date().toISOString();
+  const duration = new Date(endTime) - new Date(exec.startTime);
+  Object.assign(exec, { status: 'KILLED', endTime, duration });
+  orchExecs[req.params.id] = exec;
+  saveExecs();
+
+  if (orchFlows[exec.flowId]) {
+    orchFlows[exec.flowId].lastExecution = { id: exec.id, status: 'KILLED', startTime: exec.startTime, endTime, duration };
+    saveFlows();
+  }
+  res.json({ message: 'Execution killed', execution: exec });
+});
+
+loadFlowsData();
+startFlowScheduler();
 
 /* ===============================
    Server Startup & Shutdown

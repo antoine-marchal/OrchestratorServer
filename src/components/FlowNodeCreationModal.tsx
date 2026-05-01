@@ -7,6 +7,7 @@ interface FlowNodeCreationModalProps {
   onClose: () => void;
   onSelectSession: (sessionId: string, sessionName: string) => void;
   onUploadFile: (file: File) => void;
+  flowId?: string;
 }
 
 export default function FlowNodeCreationModal({
@@ -14,9 +15,11 @@ export default function FlowNodeCreationModal({
   onClose,
   onSelectSession,
   onUploadFile,
+  flowId,
 }: FlowNodeCreationModalProps) {
-  const [selectedOption, setSelectedOption] = useState<'session' | 'file' | null>(null);
-  const { sessions } = useSessionStore();
+  const [selectedOption, setSelectedOption] = useState<'session' | null>(null);
+  const { sessions: allSessions } = useSessionStore();
+  const sessions = flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions;
 
   if (!isOpen) return null;
 
@@ -28,15 +31,11 @@ export default function FlowNodeCreationModal({
 
     input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
-      if (!file) {
-        return;
-      }
-
+      if (!file) return;
       if (!file.name.toLowerCase().endsWith('.or')) {
         alert('Please select a valid .or file');
         return;
       }
-
       onUploadFile(file);
       onClose();
     };
@@ -54,7 +53,6 @@ export default function FlowNodeCreationModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Create Flow Node
@@ -67,7 +65,6 @@ export default function FlowNodeCreationModal({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6">
           {!selectedOption ? (
             <div className="space-y-4">
@@ -75,7 +72,6 @@ export default function FlowNodeCreationModal({
                 Choose how to create the flow node:
               </p>
 
-              {/* Option 1: Select Existing Session */}
               <button
                 onClick={() => setSelectedOption('session')}
                 className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors text-left group"
@@ -95,9 +91,8 @@ export default function FlowNodeCreationModal({
                 </div>
               </button>
 
-              {/* Option 2: Upload .or File */}
               <button
-                onClick={() => handleFileUpload()}
+                onClick={handleFileUpload}
                 className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 transition-colors text-left group"
               >
                 <div className="flex items-center gap-3">
@@ -115,12 +110,10 @@ export default function FlowNodeCreationModal({
                 </div>
               </button>
             </div>
-          ) : selectedOption === 'session' ? (
+          ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Select a session:
-                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Select a session:</p>
                 <button
                   onClick={() => setSelectedOption(null)}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -128,7 +121,6 @@ export default function FlowNodeCreationModal({
                   Back
                 </button>
               </div>
-
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {sessions.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
@@ -152,10 +144,9 @@ export default function FlowNodeCreationModal({
                 )}
               </div>
             </div>
-          ) : null}
+          )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={onClose}

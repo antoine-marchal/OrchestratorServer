@@ -1,0 +1,414 @@
+{
+  "20260501225049_bxmevctjo_2fzxjmj289d": {
+    "id": "20260501225049_bxmevctjo_2fzxjmj289d",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:50:49.358Z",
+    "endTime": "2026-05-01T20:50:50.362Z",
+    "duration": 1004,
+    "jobId": "20260501225049_bxmevo0ms_2be0ik3fsa9",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node JavaScript (javascript) ===\u001b[0m",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649368
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649368
+      },
+      {
+        "type": "log",
+        "message": "Hello",
+        "nodeId": "flow-node-20260501225049_bxmf156mk_ixd8haja3cb",
+        "timestamp": 1777668649368
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mHello",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649369
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649369
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649369
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668645936",
+        "timestamp": 1777668649369
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225059_bxr11v060_we87lhdyvv": {
+    "id": "20260501225059_bxr11v060_we87lhdyvv",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:50:59.407Z",
+    "endTime": "2026-05-01T20:51:00.416Z",
+    "duration": 1009,
+    "jobId": "20260501225059_bxr125xrg_obrj389t8p",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node Groovy (groovy) ===\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668659421
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668659421
+      },
+      {
+        "type": "log",
+        "message": "Using external folder: C:\\workspace\\OrchestratorServer\\backend\\lib\r\n",
+        "nodeId": "flow-node-20260501225059_bxr1ait60_03tynr7wmw0v",
+        "timestamp": 1777668659484
+      },
+      {
+        "type": "log",
+        "message": "  -> JAR: C:\\workspace\\OrchestratorServer\\backend\\lib\\jsoup-1.20.1.jar\r\n",
+        "nodeId": "flow-node-20260501225059_bxr1ait60_03tynr7wmw0v",
+        "timestamp": 1777668659489
+      },
+      {
+        "type": "log",
+        "message": "beginning processing with null\r\n",
+        "nodeId": "flow-node-20260501225059_bxr1ait60_03tynr7wmw0v",
+        "timestamp": 1777668660070
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mUsing external folder: C:\\workspace\\OrchestratorServer\\backend\\lib\r\n  -> JAR: C:\\workspace\\OrchestratorServer\\backend\\lib\\jsoup-1.20.1.jar\r\nbeginning processing with null",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668660100
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668660100
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668660100
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668660100
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225120_by0j985b8_pc933v7cwok": {
+    "id": "20260501225120_by0j985b8_pc933v7cwok",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:51:20.099Z",
+    "endTime": "2026-05-01T20:51:21.099Z",
+    "duration": 1000,
+    "jobId": "20260501225120_by0j9jsak_mmhh2na4ef",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node JavaScript (javascript) ===\u001b[0m",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "Hello",
+        "nodeId": "flow-node-20260501225120_by0jdlgi8_f18ouh3idzh",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mHello",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668675190",
+        "timestamp": 1777668680106
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225132_by673g8ic_lni2hhfeqnf": {
+    "id": "20260501225132_by673g8ic_lni2hhfeqnf",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:51:32.424Z",
+    "endTime": "2026-05-01T20:51:33.429Z",
+    "duration": 1005,
+    "jobId": "20260501225132_by673s2fo_3xms7l5jx1n",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node Groovy (groovy) ===\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668692433
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668692433
+      },
+      {
+        "type": "log",
+        "message": "Using external folder: C:\\workspace\\OrchestratorServer\\backend\\lib\r\n",
+        "nodeId": "flow-node-20260501225132_by678i4ck_idheicgkhiq",
+        "timestamp": 1777668692496
+      },
+      {
+        "type": "log",
+        "message": "  -> JAR: C:\\workspace\\OrchestratorServer\\backend\\lib\\jsoup-1.20.1.jar\r\n",
+        "nodeId": "flow-node-20260501225132_by678i4ck_idheicgkhiq",
+        "timestamp": 1777668692500
+      },
+      {
+        "type": "log",
+        "message": "beginning processing with null\r\n",
+        "nodeId": "flow-node-20260501225132_by678i4ck_idheicgkhiq",
+        "timestamp": 1777668693074
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mUsing external folder: C:\\workspace\\OrchestratorServer\\backend\\lib\r\n  -> JAR: C:\\workspace\\OrchestratorServer\\backend\\lib\\jsoup-1.20.1.jar\r\nbeginning processing with null",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668693098
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668693098
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668693098
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668643198",
+        "timestamp": 1777668693098
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225211_byocwh730_ygvyx6rpqib": {
+    "id": "20260501225211_byocwh730_ygvyx6rpqib",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:52:11.957Z",
+    "endTime": "2026-05-01T20:52:12.961Z",
+    "duration": 1004,
+    "jobId": "20260501225211_byocwvlu0_1svg3cy35kt",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node CAO (flow) ===\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668731967
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668731967
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mFlow executed successfully",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668732678
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668732678
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668732678
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668732678
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225223_byttuihys_m57fidqp2x": {
+    "id": "20260501225223_byttuihys_m57fidqp2x",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:52:23.866Z",
+    "endTime": "2026-05-01T20:52:24.870Z",
+    "duration": 1004,
+    "jobId": "20260501225223_byttuul5g_shr1oyyprn",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node CAO (flow) ===\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668743877
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668743877
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mFlow executed successfully",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668744556
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668744557
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  null\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668744557
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668744557
+      }
+    ],
+    "output": null,
+    "error": null
+  },
+  "20260501225245_bz3vcxy74_e2q157xa21k": {
+    "id": "20260501225245_bz3vcxy74_e2q157xa21k",
+    "flowId": "mondzwlafxglds",
+    "flowName": "CAO",
+    "namespace": "CAO",
+    "status": "SUCCESS",
+    "triggeredBy": "manual",
+    "startTime": "2026-05-01T20:52:45.725Z",
+    "endTime": "2026-05-01T20:52:46.740Z",
+    "duration": 1015,
+    "jobId": "20260501225245_bz3vdbx1w_hkr8xkyt83",
+    "logs": [
+      {
+        "type": "log",
+        "message": "\u001b[36m\n=== Executing node CAO (flow) ===\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668765730
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mInput: \u001b[0mnull",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668765730
+      },
+      {
+        "type": "log",
+        "message": "\u001b[90mLog: \u001b[0mFlow executed successfully",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668766410
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33mOutput:\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668766410
+      },
+      {
+        "type": "log",
+        "message": "\u001b[36m  1\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668766410
+      },
+      {
+        "type": "log",
+        "message": "\u001b[33m---\u001b[0m",
+        "nodeId": "node-1777668708639",
+        "timestamp": 1777668766410
+      }
+    ],
+    "output": 1,
+    "error": null
+  }
+}
