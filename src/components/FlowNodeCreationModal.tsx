@@ -18,8 +18,9 @@ export default function FlowNodeCreationModal({
   flowId,
 }: FlowNodeCreationModalProps) {
   const [selectedOption, setSelectedOption] = useState<'session' | null>(null);
-  const { sessions: allSessions } = useSessionStore();
-  const sessions = flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions;
+  const { sessions: allSessions, activeSessionId } = useSessionStore();
+  const sessions = (flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions)
+    .filter(session => session.id !== activeSessionId);
 
   if (!isOpen) return null;
 

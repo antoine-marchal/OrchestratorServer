@@ -546,7 +546,6 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
         sessionName,
         position: flowNodeModal.position || { x: 100, y: 100 },
         setNodes,
-        switchSession: useSessionStore.getState().switchSession,
       });
     },
     [flowNodeModal.position, setNodes]

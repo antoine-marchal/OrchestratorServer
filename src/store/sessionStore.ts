@@ -10,9 +10,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   createSession: async (name?: string, linkedFlowId?: string) => {
     const sessionName = name || `Session ${get().sessions.length + 1}`;
 
-    // Create session on backend first to get the backend-generated sessionId
-    const backendSession = await apiClient.createSession({ name: sessionName });
-    const sessionId = backendSession.sessionId;
+    let sessionId: string;
+    try {
+      const backendSession = await apiClient.createSession({ name: sessionName });
+      sessionId = backendSession.sessionId;
+    } catch {
+      sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    }
 
     const newSession: Session = {
       id: sessionId,
