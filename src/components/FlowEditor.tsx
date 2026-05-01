@@ -559,6 +559,30 @@ function Flow() {
     [flowNodeModal.position, setNodes]
   );
 
+  // Handle flow node creation from a Kestra flow (embed its nodes/edges as JSON)
+  const handleFlowNodeFromKestra = useCallback(
+    ({ nodes: flowNodes, edges: flowEdges, name }: { nodes: any[]; edges: any[]; name: string }) => {
+      const position = flowNodeModal.position || { x: 100, y: 100 };
+      setNodes((nds) => {
+        const existingLabels = nds.map((n) => n.data.label);
+        let label = name;
+        let counter = 1;
+        while (existingLabels.includes(label)) { label = `${name} ${counter++}`; }
+        return [
+          ...nds,
+          {
+            id: `node-${Date.now()}`,
+            type: 'custom',
+            position,
+            data: { label, type: 'flow', language: 'flow', code: JSON.stringify({ nodes: flowNodes, edges: flowEdges }) },
+            draggable: true,
+          },
+        ];
+      });
+    },
+    [flowNodeModal.position, setNodes]
+  );
+
   return (
     <div className="w-full" style={{ height: 'calc(100vh - 46px)' }}>
       <ReactFlow
@@ -640,6 +664,7 @@ function Flow() {
         onClose={() => setFlowNodeModal({ isOpen: false })}
         onSelectSession={handleFlowNodeFromSession}
         onUploadFile={handleFlowNodeFromFile}
+        onSelectKestraFlow={handleFlowNodeFromKestra}
       />
     </div>
   );

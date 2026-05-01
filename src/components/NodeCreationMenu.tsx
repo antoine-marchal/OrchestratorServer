@@ -19,8 +19,10 @@ const NodeCreationMenu: React.FC<NodeCreationMenuProps> = ({ onAddNode, position
       style={
         isContextMenu && position
           ? {
+              position: 'fixed',
               left: position.x,
               top: position.y,
+              right: 'auto',
               pointerEvents: 'auto',
             }
           : undefined
