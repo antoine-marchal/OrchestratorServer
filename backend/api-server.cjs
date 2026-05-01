@@ -3200,6 +3200,28 @@ app.get('/api/v1/executions', requireApiKey, (req, res) => {
   res.json({ executions: execs.slice(offset, offset + limit), total: execs.length });
 });
 
+app.delete('/api/v1/executions', requireApiKey, (req, res) => {
+  const flowId = req.query.flowId ? String(req.query.flowId) : null;
+  const removed = [];
+
+  for (const [id, exec] of Object.entries(orchExecs)) {
+    if (flowId && exec.flowId !== flowId) continue;
+    removed.push(id);
+    if (exec.jobId) jobLogBuffers.delete(exec.jobId);
+    delete orchExecs[id];
+  }
+
+  if (flowId) {
+    if (orchFlows[flowId]) orchFlows[flowId].lastExecution = null;
+  } else {
+    for (const flow of Object.values(orchFlows)) flow.lastExecution = null;
+  }
+
+  saveExecs();
+  saveFlows();
+  res.json({ deleted: removed.length });
+});
+
 app.get('/api/v1/executions/:id', requireApiKey, (req, res) => {
   const exec = orchExecs[req.params.id];
   if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
@@ -3221,6 +3243,24 @@ app.get('/api/v1/executions/:id', requireApiKey, (req, res) => {
       }
     }
   }
+  res.json(exec);
+});
+
+app.patch('/api/v1/executions/:id', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
+  if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'displayName')) {
+    const displayName = String(req.body.displayName || '').trim();
+    if (displayName) {
+      exec.displayName = displayName.slice(0, 160);
+    } else {
+      delete exec.displayName;
+    }
+  }
+
+  orchExecs[req.params.id] = exec;
+  saveExecs();
   res.json(exec);
 });
 

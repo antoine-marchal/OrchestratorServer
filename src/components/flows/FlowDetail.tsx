@@ -13,6 +13,7 @@ import {
   Loader2,
   Moon,
   Play,
+  RefreshCw,
   Server,
   StopCircle,
   Sun,
@@ -51,15 +52,22 @@ function formatRelative(iso: string): string {
   return `${Math.floor(diff / 86400000)}d ago`;
 }
 
+function formatLogTimestamp(timestamp: number): string {
+  const d = new Date(timestamp);
+  const pad = (value: number, size = 2) => value.toString().padStart(size, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
 const ExecutionsTab: React.FC<{ flowId: string; dark: boolean; highlightId?: string; onSelectExec: (id: string) => void }> = ({
   flowId,
   dark,
   highlightId,
   onSelectExec,
 }) => {
-  const { executions, killExecution, clearExecutions, renameExecution } = useFlowLibraryStore();
+  const { executions, killExecution, clearExecutions, renameExecution, syncBackendExecutions } = useFlowLibraryStore();
   const flowExecs = executions.filter(e => e.flowId === flowId);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +85,15 @@ const ExecutionsTab: React.FC<{ flowId: string; dark: boolean; highlightId?: str
   const handleSelect = (id: string) => {
     setSelectedId(id);
     onSelectExec(id);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await syncBackendExecutions(flowId);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const exportSelectedLogs = () => {
@@ -109,12 +126,22 @@ const ExecutionsTab: React.FC<{ flowId: string; dark: boolean; highlightId?: str
     <div className="h-full flex overflow-hidden">
       <div className={`w-80 flex-shrink-0 border-r overflow-auto ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
         <div className={`sticky top-0 z-10 px-3 py-2 border-b ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-          <button
-            onClick={() => { clearExecutions(flowId); setSelectedId(null); }}
-            className={`w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium border ${dark ? 'border-red-900/50 text-red-400 hover:bg-red-950/30' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
-          >
-            <Trash2 className="w-3.5 h-3.5" />Clear history
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className={`p-1.5 rounded-md border disabled:opacity-50 ${dark ? 'border-gray-700 text-gray-400 hover:bg-gray-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+              title="Refresh executions"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={() => { clearExecutions(flowId); setSelectedId(null); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium border ${dark ? 'border-red-900/50 text-red-400 hover:bg-red-950/30' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />Clear history
+            </button>
+          </div>
         </div>
         {flowExecs.map(exec => (
           <div
@@ -180,7 +207,15 @@ const ExecutionsTab: React.FC<{ flowId: string; dark: boolean; highlightId?: str
                 <p className={`${dark ? 'text-gray-600' : 'text-gray-500'} italic`}>No logs yet...</p>
               ) : (
                 selectedExec.logs.map((log, i) => (
-                  <div key={i} className="leading-5" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
+                  <div key={i} className="grid grid-cols-[154px_54px_minmax(0,1fr)] gap-3 leading-5">
+                    <span className={`select-none whitespace-nowrap ${dark ? 'text-gray-500' : 'text-gray-500'}`}>
+                      {formatLogTimestamp(log.timestamp)}
+                    </span>
+                    <span className={`select-none uppercase ${log.type === 'error' ? 'text-red-400' : log.type === 'output' ? 'text-cyan-400' : dark ? 'text-gray-500' : 'text-gray-500'}`}>
+                      {log.type}
+                    </span>
+                    <span className="min-w-0 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
+                  </div>
                 ))
               )}
             </div>

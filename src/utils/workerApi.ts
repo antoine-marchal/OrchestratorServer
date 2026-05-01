@@ -272,6 +272,17 @@ export async function killFlowExecution(worker: Worker, executionId: string): Pr
   await flowsFetch(worker, `/executions/${executionId}/kill`, { method: 'POST' });
 }
 
+export async function renameFlowExecution(
+  worker: Worker,
+  executionId: string,
+  displayName: string
+): Promise<FlowExecution> {
+  return flowsFetch<FlowExecution>(worker, `/executions/${executionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ displayName }),
+  });
+}
+
 export async function fetchWorkerExecutions(
   worker: Worker,
   since?: string
@@ -285,4 +296,11 @@ export async function fetchWorkerExecutions(
     workerName: worker.name,
     logs: e.logs || [],
   }));
+}
+
+export async function clearWorkerExecutions(worker: Worker, flowId?: string): Promise<void> {
+  const params = new URLSearchParams();
+  if (flowId) params.set('flowId', flowId);
+  const suffix = params.toString() ? `?${params}` : '';
+  await flowsFetch(worker, `/executions${suffix}`, { method: 'DELETE' });
 }

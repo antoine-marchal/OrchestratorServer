@@ -28,7 +28,7 @@ const ExecutionsList: React.FC = () => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const navigate = useNavigate();
-  const { executions, killExecution, clearExecutions } = useFlowLibraryStore();
+  const { executions, killExecution, clearExecutions, syncBackendExecutions } = useFlowLibraryStore();
   const { getWorker } = useWorkerStore();
 
   const [search, setSearch] = useState('');
@@ -41,9 +41,20 @@ const ExecutionsList: React.FC = () => {
     return () => clearInterval(t);
   }, []);
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await syncBackendExecutions();
+    } finally {
+      setIsRefreshing(false);
+      setTick(n => n + 1);
+    }
+  };
+
   const filtered = executions.filter(e => {
     const matchStatus = statusFilter === 'ALL' || e.status === statusFilter;
     const matchSearch = !search ||
+      (e.displayName || '').toLowerCase().includes(search.toLowerCase()) ||
       e.flowName.toLowerCase().includes(search.toLowerCase()) ||
       e.namespace.toLowerCase().includes(search.toLowerCase()) ||
       e.id.toLowerCase().includes(search.toLowerCase());
@@ -70,7 +81,12 @@ const ExecutionsList: React.FC = () => {
           >
             <Trash2 className="w-4 h-4" />Clear history
           </button>
-          <button onClick={() => { setIsRefreshing(true); setTimeout(() => setIsRefreshing(false), 600); setTick(n => n + 1); }} className={`p-2 rounded-lg ${dark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`p-2 rounded-lg disabled:opacity-50 ${dark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+            title="Refresh executions"
+          >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
@@ -95,7 +111,7 @@ const ExecutionsList: React.FC = () => {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search by flow name, namespace, or ID…"
+              placeholder="Search by execution, flow name, namespace, or ID..."
               className={`flex-1 bg-transparent text-sm outline-none ${dark ? 'text-gray-100 placeholder-gray-600' : 'text-gray-900 placeholder-gray-400'}`}
             />
           </div>
@@ -129,7 +145,12 @@ const ExecutionsList: React.FC = () => {
                         onClick={() => navigate(`/flows/${exec.flowId}?tab=executions&exec=${exec.id}`)}
                         className={`border-b text-sm cursor-pointer transition-colors ${dark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-gray-50'}`}
                       >
-                        <td className="px-4 py-3"><span className={`font-mono text-xs ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{exec.id.slice(0, 16)}…</span></td>
+                        <td className="px-4 py-3">
+                          <p className={`font-mono text-xs truncate ${dark ? 'text-gray-300' : 'text-gray-700'}`}>{exec.displayName || `${exec.id.slice(0, 16)}...`}</p>
+                          {exec.displayName && (
+                            <p className={`font-mono text-[11px] truncate mt-0.5 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>{exec.id}</p>
+                          )}
+                        </td>
                         <td className="px-4 py-3"><p className="text-sm font-medium">{exec.flowName}</p><p className={`text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>{exec.namespace}</p></td>
                         <td className="px-4 py-3"><StatusBadge status={exec.status} size="sm" /></td>
                         <td className="px-4 py-3">

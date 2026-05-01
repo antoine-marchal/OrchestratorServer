@@ -22,6 +22,7 @@ interface WorkerStore {
   checkStatus: (id: string) => Promise<void>;
   checkAllStatuses: () => Promise<void>;
   getWorker: (id: string) => Worker | undefined;
+  setWorkerStatus: (id: string, status: WorkerStatus) => void;
 }
 
 function uid(): string {
@@ -97,4 +98,8 @@ export const useWorkerStore = create<WorkerStore>((set, get) => ({
   },
 
   getWorker: (id) => get().workers.find(w => w.id === id),
+
+  setWorkerStatus: (id, status) => {
+    set(s => ({ statuses: { ...s.statuses, [id]: status } }));
+  },
 }));

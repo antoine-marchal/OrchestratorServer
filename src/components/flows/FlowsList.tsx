@@ -319,6 +319,7 @@ const FlowsList: React.FC = () => {
                               title="Flow worker"
                               className={`max-w-36 px-2 py-1 rounded-md border text-xs ${dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-700'} focus:outline-none`}
                             >
+                              <option key='null' value='null'>No worker</option>
                               {workers.map(w => (
                                 <option key={w.id} value={w.id}>{w.name}</option>
                               ))}
