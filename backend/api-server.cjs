@@ -339,7 +339,16 @@ function requireSessionToken(req, res, next) {
 const nowUid = () => {
   // Unique-ish id across processes
   const n = process.hrtime.bigint();
-  return `${Date.now()}_${n.toString(36)}_${Math.random().toString(36).slice(2)}`;
+  const d = new Date();
+  const prefix = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+    String(d.getHours()).padStart(2, '0'),
+    String(d.getMinutes()).padStart(2, '0'),
+    String(d.getSeconds()).padStart(2, '0'),
+  ].join('');
+  return `${prefix}_${n.toString(36)}_${Math.random().toString(36).slice(2)}`;
 };
 
 function registerProcess(jobId, child) {
@@ -2945,39 +2954,44 @@ function processJob(job) {
 }
 
 /* ===============================
-   Kestra - Flow Management & Scheduling
+   Flow Library - Management & Scheduling
    =============================== */
 
-const KESTRA_DATA_DIR = path.join(WORK_DIR, 'kestra-data');
-const KESTRA_FLOWS_FILE = path.join(KESTRA_DATA_DIR, 'flows.json');
-const KESTRA_EXECUTIONS_FILE = path.join(KESTRA_DATA_DIR, 'executions.json');
+const FLOWS_DATA_DIR = path.join(WORK_DIR, 'flows-data');
+const FLOWS_FILE = path.join(FLOWS_DATA_DIR, 'flows.json');
+const EXECUTIONS_FILE = path.join(FLOWS_DATA_DIR, 'executions.json');
 
-let kestraFlows = {};
-let kestraExecutions = {};
+let orchFlows = {};
+let orchExecs = {};
 
-function ensureKestraDir() {
-  if (!fs.existsSync(KESTRA_DATA_DIR)) fs.mkdirSync(KESTRA_DATA_DIR, { recursive: true });
+function ensureFlowsDir() {
+  const legacyDir = path.join(WORK_DIR, 'legacy-flow-data');
+  if (!fs.existsSync(FLOWS_DATA_DIR) && fs.existsSync(legacyDir)) {
+    try { fs.renameSync(legacyDir, FLOWS_DATA_DIR); } catch { fs.mkdirSync(FLOWS_DATA_DIR, { recursive: true }); }
+  } else if (!fs.existsSync(FLOWS_DATA_DIR)) {
+    fs.mkdirSync(FLOWS_DATA_DIR, { recursive: true });
+  }
 }
 
-function loadKestraData() {
-  ensureKestraDir();
+function loadFlowsData() {
+  ensureFlowsDir();
   try {
-    if (fs.existsSync(KESTRA_FLOWS_FILE)) kestraFlows = JSON.parse(fs.readFileSync(KESTRA_FLOWS_FILE, 'utf8'));
-  } catch (e) { console.warn('[Kestra] Could not load flows:', e.message); }
+    if (fs.existsSync(FLOWS_FILE)) orchFlows = JSON.parse(fs.readFileSync(FLOWS_FILE, 'utf8'));
+  } catch (e) { console.warn('[Flows] Could not load flows:', e.message); }
   try {
-    if (fs.existsSync(KESTRA_EXECUTIONS_FILE)) kestraExecutions = JSON.parse(fs.readFileSync(KESTRA_EXECUTIONS_FILE, 'utf8'));
-  } catch (e) { console.warn('[Kestra] Could not load executions:', e.message); }
-  console.log(`[Kestra] Loaded ${Object.keys(kestraFlows).length} flows, ${Object.keys(kestraExecutions).length} executions`);
+    if (fs.existsSync(EXECUTIONS_FILE)) orchExecs = JSON.parse(fs.readFileSync(EXECUTIONS_FILE, 'utf8'));
+  } catch (e) { console.warn('[Flows] Could not load executions:', e.message); }
+  console.log(`[Flows] Loaded ${Object.keys(orchFlows).length} flows, ${Object.keys(orchExecs).length} executions`);
 }
 
-function saveKestraFlows() {
-  ensureKestraDir();
-  try { fs.writeFileSync(KESTRA_FLOWS_FILE, JSON.stringify(kestraFlows, null, 2)); } catch (e) { console.error('[Kestra] Save flows error:', e.message); }
+function saveFlows() {
+  ensureFlowsDir();
+  try { fs.writeFileSync(FLOWS_FILE, JSON.stringify(orchFlows, null, 2)); } catch (e) { console.error('[Flows] Save flows error:', e.message); }
 }
 
-function saveKestraExecutions() {
-  ensureKestraDir();
-  try { fs.writeFileSync(KESTRA_EXECUTIONS_FILE, JSON.stringify(kestraExecutions, null, 2)); } catch (e) { console.error('[Kestra] Save executions error:', e.message); }
+function saveExecs() {
+  ensureFlowsDir();
+  try { fs.writeFileSync(EXECUTIONS_FILE, JSON.stringify(orchExecs, null, 2)); } catch (e) { console.error('[Flows] Save executions error:', e.message); }
 }
 
 // Simple 5-field cron parser (minute hour dayMonth month dayWeek)
@@ -3010,8 +3024,8 @@ function shouldRunCron(cronExpr, now) {
   } catch { return false; }
 }
 
-function kestraExecuteFlow(flowId, triggeredBy = 'manual') {
-  const flow = kestraFlows[flowId];
+function executeOrchestratorFlow(flowId, triggeredBy = 'manual') {
+  const flow = orchFlows[flowId];
   if (!flow) return null;
 
   const executionId = nowUid();
@@ -3033,17 +3047,17 @@ function kestraExecuteFlow(flowId, triggeredBy = 'manual') {
     error: null,
   };
 
-  kestraExecutions[executionId] = execution;
-  kestraFlows[flowId].lastExecution = { id: executionId, status: 'RUNNING', startTime, endTime: null, duration: null };
-  saveKestraFlows();
-  saveKestraExecutions();
+  orchExecs[executionId] = execution;
+  orchFlows[flowId].lastExecution = { id: executionId, status: 'RUNNING', startTime, endTime: null, duration: null };
+  saveFlows();
+  saveExecs();
 
   const jobId = nowUid();
   const flowContent = JSON.stringify({ nodes: flow.nodes || [], edges: flow.edges || [] });
 
   const job = {
     jobId,
-    sessionId: 'kestra-internal',
+    sessionId: 'flows-internal',
     type: 'flow',
     code: flowContent,
     codeFilePath: null,
@@ -3059,8 +3073,8 @@ function kestraExecuteFlow(flowId, triggeredBy = 'manual') {
 
   jobs.set(jobId, job);
   execution.jobId = jobId;
-  kestraExecutions[executionId] = execution;
-  saveKestraExecutions();
+  orchExecs[executionId] = execution;
+  saveExecs();
 
   setTimeout(() => processJob(job), 0);
 
@@ -3075,58 +3089,58 @@ function kestraExecuteFlow(flowId, triggeredBy = 'manual') {
     const duration = new Date(endTime) - new Date(startTime);
     const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
 
-    const exec = kestraExecutions[executionId];
+    const exec = orchExecs[executionId];
     if (exec) {
       Object.assign(exec, { status, endTime, duration, output: j.output, error: j.error, logs: jobLogBuffers.get(jobId) || [] });
-      saveKestraExecutions();
+      saveExecs();
     }
-    if (kestraFlows[flowId]) {
-      kestraFlows[flowId].lastExecution = { id: executionId, status, startTime, endTime, duration };
-      saveKestraFlows();
+    if (orchFlows[flowId]) {
+      orchFlows[flowId].lastExecution = { id: executionId, status, startTime, endTime, duration };
+      saveFlows();
     }
   }, 1000);
 
   return executionId;
 }
 
-function startKestraScheduler() {
+function startFlowScheduler() {
   setInterval(() => {
     const now = new Date();
-    for (const flow of Object.values(kestraFlows)) {
+    for (const flow of Object.values(orchFlows)) {
       if (flow.schedule?.enabled && flow.schedule?.cron && shouldRunCron(flow.schedule.cron, now)) {
-        console.log(`[Kestra] Scheduled trigger: ${flow.name}`);
-        kestraExecuteFlow(flow.id, 'schedule');
+        console.log(`[Flows] Scheduled trigger: ${flow.name}`);
+        executeOrchestratorFlow(flow.id, 'schedule');
       }
     }
   }, 60000);
 }
 
-// --- Kestra REST Endpoints ---
+// --- Flow Library REST Endpoints ---
 
-app.get('/api/v1/kestra/flows', requireApiKey, (_req, res) => {
-  const flows = Object.values(kestraFlows).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+app.get('/api/v1/flows', requireApiKey, (_req, res) => {
+  const flows = Object.values(orchFlows).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   res.json({ flows, total: flows.length });
 });
 
-app.post('/api/v1/kestra/flows', requireApiKey, (req, res) => {
+app.post('/api/v1/flows', requireApiKey, (req, res) => {
   const { name, namespace = 'default', description = '', nodes = [], edges = [] } = req.body;
   if (!name) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } });
   const now = new Date().toISOString();
   const flow = { id: nowUid(), name, namespace, description, nodes, edges, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
-  kestraFlows[flow.id] = flow;
-  saveKestraFlows();
+  orchFlows[flow.id] = flow;
+  saveFlows();
   res.status(201).json(flow);
 });
 
-app.get('/api/v1/kestra/flows/:id', requireApiKey, (req, res) => {
-  const flow = kestraFlows[req.params.id];
+app.get('/api/v1/flows/:id', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
   if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
   res.json(flow);
 });
 
-app.put('/api/v1/kestra/flows/:id', requireApiKey, (req, res) => {
+app.put('/api/v1/flows/:id', requireApiKey, (req, res) => {
   const now = new Date().toISOString();
-  let flow = kestraFlows[req.params.id];
+  let flow = orchFlows[req.params.id];
   if (!flow) {
     // Upsert: create with the provided ID so clients can use their own stable IDs
     const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [] } = req.body;
@@ -3137,46 +3151,46 @@ app.put('/api/v1/kestra/flows/:id', requireApiKey, (req, res) => {
     }
     flow.updatedAt = now;
   }
-  kestraFlows[req.params.id] = flow;
-  saveKestraFlows();
+  orchFlows[req.params.id] = flow;
+  saveFlows();
   res.json(flow);
 });
 
-app.delete('/api/v1/kestra/flows/:id', requireApiKey, (req, res) => {
-  if (!kestraFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
-  delete kestraFlows[req.params.id];
-  saveKestraFlows();
+app.delete('/api/v1/flows/:id', requireApiKey, (req, res) => {
+  if (!orchFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  delete orchFlows[req.params.id];
+  saveFlows();
   res.json({ message: 'Flow deleted' });
 });
 
-app.post('/api/v1/kestra/flows/:id/execute', requireApiKey, (req, res) => {
-  if (!kestraFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
-  const executionId = kestraExecuteFlow(req.params.id, 'manual');
+app.post('/api/v1/flows/:id/execute', requireApiKey, (req, res) => {
+  if (!orchFlows[req.params.id]) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
+  const executionId = executeOrchestratorFlow(req.params.id, 'manual');
   res.json({ executionId, message: 'Execution started' });
 });
 
-app.put('/api/v1/kestra/flows/:id/schedule', requireApiKey, (req, res) => {
-  const flow = kestraFlows[req.params.id];
+app.put('/api/v1/flows/:id/schedule', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
   if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
   const { cron, enabled = true, timezone = 'UTC' } = req.body;
   if (!cron) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'cron is required' } });
   flow.schedule = { cron, enabled, timezone };
   flow.updatedAt = new Date().toISOString();
-  saveKestraFlows();
+  saveFlows();
   res.json(flow);
 });
 
-app.delete('/api/v1/kestra/flows/:id/schedule', requireApiKey, (req, res) => {
-  const flow = kestraFlows[req.params.id];
+app.delete('/api/v1/flows/:id/schedule', requireApiKey, (req, res) => {
+  const flow = orchFlows[req.params.id];
   if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
   flow.schedule = null;
   flow.updatedAt = new Date().toISOString();
-  saveKestraFlows();
+  saveFlows();
   res.json(flow);
 });
 
-app.get('/api/v1/kestra/executions', requireApiKey, (req, res) => {
-  let execs = Object.values(kestraExecutions);
+app.get('/api/v1/executions', requireApiKey, (req, res) => {
+  let execs = Object.values(orchExecs);
   if (req.query.flowId) execs = execs.filter(e => e.flowId === req.query.flowId);
   if (req.query.status) execs = execs.filter(e => e.status === req.query.status);
   if (req.query.since) { const since = new Date(req.query.since); execs = execs.filter(e => new Date(e.startTime) > since); }
@@ -3186,8 +3200,8 @@ app.get('/api/v1/kestra/executions', requireApiKey, (req, res) => {
   res.json({ executions: execs.slice(offset, offset + limit), total: execs.length });
 });
 
-app.get('/api/v1/kestra/executions/:id', requireApiKey, (req, res) => {
-  const exec = kestraExecutions[req.params.id];
+app.get('/api/v1/executions/:id', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
   if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
 
   if (exec.status === 'RUNNING' && exec.jobId) {
@@ -3198,11 +3212,11 @@ app.get('/api/v1/kestra/executions/:id', requireApiKey, (req, res) => {
         const endTime = new Date().toISOString();
         const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
         Object.assign(exec, { status, endTime, duration: new Date(endTime) - new Date(exec.startTime), output: j.output, error: j.error });
-        kestraExecutions[req.params.id] = exec;
-        saveKestraExecutions();
-        if (kestraFlows[exec.flowId]) {
-          kestraFlows[exec.flowId].lastExecution = { id: exec.id, status, startTime: exec.startTime, endTime, duration: exec.duration };
-          saveKestraFlows();
+        orchExecs[req.params.id] = exec;
+        saveExecs();
+        if (orchFlows[exec.flowId]) {
+          orchFlows[exec.flowId].lastExecution = { id: exec.id, status, startTime: exec.startTime, endTime, duration: exec.duration };
+          saveFlows();
         }
       }
     }
@@ -3210,8 +3224,8 @@ app.get('/api/v1/kestra/executions/:id', requireApiKey, (req, res) => {
   res.json(exec);
 });
 
-app.post('/api/v1/kestra/executions/:id/kill', requireApiKey, (req, res) => {
-  const exec = kestraExecutions[req.params.id];
+app.post('/api/v1/executions/:id/kill', requireApiKey, (req, res) => {
+  const exec = orchExecs[req.params.id];
   if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } });
   if (exec.status !== 'RUNNING') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Execution is not running' } });
 
@@ -3223,18 +3237,18 @@ app.post('/api/v1/kestra/executions/:id/kill', requireApiKey, (req, res) => {
   const endTime = new Date().toISOString();
   const duration = new Date(endTime) - new Date(exec.startTime);
   Object.assign(exec, { status: 'KILLED', endTime, duration });
-  kestraExecutions[req.params.id] = exec;
-  saveKestraExecutions();
+  orchExecs[req.params.id] = exec;
+  saveExecs();
 
-  if (kestraFlows[exec.flowId]) {
-    kestraFlows[exec.flowId].lastExecution = { id: exec.id, status: 'KILLED', startTime: exec.startTime, endTime, duration };
-    saveKestraFlows();
+  if (orchFlows[exec.flowId]) {
+    orchFlows[exec.flowId].lastExecution = { id: exec.id, status: 'KILLED', startTime: exec.startTime, endTime, duration };
+    saveFlows();
   }
   res.json({ message: 'Execution killed', execution: exec });
 });
 
-loadKestraData();
-startKestraScheduler();
+loadFlowsData();
+startFlowScheduler();
 
 /* ===============================
    Server Startup & Shutdown

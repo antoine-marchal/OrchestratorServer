@@ -18,7 +18,6 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 
-const APP_VERSION = '0.1.5';
 type ConnectionStatus = 'connected' | 'disconnected' | 'checking';
 
 interface SortableTabProps {
@@ -139,9 +138,9 @@ const SortableTab: React.FC<SortableTabProps> = ({
   );
 };
 
-const SessionTabs: React.FC = () => {
+const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId, compact = false }) => {
   const {
-    sessions,
+    sessions: allSessions,
     activeSessionId,
     createSession,
     switchSession,
@@ -149,6 +148,10 @@ const SessionTabs: React.FC = () => {
     reorderSessions,
     isLoading
   } = useSessionStore();
+
+  const sessions = flowId
+    ? allSessions.filter(s => (s as any).linkedFlowId === flowId)
+    : allSessions;
 
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -240,7 +243,7 @@ const SessionTabs: React.FC = () => {
 
 
   const handleCreateSession = async () => {
-    await createSession();
+    await createSession(undefined, flowId);
   };
 
   const handleCloseSession = async (sessionId: string, event: React.MouseEvent) => {
@@ -303,9 +306,9 @@ const SessionTabs: React.FC = () => {
       : 'Backend unreachable';
 
   return (
-    <div className="flex items-center bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700 px-2 py-1 overflow-x-auto">
+    <div className={`flex items-center min-w-0 ${compact ? 'w-full flex-1 bg-white dark:bg-gray-900 border-0' : 'bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700'} px-2 py-1 overflow-x-auto`}>
       {/* Backend Address Input + connection indicator */}
-      <div className="flex items-center mr-2 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
+      <div className={`${compact ? 'hidden' : 'flex'} items-center mr-2 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}>
         <Server size={14} className="mr-2 text-gray-500 dark:text-gray-400" />
         <input
           type="text"
@@ -324,7 +327,7 @@ const SessionTabs: React.FC = () => {
       </div>
 
       {/* API Key Input */}
-      <div className="flex items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600">
+      <div className={`${compact ? 'hidden' : 'flex'} items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}>
         <KeyRound size={14} className="mr-2 text-gray-500 dark:text-gray-400 flex-shrink-0" />
         <input
           type={showApiKey ? 'text' : 'password'}
@@ -385,9 +388,6 @@ const SessionTabs: React.FC = () => {
       </button>
 
       {/* Hero title */}
-      <div className="ml-auto pl-4 whitespace-nowrap text-l font-semibold text-gray-900 dark:text-gray-200 select-none">
-        Orchestrator - WebClient v.{APP_VERSION}
-      </div>
     </div>
   );
 };

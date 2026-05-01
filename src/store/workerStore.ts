@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { pingWorker, invalidateWorkerSession } from '../utils/kestraApi';
-import type { Worker } from '../utils/kestraApi';
+import { pingWorker, invalidateWorkerSession } from '../utils/workerApi';
+import type { Worker } from '../utils/workerApi';
 
-const STORAGE_KEY = 'orchestrator-kestra-workers';
+const STORAGE_KEY = 'orchestrator-workers';
 
 const WORKER_COLORS = [
   '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b',

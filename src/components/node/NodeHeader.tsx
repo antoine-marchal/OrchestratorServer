@@ -65,7 +65,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
     const originalSessionId = sessionStore.activeSessionId;
 
     // Create new session (this switches to the new session)
-    const newSessionId = await sessionStore.createSession(sessionName);
+    const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
+    const newSessionId = await sessionStore.createSession(sessionName, parentFlowId);
 
     // If there's flow content, parse and load it into the new session
     if (flowCode.trim()) {

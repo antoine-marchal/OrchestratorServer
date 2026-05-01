@@ -49,6 +49,7 @@ export interface Session {
   flowState: FlowState;
   createdAt: number;
   lastActivity: number;
+  linkedFlowId?: string;  // flow library flow this session belongs to
 }
 
 /**
@@ -136,7 +137,7 @@ export interface SessionStore {
   isLoading: boolean;
 
   // Session management
-  createSession: (name?: string) => Promise<string>;
+  createSession: (name?: string, linkedFlowId?: string) => Promise<string>;
   switchSession: (sessionId: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
   reorderSessions: (sourceIndex: number, destinationIndex: number) => void;

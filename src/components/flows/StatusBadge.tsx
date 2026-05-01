@@ -1,6 +1,6 @@
 import React from 'react';
 import { CheckCircle2, XCircle, Loader2, StopCircle, Clock } from 'lucide-react';
-import type { ExecutionStatus } from '../../utils/kestraApi';
+import type { ExecutionStatus } from '../../utils/workerApi';
 
 const STATUS_CONFIG: Record<ExecutionStatus, { label: string; icon: React.ElementType; classes: string; spin?: boolean }> = {
   SUCCESS: { label: 'Success', icon: CheckCircle2, classes: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' },
@@ -19,11 +19,10 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'md' }) => {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.QUEUED;
   const Icon = cfg.icon;
   const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5';
-  const textSize = size === 'sm' ? 'text-xs' : 'text-xs';
   const padding = size === 'sm' ? 'px-1.5 py-0.5 gap-1' : 'px-2 py-1 gap-1.5';
 
   return (
-    <span className={`inline-flex items-center ${padding} rounded border font-medium ${textSize} ${cfg.classes}`}>
+    <span className={`inline-flex items-center ${padding} rounded border font-medium text-xs ${cfg.classes}`}>
       <Icon className={`${iconSize} ${cfg.spin ? 'animate-spin' : ''}`} />
       {cfg.label}
     </span>

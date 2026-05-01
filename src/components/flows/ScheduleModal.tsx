@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { X, Clock, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
-import type { KestraFlow } from '../../utils/kestraApi';
+import type { OrchestratorFlow } from '../../utils/workerApi';
 
 interface Props {
-  flow: KestraFlow;
+  flow: OrchestratorFlow;
   onClose: () => void;
   onSave: (schedule: { cron: string; enabled: boolean; timezone: string } | null) => Promise<void>;
 }
@@ -70,7 +70,6 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className={`relative w-full max-w-md rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
-        {/* Header */}
         <div className={`flex items-center justify-between px-5 py-4 border-b ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
@@ -87,7 +86,6 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Enable toggle */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Enabled</span>
             <button
@@ -99,7 +97,6 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
             </button>
           </div>
 
-          {/* Presets */}
           <div>
             <label className={`block text-xs font-medium mb-2 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>Presets</label>
             <div className="grid grid-cols-2 gap-1.5">
@@ -112,8 +109,8 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
                     cron === preset.cron
                       ? 'border-purple-500 bg-purple-500/10 text-purple-400'
                       : dark
-                      ? 'border-gray-700 hover:border-gray-600 text-gray-400 hover:text-gray-300'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:text-gray-800'
+                      ? 'border-gray-700 hover:border-gray-600 text-gray-400'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
                   }`}
                 >
                   {preset.label}
@@ -122,7 +119,6 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
             </div>
           </div>
 
-          {/* Cron expression */}
           <div>
             <label className={`block text-xs font-medium mb-1.5 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
               Cron Expression <span className={`font-normal ${dark ? 'text-gray-600' : 'text-gray-400'}`}>(minute hour dayMonth month dayWeek)</span>
@@ -132,9 +128,8 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
               onChange={e => setCron(e.target.value)}
               placeholder="0 * * * *"
               className={`w-full px-3 py-2 rounded-lg border text-sm font-mono ${
-                dark
-                  ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500'
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'
+                dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500'
+                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'
               } focus:outline-none focus:ring-1 focus:ring-purple-500 ${!isValid && cron ? 'border-red-500' : ''}`}
             />
             {cron && (
@@ -144,7 +139,6 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
             )}
           </div>
 
-          {/* Timezone note */}
           <p className={`text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>Timezone: UTC</p>
 
           {error && (
@@ -165,11 +159,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
                 Remove
               </button>
             )}
-            <button
-              type="button"
-              onClick={onClose}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${dark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-            >
+            <button type="button" onClick={onClose} className={`flex-1 py-2 rounded-lg text-sm font-medium ${dark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
               Cancel
             </button>
             <button

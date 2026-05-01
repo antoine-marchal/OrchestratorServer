@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 
 interface FlowEditorToolbarProps {
+  embedded?: boolean;
+  readOnly?: boolean;
+
   // File operations
   createNewFlow: () => void;
   saveFlow: () => void;
@@ -50,6 +53,8 @@ interface FlowEditorToolbarProps {
 }
 
 const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
+  embedded = false,
+  readOnly = false,
   createNewFlow,
   saveFlow,
   loadFlow,
@@ -69,9 +74,12 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
   dropdownMenu,
   addNewNode,
 }) => {
+  if (readOnly) return null;
+
   return (
     <Panel position="top-right" className="flex gap-2 flex-wrap">
       {/* File Operations Group */}
+      {!embedded && (
       <div className="flex gap-2 mr-2">
         <ToolbarButton
           onClick={createNewFlow}
@@ -95,16 +103,19 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
           title="Load Flow (Ctrl+O)"
         />
       </div>
+      )}
 
       {/* Flow Operations Group */}
       <div className="flex gap-2 mr-2">
-        <ToolbarButton
-          onClick={clearFlow}
-          icon={Trash2}
-          label="Erase Flow"
-          color="bg-red-500 hover:bg-red-600"
-          title="Erase Flow (Ctrl+D)"
-        />
+        {!embedded && (
+          <ToolbarButton
+            onClick={clearFlow}
+            icon={Trash2}
+            label="Erase Flow"
+            color="bg-red-500 hover:bg-red-600"
+            title="Erase Flow (Ctrl+D)"
+          />
+        )}
         <ToolbarButton
           onClick={executeFlow}
           icon={PlayCircle}

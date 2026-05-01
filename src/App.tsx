@@ -1,19 +1,18 @@
 import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import KestrasLayout from './components/kestra/KestrasLayout';
-import FlowsList from './components/kestra/FlowsList';
-import FlowDetail from './components/kestra/FlowDetail';
-import ExecutionsList from './components/kestra/ExecutionsList';
-import WorkersPanel from './components/kestra/WorkersPanel';
-import EditorPage from './components/kestra/EditorPage';
+import AppLayout from './components/flows/AppLayout';
+import FlowsList from './components/flows/FlowsList';
+import FlowDetail from './components/flows/FlowDetail';
+import ExecutionsList from './components/flows/ExecutionsList';
+import WorkersPanel from './components/flows/WorkersPanel';
 import { useSessionStore } from './store/sessionStore';
 import { useWorkerStore } from './store/workerStore';
-import { useKestraStore } from './store/kestraStore';
+import { useFlowLibraryStore } from './store/flowLibraryStore';
 
 function App() {
   const { loadSessions } = useSessionStore();
   const { loadWorkers, checkAllStatuses } = useWorkerStore();
-  const { loadAll, resumePolling, startScheduler } = useKestraStore();
+  const { loadAll, resumePolling, startScheduler } = useFlowLibraryStore();
 
   useEffect(() => {
     loadSessions();
@@ -28,13 +27,13 @@ function App() {
     <HashRouter>
       <Routes>
         <Route path="/" element={<Navigate to="/flows" replace />} />
-        <Route element={<KestrasLayout />}>
+        <Route element={<AppLayout />}>
           <Route path="/flows" element={<FlowsList />} />
           <Route path="/flows/:id" element={<FlowDetail />} />
           <Route path="/executions" element={<ExecutionsList />} />
           <Route path="/workers" element={<WorkersPanel />} />
-          <Route path="/editor" element={<EditorPage />} />
         </Route>
+        <Route path="/editor" element={<Navigate to="/flows" replace />} />
       </Routes>
     </HashRouter>
   );

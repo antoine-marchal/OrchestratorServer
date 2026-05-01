@@ -1,16 +1,16 @@
-// Per-worker API utilities — no single backend assumption
+// Per-worker API utilities
 
 export interface Worker {
   id: string;
   name: string;
   url: string;      // e.g. "http://localhost:3000"
   apiKey: string;
-  color: string;    // hex or tailwind color name
+  color: string;
 }
 
 export type ExecutionStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'KILLED' | 'QUEUED';
 
-export interface KestrasFlow {
+export interface OrchestratorFlow {
   id: string;
   name: string;
   namespace: string;
@@ -37,8 +37,9 @@ export interface LogEntry {
   nodeId?: string | null;
 }
 
-export interface KestrasExecution {
+export interface FlowExecution {
   id: string;
+  displayName?: string;
   flowId: string;
   flowName: string;
   namespace: string;
@@ -73,7 +74,7 @@ function normalizeWorkerUrl(url: string): string {
   return url.replace(/\/+$/, '').replace(/\/api\/v1$/, '');
 }
 
-// --- Session cache (survives component remounts, lost on page reload) ---
+// --- Session cache ---
 
 interface CachedSession {
   sessionId: string;
@@ -96,7 +97,7 @@ async function ensureSession(worker: Worker): Promise<string> {
   const res = await fetch(`${baseUrl(worker)}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key': worker.apiKey },
-    body: JSON.stringify({ metadata: { source: 'kestra-client' } }),
+    body: JSON.stringify({ metadata: { source: 'orchestrator-client' } }),
     signal: AbortSignal.timeout(8000),
   });
 
@@ -139,13 +140,13 @@ async function workerFetch<T>(
   return res.json() as Promise<T>;
 }
 
-// Kestra endpoints use X-API-Key directly (no session needed)
-async function kestraFetch<T>(
+// Flow library endpoints use X-API-Key directly (no session needed)
+async function flowsFetch<T>(
   worker: Worker,
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${baseUrl(worker)}/kestra${path}`, {
+  const res = await fetch(`${baseUrl(worker)}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -213,10 +214,10 @@ export function invalidateWorkerSession(workerId: string): void {
   sessionCache.delete(workerId);
 }
 
-// --- Kestra flow sync (backend scheduling) ---
+// --- Flow library sync ---
 
-export async function upsertFlowOnWorker(worker: Worker, flow: KestrasFlow): Promise<void> {
-  await kestraFetch(worker, `/flows/${flow.id}`, {
+export async function upsertFlowOnWorker(worker: Worker, flow: OrchestratorFlow): Promise<void> {
+  await flowsFetch(worker, `/flows/${flow.id}`, {
     method: 'PUT',
     body: JSON.stringify({
       name: flow.name,
@@ -230,7 +231,7 @@ export async function upsertFlowOnWorker(worker: Worker, flow: KestrasFlow): Pro
 
 export async function deleteFlowFromWorker(worker: Worker, flowId: string): Promise<void> {
   try {
-    await kestraFetch(worker, `/flows/${flowId}`, { method: 'DELETE' });
+    await flowsFetch(worker, `/flows/${flowId}`, { method: 'DELETE' });
   } catch { /* best effort */ }
 }
 
@@ -240,13 +241,13 @@ export async function setFlowScheduleOnWorker(
   schedule: { cron: string; enabled: boolean; timezone: string } | null
 ): Promise<void> {
   if (schedule) {
-    await kestraFetch(worker, `/flows/${flowId}/schedule`, {
+    await flowsFetch(worker, `/flows/${flowId}/schedule`, {
       method: 'PUT',
       body: JSON.stringify(schedule),
     });
   } else {
     try {
-      await kestraFetch(worker, `/flows/${flowId}/schedule`, { method: 'DELETE' });
+      await flowsFetch(worker, `/flows/${flowId}/schedule`, { method: 'DELETE' });
     } catch { /* may not exist */ }
   }
 }
@@ -255,29 +256,29 @@ export async function triggerFlowExecution(
   worker: Worker,
   flowId: string
 ): Promise<{ executionId: string }> {
-  return kestraFetch<{ executionId: string }>(worker, `/flows/${flowId}/execute`, {
+  return flowsFetch<{ executionId: string }>(worker, `/flows/${flowId}/execute`, {
     method: 'POST',
   });
 }
 
-export async function getKestrasExecution(
+export async function getFlowExecution(
   worker: Worker,
   executionId: string
-): Promise<KestrasExecution> {
-  return kestraFetch<KestrasExecution>(worker, `/executions/${executionId}`);
+): Promise<FlowExecution> {
+  return flowsFetch<FlowExecution>(worker, `/executions/${executionId}`);
 }
 
-export async function killKestrasExecution(worker: Worker, executionId: string): Promise<void> {
-  await kestraFetch(worker, `/executions/${executionId}/kill`, { method: 'POST' });
+export async function killFlowExecution(worker: Worker, executionId: string): Promise<void> {
+  await flowsFetch(worker, `/executions/${executionId}/kill`, { method: 'POST' });
 }
 
 export async function fetchWorkerExecutions(
   worker: Worker,
   since?: string
-): Promise<KestrasExecution[]> {
+): Promise<FlowExecution[]> {
   const params = new URLSearchParams({ limit: '100' });
   if (since) params.set('since', since);
-  const data = await kestraFetch<{ executions: any[] }>(worker, `/executions?${params}`);
+  const data = await flowsFetch<{ executions: any[] }>(worker, `/executions?${params}`);
   return (data.executions || []).map((e: any) => ({
     ...e,
     workerId: worker.id,

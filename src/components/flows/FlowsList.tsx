@@ -1,16 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Plus, Play, Pencil, Trash2, Clock, Search, RefreshCw,
+  Plus, Play, Pencil, Trash2, Clock, Search,
   GitBranch, XCircle, Loader2, Calendar, AlertTriangle, Server,
+  Download, Upload, Copy,
 } from 'lucide-react';
-import { useKestraStore } from '../../store/kestraStore';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useWorkerStore } from '../../store/workerStore';
 import { useTheme } from '../../context/ThemeContext';
 import StatusBadge from './StatusBadge';
 import CreateFlowModal from './CreateFlowModal';
 import ScheduleModal from './ScheduleModal';
-import type { KestrasFlow } from '../../store/kestraStore';
+import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -39,24 +40,40 @@ const StatCard: React.FC<{ label: string; value: number | string; icon: React.El
   </div>
 );
 
+function exportFlowFile(flow: OrchestratorFlow) {
+  const data = {
+    name: flow.name,
+    namespace: flow.namespace,
+    description: flow.description,
+    nodes: flow.nodes || [],
+    edges: flow.edges || [],
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${flow.name.replace(/\s+/g, '-')}.or`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 const FlowsList: React.FC = () => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const navigate = useNavigate();
-  const { flows, executions, createFlow, deleteFlow, executeFlow, updateFlow } = useKestraStore();
+  const { flows, executions, createFlow, deleteFlow, executeFlow, updateFlow } = useFlowLibraryStore();
   const { workers, statuses, getWorker } = useWorkerStore();
 
   const [search, setSearch] = useState('');
   const [workerFilter, setWorkerFilter] = useState<string>('ALL');
   const [showCreate, setShowCreate] = useState(false);
-  const [scheduleFlow, setScheduleFlow] = useState<KestrasFlow | null>(null);
+  const [scheduleFlow, setScheduleFlow] = useState<OrchestratorFlow | null>(null);
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(0);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Re-render every 5s to update relative times & running status
   useEffect(() => {
-    const t = setInterval(() => setAutoRefresh(n => n + 1), 5000);
+    const t = setInterval(() => {}, 5000);
     return () => clearInterval(t);
   }, []);
 
@@ -97,7 +114,11 @@ const FlowsList: React.FC = () => {
 
   const handleDelete = useCallback(async (flowId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (deleteConfirm !== flowId) { setDeleteConfirm(flowId); return; }
+    if (deleteConfirm !== flowId) {
+      setDeleteConfirm(flowId);
+      setTimeout(() => setDeleteConfirm(null), 3000);
+      return;
+    }
     deleteFlow(flowId);
     setDeleteConfirm(null);
   }, [deleteFlow, deleteConfirm]);
@@ -107,38 +128,94 @@ const FlowsList: React.FC = () => {
     navigate(`/flows/${flow.id}?tab=edit`);
   }, [createFlow, navigate]);
 
+  const handleDuplicate = useCallback((flow: OrchestratorFlow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const duplicate = createFlow({
+      name: `${flow.name} copy`,
+      namespace: flow.namespace,
+      description: flow.description,
+      workerId: flow.workerId,
+    });
+    updateFlow(duplicate.id, {
+      nodes: JSON.parse(JSON.stringify(flow.nodes || [])),
+      edges: JSON.parse(JSON.stringify(flow.edges || [])),
+      schedule: flow.schedule ? { ...flow.schedule } : null,
+    });
+    navigate(`/flows/${duplicate.id}?tab=edit`);
+  }, [createFlow, updateFlow, navigate]);
+
   const handleScheduleSave = useCallback(async (schedule: { cron: string; enabled: boolean; timezone: string } | null) => {
     if (!scheduleFlow) return;
-    updateFlow(scheduleFlow.id, { schedule });
+    updateFlow(scheduleFlow.id, { schedule: schedule ?? undefined });
     setScheduleFlow(null);
   }, [scheduleFlow, updateFlow]);
 
-  const workerOfFlow = (flow: KestrasFlow) => getWorker(flow.workerId);
-  const workerStatus = (flow: KestrasFlow) => {
+  const handleImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        const workerId = workers[0]?.id ?? '';
+        const flow = createFlow({
+          name: data.name || file.name.replace(/\.or$/, ''),
+          namespace: data.namespace || 'default',
+          description: data.description || '',
+          workerId,
+        });
+        if (data.nodes || data.edges) {
+          updateFlow(flow.id, { nodes: data.nodes || [], edges: data.edges || [] });
+        }
+        navigate(`/flows/${flow.id}?tab=edit`);
+      } catch {
+        alert('Failed to parse .or file');
+      }
+    };
+    reader.readAsText(file);
+    if (importInputRef.current) importInputRef.current.value = '';
+  }, [workers, createFlow, updateFlow, navigate]);
+
+  const workerOfFlow = (flow: OrchestratorFlow) => getWorker(flow.workerId);
+  const workerStatus = (flow: OrchestratorFlow) => {
     const w = workerOfFlow(flow);
     return w ? (statuses[w.id] ?? 'unknown') : null;
   };
 
   return (
     <div className={`h-full flex flex-col ${dark ? 'bg-gray-950' : 'bg-gray-50'}`}>
-      {/* Header */}
       <div className={`px-6 py-4 border-b flex items-center justify-between flex-shrink-0 ${dark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
         <div>
           <h1 className="text-lg font-semibold">Flows</h1>
           <p className={`text-xs mt-0.5 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{flows.length} flow{flows.length !== 1 ? 's' : ''}</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          New Flow
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".or"
+            className="hidden"
+            onChange={handleImport}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium ${dark ? 'border-gray-700 hover:border-gray-600 text-gray-300 hover:bg-gray-800' : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+          >
+            <Upload className="w-4 h-4" />
+            Import .or
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            New Flow
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto">
         <div className="p-6 space-y-4">
-          {/* Stats */}
           <div className="grid grid-cols-4 gap-4">
             <StatCard label="Total Flows" value={stats.total} icon={GitBranch} color="bg-purple-600/20 text-purple-400" dark={dark} />
             <StatCard label="Running" value={stats.running} icon={Loader2} color="bg-blue-600/20 text-blue-400" dark={dark} />
@@ -146,9 +223,7 @@ const FlowsList: React.FC = () => {
             <StatCard label="Scheduled" value={stats.scheduled} icon={Calendar} color="bg-emerald-600/20 text-emerald-400" dark={dark} />
           </div>
 
-          {/* Filters row */}
           <div className="flex items-center gap-2">
-            {/* Search */}
             <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               <Search className={`w-4 h-4 flex-shrink-0 ${dark ? 'text-gray-500' : 'text-gray-400'}`} />
               <input
@@ -158,8 +233,6 @@ const FlowsList: React.FC = () => {
                 className={`flex-1 bg-transparent text-sm outline-none ${dark ? 'text-gray-100 placeholder-gray-600' : 'text-gray-900 placeholder-gray-400'}`}
               />
             </div>
-
-            {/* Worker filter */}
             {workers.length > 1 && (
               <select
                 value={workerFilter}
@@ -174,7 +247,6 @@ const FlowsList: React.FC = () => {
             )}
           </div>
 
-          {/* No workers warning */}
           {workers.length === 0 && (
             <div className={`flex items-center gap-3 p-4 rounded-xl border ${dark ? 'bg-yellow-900/10 border-yellow-800/30' : 'bg-yellow-50 border-yellow-200'}`}>
               <Server className="w-4 h-4 text-yellow-400 flex-shrink-0" />
@@ -185,7 +257,6 @@ const FlowsList: React.FC = () => {
             </div>
           )}
 
-          {/* Flows table */}
           {filtered.length === 0 ? (
             <div className={`rounded-xl border py-16 flex flex-col items-center gap-3 ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
               <div className="w-12 h-12 rounded-xl bg-purple-600/10 flex items-center justify-center">
@@ -227,7 +298,6 @@ const FlowsList: React.FC = () => {
                         onClick={() => navigate(`/flows/${flow.id}`)}
                         className={`cursor-pointer transition-colors ${dark ? 'hover:bg-gray-800/60 border-b border-gray-800/50' : 'hover:bg-gray-50 border-b border-gray-100'}`}
                       >
-                        {/* Flow info */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-lg bg-purple-600/15 flex items-center justify-center flex-shrink-0">
@@ -240,20 +310,34 @@ const FlowsList: React.FC = () => {
                           </div>
                         </td>
 
-                        {/* Worker badge */}
                         <td className="px-4 py-3">
-                          {worker ? (
+                          {workers.length > 0 ? (
+                            <select
+                              value={flow.workerId}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => updateFlow(flow.id, { workerId: e.target.value })}
+                              title="Flow worker"
+                              className={`max-w-36 px-2 py-1 rounded-md border text-xs ${dark ? 'bg-gray-800 border-gray-700 text-gray-300' : 'bg-white border-gray-200 text-gray-700'} focus:outline-none`}
+                            >
+                              {workers.map(w => (
+                                <option key={w.id} value={w.id}>{w.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className={`text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>No worker</span>
+                          )}
+                          {false && (
                             <div className="flex items-center gap-1.5">
                               <div className="w-2 h-2 rounded-full" style={{ background: worker.color }} />
                               <span className={`text-xs truncate max-w-24 ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{worker.name}</span>
                               {wStatus === 'disconnected' && <span className="text-xs text-red-400">●</span>}
                             </div>
-                          ) : (
+                          )}
+                          {false && (
                             <span className={`text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>No worker</span>
                           )}
                         </td>
 
-                        {/* Last execution */}
                         <td className="px-4 py-3">
                           {flow.lastExecution ? (
                             <div className="flex flex-col gap-1">
@@ -265,12 +349,10 @@ const FlowsList: React.FC = () => {
                           )}
                         </td>
 
-                        {/* Duration */}
                         <td className="px-4 py-3">
                           <span className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{formatDuration(flow.lastExecution?.duration ?? null)}</span>
                         </td>
 
-                        {/* Schedule */}
                         <td className="px-4 py-3">
                           {flow.schedule ? (
                             <div className="flex items-center gap-1.5">
@@ -282,7 +364,6 @@ const FlowsList: React.FC = () => {
                           )}
                         </td>
 
-                        {/* Actions */}
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <button
@@ -308,6 +389,20 @@ const FlowsList: React.FC = () => {
                               <Clock className="w-4 h-4" />
                             </button>
                             <button
+                              onClick={e => { e.stopPropagation(); exportFlowFile(flow); }}
+                              title="Export .or file"
+                              className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-700 text-gray-400 hover:text-cyan-400' : 'hover:bg-gray-100 text-gray-500 hover:text-cyan-600'}`}
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={e => handleDuplicate(flow, e)}
+                              title="Duplicate flow"
+                              className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-700 text-gray-400 hover:text-violet-400' : 'hover:bg-gray-100 text-gray-500 hover:text-violet-600'}`}
+                            >
+                              <Copy className="w-4 h-4" />
+                            </button>
+                            <button
                               onClick={e => handleDelete(flow.id, e)}
                               title={deleteConfirm === flow.id ? 'Click again to confirm' : 'Delete flow'}
                               className={`p-1.5 rounded-md ${deleteConfirm === flow.id ? 'bg-red-500/20 text-red-400' : dark ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-gray-100 text-gray-500 hover:text-red-500'}`}
@@ -328,7 +423,11 @@ const FlowsList: React.FC = () => {
 
       {showCreate && <CreateFlowModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
       {scheduleFlow && (
-        <ScheduleModal flow={scheduleFlow as any} onClose={() => setScheduleFlow(null)} onSave={handleScheduleSave as any} />
+        <ScheduleModal
+          flow={scheduleFlow}
+          onClose={() => setScheduleFlow(null)}
+          onSave={handleScheduleSave}
+        />
       )}
     </div>
   );

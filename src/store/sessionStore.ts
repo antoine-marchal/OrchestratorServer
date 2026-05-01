@@ -7,7 +7,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   activeSessionId: null,
   isLoading: false,
 
-  createSession: async (name?: string) => {
+  createSession: async (name?: string, linkedFlowId?: string) => {
     const sessionName = name || `Session ${get().sessions.length + 1}`;
 
     // Create session on backend first to get the backend-generated sessionId
@@ -20,6 +20,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       flowState: createDefaultFlowState(),
       createdAt: Date.now(),
       lastActivity: Date.now(),
+      ...(linkedFlowId ? { linkedFlowId } : {}),
     };
 
     set((state) => ({
@@ -93,12 +94,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     // If closing active session, switch to another session or create new one
     if (state.activeSessionId === sessionId) {
-      if (updatedSessions.length > 0) {
+      const sameScopeSessions = session.linkedFlowId
+        ? updatedSessions.filter(s => s.linkedFlowId === session.linkedFlowId)
+        : updatedSessions.filter(s => !s.linkedFlowId);
+
+      if (sameScopeSessions.length > 0) {
+        newActiveSessionId = sameScopeSessions[0].id;
+      } else if (updatedSessions.length > 0 && !session.linkedFlowId) {
         newActiveSessionId = updatedSessions[0].id;
       } else {
-        // Create a new session if no sessions left
-        newActiveSessionId = null; // Will be set by createSession
-        setTimeout(() => get().createSession(), 0);
+        newActiveSessionId = null;
+        setTimeout(() => get().createSession(undefined, session.linkedFlowId), 0);
       }
     }
 

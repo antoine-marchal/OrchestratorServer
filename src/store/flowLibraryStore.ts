@@ -4,17 +4,17 @@ import {
   deleteFlowFromWorker,
   setFlowScheduleOnWorker,
   triggerFlowExecution,
-  getKestrasExecution,
-  killKestrasExecution,
+  getFlowExecution,
+  killFlowExecution,
   fetchWorkerExecutions,
-} from '../utils/kestraApi';
-import type { KestrasFlow, KestrasExecution, ExecutionStatus } from '../utils/kestraApi';
+} from '../utils/workerApi';
+import type { OrchestratorFlow, FlowExecution, ExecutionStatus } from '../utils/workerApi';
 import { useWorkerStore } from './workerStore';
 
-export type { KestrasFlow, KestrasExecution };
+export type { OrchestratorFlow, FlowExecution };
 
-const FLOWS_KEY = 'orchestrator-kestra-flows';
-const EXECS_KEY = 'orchestrator-kestra-executions';
+const FLOWS_KEY = 'orchestrator-flows';
+const EXECS_KEY = 'orchestrator-executions';
 const MAX_EXECUTIONS = 500;
 
 function uid(): string {
@@ -40,21 +40,22 @@ function stopPoll(execId: string) {
   if (t !== undefined) { clearTimeout(t); polls.delete(execId); }
 }
 
-// Background scheduler timer (polls backend for new executions)
 let schedulerTimer: ReturnType<typeof setInterval> | null = null;
 
-interface KestraState {
-  flows: KestrasFlow[];
-  executions: KestrasExecution[];
+interface FlowLibraryState {
+  flows: OrchestratorFlow[];
+  executions: FlowExecution[];
   schedulerActive: boolean;
 
   loadAll: () => void;
-  createFlow: (data: { name: string; namespace?: string; description?: string; workerId: string }) => KestrasFlow;
-  updateFlow: (id: string, data: Partial<KestrasFlow>) => void;
+  createFlow: (data: { name: string; namespace?: string; description?: string; workerId: string }) => OrchestratorFlow;
+  updateFlow: (id: string, data: Partial<OrchestratorFlow>) => void;
   deleteFlow: (id: string) => void;
 
   executeFlow: (flowId: string, triggeredBy?: 'manual' | 'schedule') => Promise<string>;
   killExecution: (execId: string) => Promise<void>;
+  renameExecution: (execId: string, displayName: string) => void;
+  clearExecutions: (flowId?: string) => void;
   resumePolling: () => void;
 
   startScheduler: () => void;
@@ -62,27 +63,27 @@ interface KestraState {
   syncBackendExecutions: () => Promise<void>;
 }
 
-export const useKestraStore = create<KestraState>((set, get) => {
+export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
   function getFlows() { return get().flows; }
   function getExecs() { return get().executions; }
 
-  function persistFlows(flows: KestrasFlow[]) {
+  function persistFlows(flows: OrchestratorFlow[]) {
     saveJSON(FLOWS_KEY, flows);
     set({ flows });
   }
 
-  function persistExecs(executions: KestrasExecution[]) {
+  function persistExecs(executions: FlowExecution[]) {
     const trimmed = executions.slice(0, MAX_EXECUTIONS);
     saveJSON(EXECS_KEY, trimmed);
     set({ executions: trimmed });
   }
 
-  function updateExec(id: string, patch: Partial<KestrasExecution>) {
+  function updateExec(id: string, patch: Partial<FlowExecution>) {
     const next = getExecs().map(e => e.id === id ? { ...e, ...patch } : e);
     persistExecs(next);
   }
 
-  function updateFlowLastExec(flowId: string, exec: KestrasExecution) {
+  function updateFlowLastExec(flowId: string, exec: FlowExecution) {
     persistFlows(getFlows().map(f =>
       f.id === flowId
         ? { ...f, lastExecution: { id: exec.id, status: exec.status, startTime: exec.startTime, endTime: exec.endTime, duration: exec.duration } }
@@ -105,24 +106,24 @@ export const useKestraStore = create<KestraState>((set, get) => {
       }
 
       try {
-        const kExec = await getKestrasExecution(worker, execId);
+        const remoteExec = await getFlowExecution(worker, execId);
         const status: ExecutionStatus =
-          kExec.status === 'SUCCESS' ? 'SUCCESS' :
-          kExec.status === 'FAILED' ? 'FAILED' :
-          kExec.status === 'KILLED' ? 'KILLED' : 'RUNNING';
+          remoteExec.status === 'SUCCESS' ? 'SUCCESS' :
+          remoteExec.status === 'FAILED' ? 'FAILED' :
+          remoteExec.status === 'KILLED' ? 'KILLED' : 'RUNNING';
 
-        const updated: Partial<KestrasExecution> = {
+        const updated: Partial<FlowExecution> = {
           status,
-          endTime: kExec.endTime ?? null,
-          duration: kExec.duration ?? null,
-          output: kExec.output ?? null,
-          error: kExec.error ?? null,
-          logs: kExec.logs || [],
+          endTime: remoteExec.endTime ?? null,
+          duration: remoteExec.duration ?? null,
+          output: remoteExec.output ?? null,
+          error: remoteExec.error ?? null,
+          logs: remoteExec.logs || [],
         };
         updateExec(execId, updated);
 
         if (status !== 'RUNNING') {
-          updateFlowLastExec(exec.flowId, { ...exec, ...updated } as KestrasExecution);
+          updateFlowLastExec(exec.flowId, { ...exec, ...updated } as FlowExecution);
           stopPoll(execId);
         } else {
           polls.set(execId, setTimeout(tick, 2000));
@@ -141,14 +142,14 @@ export const useKestraStore = create<KestraState>((set, get) => {
     schedulerActive: false,
 
     loadAll: () => {
-      const flows = loadJSON<KestrasFlow[]>(FLOWS_KEY, []);
-      const executions = loadJSON<KestrasExecution[]>(EXECS_KEY, []);
+      const flows = loadJSON<OrchestratorFlow[]>(FLOWS_KEY, []);
+      const executions = loadJSON<FlowExecution[]>(EXECS_KEY, []);
       set({ flows, executions });
     },
 
     createFlow: (data) => {
       const now = new Date().toISOString();
-      const flow: KestrasFlow = {
+      const flow: OrchestratorFlow = {
         id: uid(),
         name: data.name,
         namespace: data.namespace ?? 'default',
@@ -163,7 +164,6 @@ export const useKestraStore = create<KestraState>((set, get) => {
       };
       persistFlows([flow, ...getFlows()]);
 
-      // Sync to worker (best effort)
       const worker = useWorkerStore.getState().getWorker(flow.workerId);
       if (worker) upsertFlowOnWorker(worker, flow).catch(console.error);
 
@@ -176,10 +176,14 @@ export const useKestraStore = create<KestraState>((set, get) => {
       const updated = { ...existing, ...data, updatedAt: new Date().toISOString() };
       persistFlows(getFlows().map(f => f.id === id ? updated : f));
 
+      if (data.workerId && data.workerId !== existing.workerId) {
+        const previousWorker = useWorkerStore.getState().getWorker(existing.workerId);
+        if (previousWorker) deleteFlowFromWorker(previousWorker, id).catch(console.error);
+      }
+
       const worker = useWorkerStore.getState().getWorker(updated.workerId);
       if (worker) {
         upsertFlowOnWorker(worker, updated).catch(console.error);
-        // Sync schedule changes to backend
         if ('schedule' in data) {
           setFlowScheduleOnWorker(worker, id, updated.schedule).catch(console.error);
         }
@@ -189,7 +193,6 @@ export const useKestraStore = create<KestraState>((set, get) => {
     deleteFlow: (id) => {
       const flow = getFlows().find(f => f.id === id);
       persistFlows(getFlows().filter(f => f.id !== id));
-      // Stop any running polls
       getExecs().filter(e => e.flowId === id && e.status === 'RUNNING').forEach(e => stopPoll(e.id));
 
       if (flow) {
@@ -205,13 +208,12 @@ export const useKestraStore = create<KestraState>((set, get) => {
       const worker = useWorkerStore.getState().getWorker(flow.workerId);
       if (!worker) throw new Error(`Worker not found for flow "${flow.name}"`);
 
-      // Ensure flow is synced on backend before executing
       await upsertFlowOnWorker(worker, flow);
 
       const startTime = new Date().toISOString();
       const { executionId } = await triggerFlowExecution(worker, flowId);
 
-      const exec: KestrasExecution = {
+      const exec: FlowExecution = {
         id: executionId,
         flowId,
         flowName: flow.name,
@@ -242,30 +244,44 @@ export const useKestraStore = create<KestraState>((set, get) => {
 
       const worker = useWorkerStore.getState().getWorker(exec.workerId);
       if (worker) {
-        try { await killKestrasExecution(worker, execId); } catch { /* best effort */ }
+        try { await killFlowExecution(worker, execId); } catch { /* best effort */ }
       }
 
       const endTime = new Date().toISOString();
-      const updated: Partial<KestrasExecution> = {
+      const updated: Partial<FlowExecution> = {
         status: 'KILLED',
         endTime,
         duration: new Date(endTime).getTime() - new Date(exec.startTime).getTime(),
       };
       updateExec(execId, updated);
-      updateFlowLastExec(exec.flowId, { ...exec, ...updated } as KestrasExecution);
+      updateFlowLastExec(exec.flowId, { ...exec, ...updated } as FlowExecution);
       stopPoll(execId);
+    },
+
+    renameExecution: (execId, displayName) => {
+      updateExec(execId, { displayName: displayName.trim() || undefined });
+    },
+
+    clearExecutions: (flowId) => {
+      const removed = getExecs().filter(e => !flowId || e.flowId === flowId);
+      removed.forEach(e => stopPoll(e.id));
+      persistExecs(getExecs().filter(e => flowId && e.flowId !== flowId));
+
+      if (flowId) {
+        persistFlows(getFlows().map(f => f.id === flowId ? { ...f, lastExecution: null } : f));
+      } else {
+        persistFlows(getFlows().map(f => ({ ...f, lastExecution: null })));
+      }
     },
 
     resumePolling: () => {
       const running = getExecs().filter(e => e.status === 'RUNNING');
       running.forEach(e => startPoll(e.id));
-      // Also pull any backend-triggered executions we may have missed
       get().syncBackendExecutions().catch(console.error);
     },
 
     startScheduler: () => {
       if (schedulerTimer) return;
-      // Sync all flows with schedules to their workers
       const { getWorker } = useWorkerStore.getState();
       for (const flow of getFlows()) {
         const worker = getWorker(flow.workerId);
@@ -273,7 +289,6 @@ export const useKestraStore = create<KestraState>((set, get) => {
         upsertFlowOnWorker(worker, flow).catch(console.error);
         if (flow.schedule) setFlowScheduleOnWorker(worker, flow.id, flow.schedule).catch(console.error);
       }
-      // Poll backend every 30s for scheduler-triggered executions
       schedulerTimer = setInterval(() => {
         get().syncBackendExecutions().catch(console.error);
       }, 30_000);
@@ -291,7 +306,7 @@ export const useKestraStore = create<KestraState>((set, get) => {
       const knownIds = new Set(localExecs.map(e => e.id));
       const knownFlowIds = new Set(getFlows().map(f => f.id));
 
-      const newExecs: KestrasExecution[] = [];
+      const newExecs: FlowExecution[] = [];
 
       for (const worker of workers) {
         try {
@@ -299,7 +314,6 @@ export const useKestraStore = create<KestraState>((set, get) => {
           for (const bExec of backendExecs) {
             if (!knownFlowIds.has(bExec.flowId)) continue;
             if (knownIds.has(bExec.id)) {
-              // Update status of known running execs that finished on backend
               const local = localExecs.find(e => e.id === bExec.id);
               if (local?.status === 'RUNNING' && bExec.status !== 'RUNNING') {
                 updateExec(bExec.id, {
@@ -322,7 +336,6 @@ export const useKestraStore = create<KestraState>((set, get) => {
       if (newExecs.length > 0) {
         const merged = [...newExecs, ...getExecs()];
         persistExecs(merged);
-        // Update lastExecution on flows for new execs
         for (const exec of newExecs) {
           const flow = getFlows().find(f => f.id === exec.flowId);
           if (flow && (!flow.lastExecution || new Date(exec.startTime) > new Date(flow.lastExecution.startTime))) {

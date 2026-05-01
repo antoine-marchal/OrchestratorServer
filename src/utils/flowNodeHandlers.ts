@@ -14,6 +14,7 @@ export interface FlowNodeFromFileParams {
   position: { x: number; y: number };
   setNodes: (update: (nodes: Node[]) => Node[]) => void;
   currentSessionId: string | null;
+  parentFlowId?: string;
 }
 
 export const handleFlowNodeFromSession = ({
@@ -62,6 +63,7 @@ export const handleFlowNodeFromFile = async ({
   position,
   setNodes,
   currentSessionId,
+  parentFlowId,
 }: FlowNodeFromFileParams) => {
   try {
     const fileContent = await file.text();
@@ -78,7 +80,7 @@ export const handleFlowNodeFromFile = async ({
 
     // Create a new session for this flow
     const newSessionName = `Flow: ${flowName}`;
-    const newSessionId = await useSessionStore.getState().createSession(newSessionName);
+    const newSessionId = await useSessionStore.getState().createSession(newSessionName, parentFlowId);
 
     // Load the flow data into the new session
     useSessionStore.getState().updateActiveFlowState({

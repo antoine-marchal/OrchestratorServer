@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Server, Plus, Pencil, Trash2, Wifi, WifiOff, Loader2, RefreshCw, AlertTriangle, Copy, Check } from 'lucide-react';
 import { useWorkerStore } from '../../store/workerStore';
-import { useKestraStore } from '../../store/kestraStore';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useTheme } from '../../context/ThemeContext';
 import AddWorkerModal from './AddWorkerModal';
-import type { Worker } from '../../utils/kestraApi';
+import type { Worker } from '../../utils/workerApi';
 import type { WorkerStatus } from '../../store/workerStore';
 
 const STATUS_CONFIG: Record<WorkerStatus, { label: string; icon: React.ElementType; classes: string; spin?: boolean }> = {
@@ -37,12 +37,9 @@ const WorkerCard: React.FC<{
   return (
     <div className={`rounded-xl border p-4 ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
       <div className="flex items-start gap-3">
-        {/* Color dot / icon */}
         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: worker.color + '22' }}>
           <Server className="w-5 h-5" style={{ color: worker.color }} />
         </div>
-
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="font-semibold text-sm truncate">{worker.name}</span>
@@ -51,41 +48,24 @@ const WorkerCard: React.FC<{
               {cfg.label}
             </span>
           </div>
-
-          <p className={`text-xs font-mono truncate mb-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-            {worker.url}
-          </p>
-
+          <p className={`text-xs font-mono truncate mb-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{worker.url}</p>
           <div className="flex items-center gap-3 text-xs">
-            {/* API key (masked) */}
             <div className={`flex items-center gap-1 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-              <span className="font-mono">{worker.apiKey.slice(0, 8)}…</span>
-              <button onClick={handleCopyKey} className="hover:text-purple-400 transition-colors">
-                {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              </button>
+              <span className="font-mono">{worker.apiKey ? worker.apiKey.slice(0, 8) + '…' : '(no key)'}</span>
+              {worker.apiKey && (
+                <button onClick={handleCopyKey} className="hover:text-purple-400 transition-colors">
+                  {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              )}
             </div>
-
-            {/* Flow count */}
-            <span className={`${dark ? 'text-gray-600' : 'text-gray-400'}`}>
-              {flowCount} flow{flowCount !== 1 ? 's' : ''}
-            </span>
+            <span className={dark ? 'text-gray-600' : 'text-gray-400'}>{flowCount} flow{flowCount !== 1 ? 's' : ''}</span>
           </div>
         </div>
-
-        {/* Actions */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={onCheck}
-            title="Check connection"
-            className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-800 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}
-          >
+          <button onClick={onCheck} title="Check connection" className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-800 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}>
             <RefreshCw className={`w-3.5 h-3.5 ${status === 'checking' ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            onClick={onEdit}
-            title="Edit worker"
-            className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-800 text-gray-500 hover:text-blue-400' : 'hover:bg-gray-100 text-gray-400 hover:text-blue-600'}`}
-          >
+          <button onClick={onEdit} title="Edit worker" className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-800 text-gray-500 hover:text-blue-400' : 'hover:bg-gray-100 text-gray-400 hover:text-blue-600'}`}>
             <Pencil className="w-3.5 h-3.5" />
           </button>
           <button
@@ -97,21 +77,10 @@ const WorkerCard: React.FC<{
           </button>
         </div>
       </div>
-
-      {/* Health bar */}
       <div className={`mt-3 pt-3 border-t grid grid-cols-3 gap-3 text-xs ${dark ? 'border-gray-800 text-gray-500' : 'border-gray-100 text-gray-400'}`}>
-        <div>
-          <p className="font-medium mb-0.5">URL</p>
-          <p className={`font-mono truncate ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{worker.url}</p>
-        </div>
-        <div>
-          <p className="font-medium mb-0.5">Status</p>
-          <p className={cfg.classes}>{cfg.label}</p>
-        </div>
-        <div>
-          <p className="font-medium mb-0.5">Flows</p>
-          <p className={dark ? 'text-gray-300' : 'text-gray-700'}>{flowCount} assigned</p>
-        </div>
+        <div><p className="font-medium mb-0.5">URL</p><p className={`font-mono truncate ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{worker.url}</p></div>
+        <div><p className="font-medium mb-0.5">Status</p><p className={cfg.classes}>{cfg.label}</p></div>
+        <div><p className="font-medium mb-0.5">Flows</p><p className={dark ? 'text-gray-300' : 'text-gray-700'}>{flowCount} assigned</p></div>
       </div>
     </div>
   );
@@ -121,7 +90,7 @@ const WorkersPanel: React.FC = () => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const { workers, statuses, removeWorker, checkStatus, checkAllStatuses } = useWorkerStore();
-  const { flows } = useKestraStore();
+  const { flows } = useFlowLibraryStore();
   const [showAdd, setShowAdd] = useState(false);
   const [editWorker, setEditWorker] = useState<Worker | null>(null);
 
@@ -135,33 +104,22 @@ const WorkersPanel: React.FC = () => {
 
   return (
     <div className={`h-full flex flex-col ${dark ? 'bg-gray-950' : 'bg-gray-50'}`}>
-      {/* Header */}
       <div className={`px-6 py-4 border-b flex items-center justify-between flex-shrink-0 ${dark ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
         <div>
           <h1 className="text-lg font-semibold">Workers</h1>
           <p className={`text-xs mt-0.5 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
-            {workers.length} backend{workers.length !== 1 ? 's' : ''} configured ·{' '}
-            {workers.filter(w => statuses[w.id] === 'connected').length} connected
+            {workers.length} backend{workers.length !== 1 ? 's' : ''} configured · {workers.filter(w => statuses[w.id] === 'connected').length} connected
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => checkAllStatuses()}
-            className={`p-2 rounded-lg ${dark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
-            title="Refresh all"
-          >
+          <button onClick={() => checkAllStatuses()} className={`p-2 rounded-lg ${dark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`} title="Refresh all">
             <RefreshCw className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Add Worker
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium">
+            <Plus className="w-4 h-4" />Add Worker
           </button>
         </div>
       </div>
-
       <div className="flex-1 overflow-auto p-6">
         {workers.length === 0 ? (
           <div className={`rounded-xl border py-20 flex flex-col items-center gap-4 ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
@@ -174,12 +132,8 @@ const WorkersPanel: React.FC = () => {
                 Add a backend worker to start executing flows. Each worker is an Orchestrator backend instance.
               </p>
             </div>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              Add Your First Worker
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium">
+              <Plus className="w-4 h-4" />Add Your First Worker
             </button>
           </div>
         ) : (
@@ -199,7 +153,6 @@ const WorkersPanel: React.FC = () => {
           </div>
         )}
       </div>
-
       {showAdd && <AddWorkerModal onClose={() => setShowAdd(false)} />}
       {editWorker && <AddWorkerModal worker={editWorker} onClose={() => setEditWorker(null)} />}
     </div>

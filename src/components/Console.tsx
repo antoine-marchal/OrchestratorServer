@@ -86,7 +86,7 @@ const Console: React.FC = () => {
     return (
       <button
         onClick={toggleConsole}
-        className="fixed bottom-4 left-[5px] bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-2 rounded-full shadow-lg hover:bg-gray-700 hover:text-white transition-colors"
+        className="fixed bottom-4 left-[220px] bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-2 rounded-full shadow-lg hover:bg-gray-700 hover:text-white transition-colors"
       >
         <Terminal className="w-5 h-5" />
       </button>
@@ -221,10 +221,10 @@ const Console: React.FC = () => {
   return (
     <div
       className={`
-        fixed bottom-0 left-[5px] bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-lg rounded-t-lg
+        fixed bottom-0 left-[210px] bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-lg rounded-t-lg
         transition-all duration-300 z-50
         ${fullscreen
-          ? 'top-0 left-0 w-screen h-screen rounded-none'
+          ? 'top-0 left-[0px] w-screen h-screen rounded-none'
           : 'w-full md:w-1/2 lg:w-1/3 h-auto'
         }
       `}
@@ -232,7 +232,7 @@ const Console: React.FC = () => {
       onMouseEnter={() => setMouseOverConsole(true)}
       onMouseLeave={() => setMouseOverConsole(false)}
     >
-      <div className="flex items-center justify-between p-2 border-b border-gray-300 dark:border-gray-700 ">
+      <div className="flex left-[5px] items-center justify-between p-2 border-b border-gray-300 dark:border-gray-700 ">
         <div className="flex items-center gap-2">
           <Terminal className="w-4 h-4" />
           <span className="font-medium">Console</span>

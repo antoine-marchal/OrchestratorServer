@@ -1,30 +1,27 @@
 import React from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { GitBranch, Activity, Server, Code2, Sun, Moon } from 'lucide-react';
+import { GitBranch, Activity, Server, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useWorkerStore } from '../../store/workerStore';
-import { useKestraStore } from '../../store/kestraStore';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
 const NAV_ITEMS = [
   { to: '/flows', icon: GitBranch, label: 'Flows' },
   { to: '/executions', icon: Activity, label: 'Executions' },
   { to: '/workers', icon: Server, label: 'Workers' },
-  { to: '/editor', icon: Code2, label: 'Editor' },
 ];
 
-const KestrasLayout: React.FC = () => {
+const AppLayout: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const dark = theme === 'dark';
   const { workers, statuses } = useWorkerStore();
-  const { schedulerActive } = useKestraStore();
+  const { schedulerActive } = useFlowLibraryStore();
 
   const connectedCount = workers.filter(w => statuses[w.id] === 'connected').length;
 
   return (
     <div className={`flex h-screen overflow-hidden ${dark ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
-      {/* Sidebar */}
       <aside className={`w-52 flex-shrink-0 flex flex-col border-r ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-        {/* Logo */}
         <div className={`h-13 flex items-center px-4 py-3 border-b ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-purple-600 flex items-center justify-center">
@@ -41,7 +38,6 @@ const KestrasLayout: React.FC = () => {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-2 py-3 space-y-0.5">
           {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -57,7 +53,6 @@ const KestrasLayout: React.FC = () => {
             >
               <Icon className="w-4 h-4 flex-shrink-0" />
               <span className="flex-1">{label}</span>
-              {/* Workers badge */}
               {label === 'Workers' && workers.length > 0 && (
                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                   connectedCount === workers.length
@@ -73,7 +68,6 @@ const KestrasLayout: React.FC = () => {
           ))}
         </nav>
 
-        {/* Theme toggle */}
         <div className={`px-3 py-2 border-t ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
           <button
             onClick={toggleTheme}
@@ -86,18 +80,15 @@ const KestrasLayout: React.FC = () => {
           </button>
         </div>
 
-        {/* Worker status summary */}
         {workers.length > 0 && (
           <div className={`px-3 py-3 border-t ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
             {workers.slice(0, 3).map(w => (
               <div key={w.id} className="flex items-center gap-2 py-1">
-                <div
-                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    statuses[w.id] === 'connected' ? 'bg-emerald-400' :
-                    statuses[w.id] === 'checking' ? 'bg-blue-400 animate-pulse' :
-                    statuses[w.id] === 'disconnected' ? 'bg-red-400' : 'bg-gray-500'
-                  }`}
-                />
+                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  statuses[w.id] === 'connected' ? 'bg-emerald-400' :
+                  statuses[w.id] === 'checking' ? 'bg-blue-400 animate-pulse' :
+                  statuses[w.id] === 'disconnected' ? 'bg-red-400' : 'bg-gray-500'
+                }`} />
                 <span className={`text-xs truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{w.name}</span>
               </div>
             ))}
@@ -108,7 +99,6 @@ const KestrasLayout: React.FC = () => {
         )}
       </aside>
 
-      {/* Main content — pages manage their own scrolling */}
       <main className="flex-1 min-h-0 overflow-hidden">
         <div className="h-full">
           <Outlet />
@@ -118,4 +108,4 @@ const KestrasLayout: React.FC = () => {
   );
 };
 
-export default KestrasLayout;
+export default AppLayout;

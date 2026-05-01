@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
-import { X, Upload, List, GitBranch } from 'lucide-react';
+import { X, Upload, List } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
-import { useKestraStore } from '../store/kestraStore';
-import { useWorkerStore } from '../store/workerStore';
 
 interface FlowNodeCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectSession: (sessionId: string, sessionName: string) => void;
   onUploadFile: (file: File) => void;
-  onSelectKestraFlow: (flow: { nodes: any[]; edges: any[]; name: string }) => void;
+  flowId?: string;
 }
 
 export default function FlowNodeCreationModal({
@@ -17,12 +15,11 @@ export default function FlowNodeCreationModal({
   onClose,
   onSelectSession,
   onUploadFile,
-  onSelectKestraFlow,
+  flowId,
 }: FlowNodeCreationModalProps) {
-  const [selectedOption, setSelectedOption] = useState<'session' | 'file' | 'kestra' | null>(null);
-  const { sessions } = useSessionStore();
-  const { flows } = useKestraStore();
-  const { getWorker, statuses } = useWorkerStore();
+  const [selectedOption, setSelectedOption] = useState<'session' | null>(null);
+  const { sessions: allSessions } = useSessionStore();
+  const sessions = flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions;
 
   if (!isOpen) return null;
 
@@ -53,15 +50,9 @@ export default function FlowNodeCreationModal({
     onClose();
   };
 
-  const handleKestraFlowSelect = (flow: { nodes: any[]; edges: any[]; name: string }) => {
-    onSelectKestraFlow(flow);
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             Create Flow Node
@@ -74,7 +65,6 @@ export default function FlowNodeCreationModal({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-6">
           {!selectedOption ? (
             <div className="space-y-4">
@@ -82,29 +72,6 @@ export default function FlowNodeCreationModal({
                 Choose how to create the flow node:
               </p>
 
-              {/* Option 1: Kestra Flow */}
-              {flows.length > 0 && (
-                <button
-                  onClick={() => setSelectedOption('kestra')}
-                  className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-500 transition-colors text-left group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg group-hover:bg-purple-200 dark:group-hover:bg-purple-800 transition-colors">
-                      <GitBranch className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100">
-                        Kestra Flow
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Link to an existing Kestra flow ({flows.length} available)
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              )}
-
-              {/* Option 2: Select Existing Session */}
               <button
                 onClick={() => setSelectedOption('session')}
                 className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors text-left group"
@@ -124,9 +91,8 @@ export default function FlowNodeCreationModal({
                 </div>
               </button>
 
-              {/* Option 3: Upload .or File */}
               <button
-                onClick={() => handleFileUpload()}
+                onClick={handleFileUpload}
                 className="w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 transition-colors text-left group"
               >
                 <div className="flex items-center gap-3">
@@ -144,7 +110,7 @@ export default function FlowNodeCreationModal({
                 </div>
               </button>
             </div>
-          ) : selectedOption === 'session' ? (
+          ) : (
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Select a session:</p>
@@ -178,50 +144,9 @@ export default function FlowNodeCreationModal({
                 )}
               </div>
             </div>
-          ) : selectedOption === 'kestra' ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Select a Kestra flow:</p>
-                <button
-                  onClick={() => setSelectedOption(null)}
-                  className="text-sm text-purple-600 dark:text-purple-400 hover:underline"
-                >
-                  Back
-                </button>
-              </div>
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {flows.map((flow) => {
-                  const worker = getWorker(flow.workerId);
-                  const workerStatus = worker ? statuses[worker.id] : 'unknown';
-                  return (
-                    <button
-                      key={flow.id}
-                      onClick={() => handleKestraFlowSelect({ nodes: flow.nodes, edges: flow.edges, name: flow.name })}
-                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-500 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-900 dark:text-gray-100">{flow.name}</span>
-                        {worker && (
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className={`w-1.5 h-1.5 rounded-full ${workerStatus === 'connected' ? 'bg-emerald-400' : 'bg-gray-400'}`}
-                            />
-                            <span className="text-xs text-gray-500 dark:text-gray-400">{worker.name}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {flow.namespace} · {flow.nodes.length} nodes
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
+          )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={onClose}
