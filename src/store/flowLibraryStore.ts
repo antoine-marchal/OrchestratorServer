@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   upsertFlowOnWorker,
   deleteFlowFromWorker,
+  fetchWorkerFlows,
   setFlowScheduleOnWorker,
   triggerFlowExecution,
   getFlowExecution,
@@ -54,6 +55,7 @@ interface FlowLibraryState {
   createFlow: (data: { name: string; namespace?: string; description?: string; workerId: string }) => OrchestratorFlow;
   updateFlow: (id: string, data: Partial<OrchestratorFlow>) => void;
   deleteFlow: (id: string) => void;
+  syncWorkerFlows: () => Promise<number>;
 
   executeFlow: (flowId: string, triggeredBy?: 'manual' | 'schedule') => Promise<string>;
   killExecution: (execId: string) => Promise<void>;
@@ -202,6 +204,39 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         const worker = useWorkerStore.getState().getWorker(flow.workerId);
         if (worker) deleteFlowFromWorker(worker, id).catch(console.error);
       }
+    },
+
+    syncWorkerFlows: async () => {
+      const { workers, statuses, setWorkerStatus } = useWorkerStore.getState();
+      const knownIds = new Set(getFlows().map(f => f.id));
+      const imported: OrchestratorFlow[] = [];
+
+      for (const worker of workers) {
+        if (statuses[worker.id] === 'disconnected') continue;
+
+        try {
+          const workerFlows = await fetchWorkerFlows(worker);
+          for (const flow of workerFlows) {
+            if (knownIds.has(flow.id)) continue;
+            knownIds.add(flow.id);
+            imported.push({
+              ...flow,
+              workerId: worker.id,
+              createdAt: flow.createdAt || new Date().toISOString(),
+              updatedAt: flow.updatedAt || new Date().toISOString(),
+            });
+          }
+          setWorkerStatus(worker.id, 'connected');
+        } catch {
+          setWorkerStatus(worker.id, 'disconnected');
+        }
+      }
+
+      if (imported.length > 0) {
+        persistFlows([...imported, ...getFlows()]);
+      }
+
+      return imported.length;
     },
 
     executeFlow: async (flowId, triggeredBy = 'manual') => {

@@ -235,6 +235,18 @@ export async function deleteFlowFromWorker(worker: Worker, flowId: string): Prom
   } catch { /* best effort */ }
 }
 
+export async function fetchWorkerFlows(worker: Worker): Promise<OrchestratorFlow[]> {
+  const data = await flowsFetch<{ flows: any[] }>(worker, '/flows');
+  return (data.flows || []).map((flow: any) => ({
+    ...flow,
+    workerId: worker.id,
+    nodes: flow.nodes || [],
+    edges: flow.edges || [],
+    schedule: flow.schedule ?? null,
+    lastExecution: flow.lastExecution ?? null,
+  }));
+}
+
 export async function setFlowScheduleOnWorker(
   worker: Worker,
   flowId: string,

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Play, Pencil, Trash2, Clock, Search,
   GitBranch, XCircle, Loader2, Calendar, AlertTriangle, Server,
-  Download, Upload, Copy,
+  Download, Upload, Copy, RefreshCw,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useWorkerStore } from '../../store/workerStore';
@@ -61,7 +61,7 @@ const FlowsList: React.FC = () => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const navigate = useNavigate();
-  const { flows, executions, createFlow, deleteFlow, executeFlow, updateFlow } = useFlowLibraryStore();
+  const { flows, executions, createFlow, deleteFlow, executeFlow, updateFlow, syncWorkerFlows } = useFlowLibraryStore();
   const { workers, statuses, getWorker } = useWorkerStore();
 
   const [search, setSearch] = useState('');
@@ -70,6 +70,7 @@ const FlowsList: React.FC = () => {
   const [scheduleFlow, setScheduleFlow] = useState<OrchestratorFlow | null>(null);
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [retrievingFlows, setRetrievingFlows] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -176,6 +177,20 @@ const FlowsList: React.FC = () => {
     if (importInputRef.current) importInputRef.current.value = '';
   }, [workers, createFlow, updateFlow, navigate]);
 
+  const handleRetrieveWorkerFlows = useCallback(async () => {
+    setRetrievingFlows(true);
+    try {
+      const count = await syncWorkerFlows();
+      if (count === 0) {
+        alert('No new flows found on online workers');
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to retrieve worker flows');
+    } finally {
+      setRetrievingFlows(false);
+    }
+  }, [syncWorkerFlows]);
+
   const workerOfFlow = (flow: OrchestratorFlow) => getWorker(flow.workerId);
   const workerStatus = (flow: OrchestratorFlow) => {
     const w = workerOfFlow(flow);
@@ -203,6 +218,15 @@ const FlowsList: React.FC = () => {
           >
             <Upload className="w-4 h-4" />
             Import .or
+          </button>
+          <button
+            onClick={handleRetrieveWorkerFlows}
+            disabled={retrievingFlows || workers.length === 0}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium disabled:opacity-50 ${dark ? 'border-gray-700 hover:border-gray-600 text-gray-300 hover:bg-gray-800' : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+            title="Retrieve flows registered on online workers"
+          >
+            <RefreshCw className={`w-4 h-4 ${retrievingFlows ? 'animate-spin' : ''}`} />
+            Retrieve
           </button>
           <button
             onClick={() => setShowCreate(true)}
