@@ -149,7 +149,7 @@ const AddWorkerModal: React.FC<Props> = ({ worker, onClose }) => {
               type="button"
               onClick={handleSave}
               disabled={saving || !name.trim() || !url.trim()}
-              className="flex-1 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+              className="tc-btn primary" style={{ flex: 1, height: 38, justifyContent: 'center' }}
             >
               {saving ? 'Saving…' : worker ? 'Save Changes' : 'Add Worker'}
             </button>

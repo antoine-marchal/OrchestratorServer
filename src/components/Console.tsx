@@ -86,7 +86,7 @@ const Console: React.FC = () => {
     return (
       <button
         onClick={toggleConsole}
-        className="fixed bottom-4 left-[220px] bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-2 rounded-full shadow-lg hover:bg-gray-700 hover:text-white transition-colors"
+        className="absolute bottom-4 left-4 bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-2 rounded-full shadow-lg hover:bg-gray-700 hover:text-white transition-colors"
       >
         <Terminal className="w-5 h-5" />
       </button>
@@ -221,10 +221,10 @@ const Console: React.FC = () => {
   return (
     <div
       className={`
-        fixed bottom-0 left-[210px] bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-lg rounded-t-lg
+        absolute bottom-0 left-0 bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-lg rounded-t-lg
         transition-all duration-300 z-50
         ${fullscreen
-          ? 'top-0 left-[0px] w-screen h-screen rounded-none'
+          ? 'top-0 w-full h-full rounded-none'
           : 'w-full md:w-1/2 lg:w-1/3 h-auto'
         }
       `}

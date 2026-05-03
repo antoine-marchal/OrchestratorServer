@@ -36,6 +36,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     return sessionId;
   },
 
+  createLocalSession: (name?: string, linkedFlowId?: string) => {
+    const sessionName = name || `Session ${get().sessions.length + 1}`;
+    const sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newSession: Session = {
+      id: sessionId,
+      name: sessionName,
+      flowState: createDefaultFlowState(),
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+      ...(linkedFlowId ? { linkedFlowId } : {}),
+    };
+    set((state) => ({
+      sessions: [...state.sessions, newSession],
+      activeSessionId: sessionId,
+    }));
+    get().saveSessions();
+    return sessionId;
+  },
+
   switchSession: (sessionId: string) => {
     const session = get().sessions.find(s => s.id === sessionId);
     if (session) {

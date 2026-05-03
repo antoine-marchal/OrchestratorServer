@@ -1,25 +1,78 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
-import { GitBranch, Activity, Server, Sun, Moon, Minus, Square, X } from 'lucide-react';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Activity, Server, Sun, Moon, Minus, Square, X } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useTheme } from '../../context/ThemeContext';
 import { useWorkerStore } from '../../store/workerStore';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
+declare const __APP_VERSION__: string;
+
+const appWindow = getCurrentWindow();
+
+/* Inline SVG icons used in sidebar/logo that aren't in lucide */
+const FlowIcon = ({ size = 16 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="18" cy="6" r="2.5" />
+    <circle cx="12" cy="18" r="2.5" />
+    <path d="M6 8.5v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-3" />
+  </svg>
+);
+
+const BoltMark = ({ size = 14 }: { size?: number }) => (
+  <svg
+    width={size * 0.55}
+    height={size * 0.55}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    stroke="none"
+    style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
+  >
+    <path d="M13 6.5 8.5 13H12l-1 4.5L15.5 11H12l1-4.5Z" />
+  </svg>
+);
+
+const Logo = () => (
+  <span className="tc-brand">
+    <span className="word-group">
+      <span className="bracket">&lt;</span>
+      <span
+        style={{
+          display: 'inline-block',
+          color: 'var(--accent)',
+          position: 'relative',
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 600,
+          fontSize: 13,
+          lineHeight: 1,
+        }}
+      >
+        O
+        <BoltMark size={13} />
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--text)', fontSize: 13, lineHeight: 1 }}>
+        rchestrator
+      </span>
+      <span className="bracket">/&gt;</span>
+    </span>
+    <span className="ver">v{__APP_VERSION__}</span>
+    <span className="pulse" title="scheduler active" />
+  </span>
+);
+
 const NAV_ITEMS = [
-  { to: '/flows', icon: GitBranch, label: 'Flows' },
+  { to: '/flows', icon: FlowIcon, label: 'Flows' },
   { to: '/executions', icon: Activity, label: 'Executions' },
   { to: '/workers', icon: Server, label: 'Workers' },
 ];
 
-const appWindow = getCurrentWindow();
-
 const AppLayout: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const dark = theme === 'dark';
   const { workers, statuses } = useWorkerStore();
   const { schedulerActive } = useFlowLibraryStore();
   const [isMaximized, setIsMaximized] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     appWindow.isMaximized().then(setIsMaximized);
@@ -34,110 +87,98 @@ const AppLayout: React.FC = () => {
   const handleClose = useCallback(() => appWindow.close(), []);
 
   const connectedCount = workers.filter(w => statuses[w.id] === 'connected').length;
+  const primaryWorker = workers[0];
+  const primaryStatus = primaryWorker ? (statuses[primaryWorker.id] ?? 'unknown') : 'unknown';
+  const workerShortName = primaryWorker ? primaryWorker.name.slice(0, 4) : '';
+
+  const workerDotClass =
+    primaryStatus === 'connected' ? '' :
+    primaryStatus === 'checking' ? 'checking' :
+    primaryStatus === 'disconnected' ? 'disconnected' :
+    'unknown';
+
+  const workerLabel =
+    primaryStatus === 'connected' ? 'online' :
+    primaryStatus === 'checking' ? 'checking…' :
+    primaryStatus === 'disconnected' ? 'offline' :
+    'no worker';
 
   return (
-    <div className={`flex flex-col h-screen overflow-hidden ${dark ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
-      {/* Custom titlebar */}
-      <div className={`flex-shrink-0 flex items-center h-8 select-none ${dark ? 'bg-gray-900 border-b border-gray-800' : 'bg-white border-b border-gray-200'}`}>
-        {/* Logo */}
-        <div className="flex items-center gap-2 px-4 flex-shrink-0">
-          <div className="w-5 h-5 rounded-md bg-purple-600 flex items-center justify-center">
-            <GitBranch className="w-3 h-3 text-white" />
-          </div>
-          <span className="font-semibold text-xs">Orchestrator</span>
-          <span className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>v{__APP_VERSION__}</span>
-          {schedulerActive && (
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          )}
+    <div className="tc-app">
+      {/* Titlebar */}
+      <div className="tc-titlebar">
+        <Logo />
+        <div data-tauri-drag-region style={{ flex: 1, height: '100%' }} />
+        <div className="tc-title-actions">
+          <button
+            className="tc-icon-btn"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          >
+            {theme === 'dark'
+              ? <Sun size={14} />
+              : <Moon size={14} />
+            }
+          </button>
+          <button className="tc-icon-btn tc-win-btn" title="Minimize" onClick={handleMinimize}>
+            <Minus size={14} />
+          </button>
+          <button className="tc-icon-btn tc-win-btn" title="Maximize" onClick={handleMaximize}>
+            <Square size={12} />
+          </button>
+          <button className="tc-icon-btn tc-win-btn close" title="Close" onClick={handleClose}>
+            <X size={14} />
+          </button>
         </div>
-        {/* Drag region fills the remaining space */}
-        <div data-tauri-drag-region className="flex-1 h-full" />
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          className={`w-10 h-full flex items-center justify-center transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-800'}`}
-        >
-          {dark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-        </button>
-        {/* Window controls */}
-        <button
-          onClick={handleMinimize}
-          className={`w-12 h-full flex items-center justify-center transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-800'}`}
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={handleMaximize}
-          className={`w-12 h-full flex items-center justify-center transition-colors ${dark ? 'hover:bg-gray-700 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-800'}`}
-        >
-          <Square className="w-3 h-3" />
-        </button>
-        <button
-          onClick={handleClose}
-          className={`w-12 h-full flex items-center justify-center transition-colors hover:bg-red-500 hover:text-white ${dark ? 'text-gray-400' : 'text-gray-500'}`}
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
       </div>
 
-      <div className="flex flex-1 min-h-0">
-      <aside className={`w-52 flex-shrink-0 flex flex-col border-r ${dark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
-
-        <nav className="flex-1 px-2 py-3 space-y-0.5">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive
-                    ? dark ? 'bg-purple-600/20 text-purple-400' : 'bg-purple-50 text-purple-700'
-                    : dark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                }`
-              }
-            >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="flex-1">{label}</span>
-              {label === 'Workers' && workers.length > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                  connectedCount === workers.length
-                    ? 'bg-emerald-400/20 text-emerald-400'
-                    : connectedCount > 0
-                    ? 'bg-yellow-400/20 text-yellow-400'
-                    : 'bg-red-400/20 text-red-400'
-                }`}>
-                  {connectedCount}/{workers.length}
+      {/* Sidebar */}
+      <aside className="tc-sidebar">
+        <nav>
+          {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
+            const isActive = location.pathname.startsWith(to);
+            const badgeCount =
+              label === 'Workers' && workers.length > 0 && connectedCount < workers.length
+                ? `${connectedCount}/${workers.length}`
+                : null;
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive: a }) => 'tc-nav-item' + (a ? ' active' : '')}
+                title={label}
+              >
+                <span style={{ display: 'inline-flex', flexShrink: 0, width: 16, justifyContent: 'center' }}>
+                  <Icon size={16} />
                 </span>
-              )}
-            </NavLink>
-          ))}
+                <span className="tc-nav-label">{label}</span>
+                {badgeCount && <span className="tc-nav-badge">{badgeCount}</span>}
+              </NavLink>
+            );
+          })}
         </nav>
 
-        {workers.length > 0 && (
-          <div className={`px-3 py-3 border-t ${dark ? 'border-gray-800' : 'border-gray-200'}`}>
-            {workers.slice(0, 3).map(w => (
-              <div key={w.id} className="flex items-center gap-2 py-1">
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  statuses[w.id] === 'connected' ? 'bg-emerald-400' :
-                  statuses[w.id] === 'checking' ? 'bg-blue-400 animate-pulse' :
-                  statuses[w.id] === 'disconnected' ? 'bg-red-400' : 'bg-gray-500'
-                }`} />
-                <span className={`text-xs truncate ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{w.name}</span>
-              </div>
-            ))}
-            {workers.length > 3 && (
-              <p className={`text-xs mt-0.5 ${dark ? 'text-gray-600' : 'text-gray-400'}`}>+{workers.length - 3} more</p>
-            )}
-          </div>
-        )}
+        <div className="tc-sidebar-footer">
+          {workers.length > 0 ? (
+            <>
+              <span className={`tc-worker-dot ${workerDotClass}`} />
+              <span className="worker-name-short">{workerShortName}</span>
+              <span className="worker-name">{primaryWorker?.name} · {workerLabel}</span>
+            </>
+          ) : (
+            <>
+              <span className="tc-worker-dot unknown" />
+              <span className="worker-name-short">—</span>
+              <span className="worker-name">no worker</span>
+            </>
+          )}
+        </div>
       </aside>
 
-      <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="h-full">
-          <Outlet />
-        </div>
+      {/* Main content */}
+      <main className="tc-main">
+        <Outlet />
       </main>
-      </div>
     </div>
   );
 };

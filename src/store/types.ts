@@ -138,6 +138,7 @@ export interface SessionStore {
 
   // Session management
   createSession: (name?: string, linkedFlowId?: string) => Promise<string>;
+  createLocalSession: (name?: string, linkedFlowId?: string) => string;
   switchSession: (sessionId: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
   reorderSessions: (sourceIndex: number, destinationIndex: number) => void;

@@ -91,7 +91,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
             <button
               type="button"
               onClick={() => setEnabled(!enabled)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-purple-600' : dark ? 'bg-gray-700' : 'bg-gray-300'}`}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors`} style={{ background: enabled ? 'var(--accent)' : 'var(--surface-hi)' }}
             >
               <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
             </button>
@@ -166,7 +166,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
               type="button"
               onClick={handleSave}
               disabled={loading || !isValid}
-              className="flex-1 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50"
+              className="tc-btn primary" style={{ flex: 1, height: 38, justifyContent: 'center' }}
             >
               {loading ? 'Saving…' : 'Save Schedule'}
             </button>

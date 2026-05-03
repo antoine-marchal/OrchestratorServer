@@ -51,8 +51,8 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
       <div className={`relative w-full max-w-md rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`flex items-center justify-between px-5 py-4 border-b ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600/20 flex items-center justify-center">
-              <GitBranch className="w-4 h-4 text-purple-400" />
+            <div className="tc-flow-icon" style={{ width: 32, height: 32, flexShrink: 0 }}>
+              <GitBranch size={14} />
             </div>
             <h2 className="text-base font-semibold">Create Flow</h2>
           </div>
@@ -160,7 +160,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
             <button type="button" onClick={onClose} className={`flex-1 py-2 rounded-lg text-sm font-medium ${dark ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
               Cancel
             </button>
-            <button type="submit" disabled={loading} className="flex-1 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">
+            <button type="submit" disabled={loading} className="tc-btn primary" style={{ flex: 1, height: 38, justifyContent: 'center' }}>
               {loading ? 'Creating…' : 'Create Flow'}
             </button>
           </div>

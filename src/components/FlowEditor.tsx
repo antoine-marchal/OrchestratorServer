@@ -566,7 +566,7 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
   );
 
   return (
-    <div className="w-full h-full" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
+    <div className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
       <ReactFlow
         className="react-flow__dark"
         nodes={nodes}

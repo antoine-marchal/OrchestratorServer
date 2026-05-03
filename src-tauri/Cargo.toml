@@ -1,6 +1,6 @@
 [package]
 name = "orchestrator-client"
-version = "0.2.0"
+version = "0.2.1"
 description = "Orchestrator Desktop App"
 authors = ["Antoine Marchal"]
 edition = "2021"

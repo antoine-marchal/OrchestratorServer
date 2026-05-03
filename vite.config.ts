@@ -20,6 +20,7 @@ export default defineConfig({
   build: {
     sourcemap: false,
     minify: 'esbuild',
+    assetsInlineLimit: 1024 * 1024 * 10, // inline everything up to 10 MB (covers woff2 fonts)
   },
   optimizeDeps: {
     exclude: ['lucide-react', 'monaco-editor'],
