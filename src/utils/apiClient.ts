@@ -41,6 +41,7 @@ class ApiClient {
   private baseUrl = import.meta.env.VITE_API_BASE || '/api/v1';
   private session: Session | null = null;
   private apiKey: string = '';
+  private workerReady = false;
 
   setApiKey(key: string): void {
     this.apiKey = key.trim();
@@ -48,6 +49,14 @@ class ApiClient {
 
   getApiKey(): string {
     return this.apiKey;
+  }
+
+  setWorkerReady(ready: boolean): void {
+    this.workerReady = ready;
+  }
+
+  isWorkerReady(): boolean {
+    return this.workerReady;
   }
 
   setBaseUrl(address: string): void {
@@ -72,6 +81,9 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    if (!this.workerReady) {
+      throw new Error('No worker available');
+    }
     const url = `${this.baseUrl}${endpoint}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',

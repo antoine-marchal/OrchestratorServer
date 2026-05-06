@@ -248,7 +248,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges, editorModal, closeEditorModal, showConsole, toggleConsole } = useFlowStore();
   const { sessions, activeSessionId, createSession, createLocalSession, switchSession, updateActiveFlowState } = useSessionStore();
   const { updateFlow } = useFlowLibraryStore();
-  const { getWorker } = useWorkerStore();
+  const { getWorker, statuses: workerStatuses } = useWorkerStore();
 
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -259,12 +259,17 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const isFlowSession = activeSession?.linkedFlowId === flow.id;
   const worker = getWorker(flow.workerId);
+  const workerStatus = workerStatuses[flow.workerId];
 
   useEffect(() => {
-    if (!worker) return;
+    if (!worker || workerStatus === 'disconnected') {
+      apiClient.setWorkerReady(false);
+      return;
+    }
     apiClient.setBaseUrl(worker.url);
     apiClient.setApiKey(worker.apiKey);
-  }, [worker?.url, worker?.apiKey]);
+    apiClient.setWorkerReady(true);
+  }, [worker?.url, worker?.apiKey, workerStatus]);
 
   useEffect(() => {
     if (initializedRef.current === flow.id) return;

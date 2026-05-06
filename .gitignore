@@ -33,3 +33,6 @@ scriptsTest
 server-api-key.txt
 plan.md
 src-tauri/target/*
+webview/runtime/
+src-tauri/WebView2/
+webview
