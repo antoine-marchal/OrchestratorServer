@@ -26,8 +26,13 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Serve webpanel static files (if built)
-const panelDist = path.join(__dirname, '../../client/dist');
+// Serve webpanel static files (if built).
+// When packaged with pkg, prepare-pkg copies client/dist → dist/webpanel/
+// so we check that bundled path first, then fall back to the dev layout.
+import fs from 'fs';
+const panelDist = fs.existsSync(path.join(__dirname, 'webpanel'))
+  ? path.join(__dirname, 'webpanel')
+  : path.join(__dirname, '../../client/dist');
 app.use(express.static(panelDist));
 
 app.get('/api/v1/ping', (_req, res) => {
@@ -51,7 +56,6 @@ app.use('/api/v1/workers', workersRouter);
 // Fallback to webpanel index for SPA routing
 app.get('*', (req, res) => {
   const indexPath = path.join(panelDist, 'index.html');
-  const fs = require('fs');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {

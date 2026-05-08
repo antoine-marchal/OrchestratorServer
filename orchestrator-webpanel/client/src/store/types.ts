@@ -5,7 +5,7 @@ import { Node, Edge } from 'reactflow';
  */
 export interface ConsoleMessage {
   nodeId: string;
-  type: 'input' | 'output' | 'error' | 'log';
+  type: 'input' | 'output' | 'error' | 'log' | 'flow';
   message: string;
   timestamp: number;
 }

@@ -268,28 +268,36 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
       const rules = Array.isArray(node?.data?.conditions) ? node.data.conditions : [];
       let decision: string | null = null;
       let forward = false;
+      let matchedExpr: string | null = null;
       for (const r of rules) {
         if (r?.expr && r?.goto && evalGotoExpr(r.expr, processedInputs, flowVariables)) {
-          decision = r.goto; forward = !!r.forwardInput; break;
+          decision = r.goto; forward = !!r.forwardInput; matchedExpr = r.expr; break;
         }
       }
       gotoDecision[nodeId] = decision;
       nodeResults[nodeId] = processedInputs;
       if (decision && forward) injectedInputs[decision] = processedInputs;
+      if (jobId) {
+        const gotoLabel = node.data?.label || nodeId;
+        if (decision) {
+          const targetLabel = byId(decision)?.data?.label || decision;
+          const exprStr = matchedExpr ? ` [${matchedExpr}]` : '';
+          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel}${exprStr} → ${targetLabel}`, nodeId);
+        } else {
+          const outs = outgoing(nodeId);
+          const nextLabel = outs.length > 0 ? (byId(outs[0].target)?.data?.label || outs[0].target) : '(end)';
+          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel} no match → ${nextLabel}`, nodeId);
+        }
+      }
     } else if (node?.data?.type === 'variable') {
       const rawValue = node.data.value || '';
       try { nodeResults[nodeId] = JSON.parse(rawValue); } catch { nodeResults[nodeId] = rawValue; }
     } else {
-      // Legacy api-server.cjs-style section headers in the log stream.
-      const ANSI = (color: string, s: string) => {
-        const codes: Record<string, string> = { cyan: '36', yellow: '33', gray: '90', red: '31', green: '32' };
-        return `\x1b[${codes[color] || '0'}m${s}\x1b[0m`;
-      };
-      const sectionTitle = ANSI('cyan', `\n=== Executing node ${node.data?.label || nodeId} (${node.data?.type}) ===`);
-      const inputLine = ANSI('gray', 'Input: ') + JSON.stringify(processedInputs, null, 2);
       if (jobId) {
-        emitJobLog(jobId, 'log', sectionTitle, nodeId);
-        emitJobLog(jobId, 'log', inputLine, nodeId);
+        if (node?.data?.type === 'flow') {
+          emitJobLog(jobId, 'flow', `[flow] ${node.data?.label || nodeId}`, nodeId);
+        }
+        emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId);
       }
 
       // Check retry config
@@ -335,16 +343,12 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
       }
       nodeResults[nodeId] = res?.output !== undefined ? res.output : res;
 
-      // Trailing legacy-style "Output:" block.
       if (jobId) {
         const outVal = nodeResults[nodeId];
         let formatted: string;
         try { formatted = typeof outVal === 'string' ? outVal : JSON.stringify(outVal, null, 2); }
         catch { formatted = String(outVal); }
-        const indented = (formatted ?? '').split(/\r?\n/).map(line => ANSI('cyan', '  ' + line)).join('\n');
-        emitJobLog(jobId, 'log', ANSI('yellow', 'Output:'), nodeId);
-        emitJobLog(jobId, 'log', indented, nodeId);
-        emitJobLog(jobId, 'log', ANSI('yellow', '---'), nodeId);
+        emitJobLog(jobId, 'output', formatted ?? 'null', nodeId);
       }
     }
 

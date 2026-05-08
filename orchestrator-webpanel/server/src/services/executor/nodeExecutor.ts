@@ -134,20 +134,28 @@ function cleanupStopSignal(id: string): void {
 
 function getNodeExecutablePath(): string {
   if (process.env.NODE_EXECUTABLE_PATH) return process.env.NODE_EXECUTABLE_PATH;
+  // When packaged with pkg, process.execPath is the bundle itself — not a Node
+  // runtime. Spawning it with a .mjs script would fail with ERR_REQUIRE_ESM.
+  // Fall back to 'node' from PATH so external scripts run correctly.
+  if ((process as any).pkg) return 'node';
   return process.execPath;
 }
 
 const nodeExecutablePath = getNodeExecutablePath();
 
 function resolveGroovyJar(): string {
-  return path.join(__dirname, '../../..', 'groovyExec.jar');
+  // Packaged: prepare-pkg copies groovyExec.jar → dist/groovyExec.jar
+  // (two levels up from dist/services/executor/)
+  const candidates = [
+    path.join(__dirname, '../../groovyExec.jar'),       // packaged
+    path.join(__dirname, '../../..', 'groovyExec.jar'), // dev server root
+    path.join(process.cwd(), 'groovyExec.jar'),         // next to binary
+    process.env.GROOVY_JAR,                             // explicit override
+  ].filter(Boolean) as string[];
+  return candidates.find(p => fs.existsSync(p)) ?? candidates[0];
 }
 
 let groovyJarPath = resolveGroovyJar();
-// Fall back to backend-level jar
-if (!fs.existsSync(groovyJarPath)) {
-  groovyJarPath = path.join(process.cwd(), 'groovyExec.jar');
-}
 
 /* ============================
    Log Collector (for flow-level logs)

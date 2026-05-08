@@ -1,8 +1,18 @@
 @echo off
 title Build Orchestrator Worker
-cd /d "%~dp0orchestrator-worker"
+setlocal
+
+if not exist "%~dp0release" mkdir "%~dp0release"
+
 echo.
-echo  [Build Worker]  Compiling TypeScript + packaging with pkg...
+echo  [Build Worker]  1/2  Building TypeScript...
+echo.
+cd /d "%~dp0orchestrator-worker"
+npm run build
+if errorlevel 1 goto fail
+
+echo.
+echo  [Build Worker]  2/2  Packaging with pkg...
 echo.
 
 if "%1"=="win" (
@@ -16,15 +26,10 @@ if "%1"=="win" (
   npm run pkg:all
 )
 
-if errorlevel 1 (
-  echo.
-  echo  BUILD FAILED
-  pause
-  exit /b 1
-)
+if errorlevel 1 goto fail
 
 echo.
-echo  Done. Binaries in orchestrator-worker\release\
+echo  Done. Binaries in release\
 echo.
 echo  orchestrator-worker-win.exe   ^<-- Windows
 echo  orchestrator-worker-linux     ^<-- Linux
@@ -35,4 +40,13 @@ echo    WORKER_NAME=my-worker
 echo    WORKER_REGISTRATION_SECRET=...
 echo    ORCHESTRATOR_WORK_DIR=/path/to/workdir
 echo.
+goto end
+
+:fail
+echo.
+echo  BUILD FAILED
+pause
+exit /b 1
+
+:end
 pause

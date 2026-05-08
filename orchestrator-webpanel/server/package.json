@@ -1,12 +1,27 @@
 {
-  "name": "orchestrator-worker",
+  "name": "orchestrator-server",
   "version": "3.0.1",
-  "description": "Orchestrator Worker - API server with MongoDB/NeDB persistence",
+  "description": "Orchestrator Server - API server with MongoDB/NeDB persistence",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "pkg:prepare": "node scripts/prepare-pkg.mjs",
+    "pkg:win": "npm run pkg:prepare && pkg dist/server.js --config package.json --targets node18-win-x64 --output ../../release/orchestrator-server-win.exe && node scripts/patch-exe.mjs",
+    "pkg:linux": "npm run pkg:prepare && pkg dist/server.js --config package.json --targets node18-linux-x64 --output ../../release/orchestrator-server-linux",
+    "pkg:all": "npm run pkg:prepare && pkg dist/server.js --config package.json --targets node18-win-x64 --output ../../release/orchestrator-server-win.exe && pkg dist/server.js --config package.json --targets node18-linux-x64 --output ../../release/orchestrator-server-linux && node scripts/patch-exe.mjs"
+  },
+  "pkg": {
+    "assets": [
+      "dist/webpanel/**/*",
+      "dist/groovyExec.jar"
+    ],
+    "targets": [
+      "node18-win-x64",
+      "node18-linux-x64"
+    ],
+    "outputPath": "release"
   },
   "dependencies": {
     "@seald-io/nedb": "^4.0.4",
@@ -32,6 +47,8 @@
     "@types/node": "^20.19.39",
     "@types/node-cron": "^3.0.11",
     "@types/uuid": "^10.0.0",
+    "@yao-pkg/pkg": "^5.16.1",
+    "resedit": "^3.0.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   },

@@ -17,7 +17,7 @@ interface JobRequest {
 }
 
 interface StreamLogEntry {
-  type: 'log' | 'error' | 'output';
+  type: 'log' | 'error' | 'output' | 'input' | 'flow';
   message: string;
   nodeId?: string | null;
   timestamp: number;

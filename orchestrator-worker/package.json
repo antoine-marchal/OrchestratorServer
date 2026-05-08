@@ -7,10 +7,10 @@
     "dev": "ts-node src/agent.ts",
     "build": "tsc",
     "start": "node dist/agent.js",
-    "pkg:prepare": "npm run build && node scripts/prepare-pkg.mjs",
-    "pkg:win": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output release/orchestrator-worker-win.exe && node scripts/patch-exe.mjs",
-    "pkg:linux": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output release/orchestrator-worker-linux",
-    "pkg:all": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output release/orchestrator-worker-win.exe && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output release/orchestrator-worker-linux && node scripts/patch-exe.mjs"
+    "pkg:prepare": "node scripts/prepare-pkg.mjs",
+    "pkg:win": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output ../release/orchestrator-worker-win.exe && node scripts/patch-exe.mjs",
+    "pkg:linux": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output ../release/orchestrator-worker-linux",
+    "pkg:all": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output ../release/orchestrator-worker-win.exe && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output ../release/orchestrator-worker-linux && node scripts/patch-exe.mjs"
   },
   "pkg": {
     "assets": [

@@ -23,7 +23,7 @@ export interface OrchestratorFlow {
 }
 
 export interface LogEntry {
-  type: 'log' | 'error' | 'output';
+  type: 'log' | 'error' | 'output' | 'input' | 'flow';
   message: string;
   timestamp: number;
   nodeId?: string | null;

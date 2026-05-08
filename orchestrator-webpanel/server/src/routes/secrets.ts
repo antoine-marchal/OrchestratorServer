@@ -91,6 +91,10 @@ export async function resolveSecretsDetailed(text: string): Promise<ResolvedSecr
       result = result.split(match[0]).join(value); // global replace, no regex side-effects
       resolved.add(secretName);
     } else {
+      // Leave a JS-safe placeholder so code that inlines the value stays
+      // syntactically valid (avoids "missing : after property id" from the
+      // raw `${{ secrets.NAME }}` token being parsed as JS block + object).
+      result = result.split(match[0]).join('undefined');
       missing.add(secretName);
     }
   }

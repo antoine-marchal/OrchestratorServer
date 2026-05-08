@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import 'reactflow/dist/style.css';
 import {
@@ -6,8 +6,9 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Download,
   Edit3,
@@ -20,7 +21,6 @@ import {
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
-import { useTheme } from '../../context/ThemeContext';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
 import StatusBadge from './StatusBadge';
@@ -57,6 +57,33 @@ function formatLogTimestamp(timestamp: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
+const LOG_TYPE_DEFS = [
+  { key: 'input',  label: 'INPUT',  color: '#60a5fa' },
+  { key: 'log',    label: 'LOG',    color: '#6b7280' },
+  { key: 'output', label: 'OUTPUT', color: '#4ade80' },
+  { key: 'error',  label: 'ERROR',  color: 'var(--err)' },
+  { key: 'flow',   label: 'FLOW',   color: '#f59e0b' },
+] as const;
+
+function logTypeColor(type: string): string {
+  switch (type) {
+    case 'input':  return '#60a5fa';
+    case 'output': return '#4ade80';
+    case 'error':  return 'var(--err)';
+    case 'flow':   return '#f59e0b';
+    default:       return '#6b7280';
+  }
+}
+
+function getNodeDepth(nodeId: string | null | undefined, parentMap: Map<string, string>): number {
+  if (!nodeId) return 0;
+  let d = 0, cur = nodeId;
+  const seen = new Set<string>();
+  while (parentMap.has(cur) && !seen.has(cur)) { seen.add(cur); d++; cur = parentMap.get(cur)!; }
+  return d;
+}
+
+
 const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; onSelectExec: (id: string) => void }> = ({
   flow,
   highlightId,
@@ -73,16 +100,20 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // to entries with `nodeId === selectedNodeId`. Toggle off by clicking the
   // same node again or hitting "clear".
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [collapsedFlowNodes, setCollapsedFlowNodes] = useState<Set<string>>(new Set());
+  const [clearConfirm, setClearConfirm] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (highlightId) setSelectedId(highlightId);
   }, [highlightId]);
 
-  // Switching executions clears the node filter so we don't carry a stale
-  // selection from a different flow snapshot.
+  // Switching executions clears the node filter and collapse state so we don't
+  // carry stale selections from a different flow snapshot.
   useEffect(() => {
     setSelectedNodeId(null);
+    setCollapsedFlowNodes(new Set());
   }, [selectedId]);
 
   // Live-tail executions while the user is on this tab. This catches executions
@@ -117,6 +148,49 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [selectedExec?.logs.length, selectedExec?.id]);
 
+  // Hoist exec nodes/edges so memos below can depend on them.
+  const execNodes = useMemo(
+    () => (selectedExec?.nodes?.length ? selectedExec.nodes : flow.nodes) ?? [],
+    [selectedExec, flow.nodes],
+  );
+  const execEdges = useMemo(
+    () => (selectedExec?.edges?.length ? selectedExec.edges : flow.edges) ?? [],
+    [selectedExec, flow.edges],
+  );
+
+  // Map child-node-id → parent-flow-node-id (for depth + collapse filtering).
+  const parentMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of execNodes) {
+      if (n?.data?.type === 'flow' && n.data?.code) {
+        try {
+          const inner = JSON.parse(n.data.code);
+          if (Array.isArray(inner?.nodes)) {
+            for (const child of inner.nodes) map.set(child.id, n.id);
+          }
+        } catch { /* skip */ }
+      }
+    }
+    return map;
+  }, [execNodes]);
+
+  // Map node-id → human label (including inner nodes of flow nodes).
+  const nodeNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of execNodes) {
+      map.set(n.id, n.data?.label || n.id);
+      if (n?.data?.type === 'flow' && n.data?.code) {
+        try {
+          const inner = JSON.parse(n.data.code);
+          if (Array.isArray(inner?.nodes)) {
+            for (const child of inner.nodes) map.set(child.id, child.data?.label || child.id);
+          }
+        } catch { /* skip */ }
+      }
+    }
+    return map;
+  }, [execNodes]);
+
   const handleSelect = (id: string) => {
     setSelectedId(id);
     onSelectExec(id);
@@ -133,11 +207,16 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
   const exportSelectedLogs = () => {
     if (!selectedExec) return;
+    // eslint-disable-next-line no-control-regex
     const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '');
     const lines = selectedExec.logs.map(log => {
-      const time = new Date(log.timestamp).toISOString();
-      const node = log.nodeId ? ` [${log.nodeId}]` : '';
-      return `[${time}] [${log.type.toUpperCase()}]${node} ${stripAnsi(log.message || '')}`;
+      const ts   = formatLogTimestamp(log.timestamp);
+      const name = log.nodeId ? (nodeNameMap.get(log.nodeId) ?? log.nodeId) : '';
+      const type = log.type === 'input' ? 'INPUT' : log.type === 'output' ? 'OUTPUT' : log.type === 'error' ? 'ERROR' : log.type === 'flow' ? 'FLOW' : 'LOG';
+      const depth = getNodeDepth(log.nodeId, parentMap);
+      const indent = '  '.repeat(depth);
+      const msg  = stripAnsi(log.message || '');
+      return `${indent}${ts}  ${name.padEnd(24)}  ${type.padEnd(6)}  ${msg}`;
     });
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -173,10 +252,22 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             </button>
             {canEdit && (
               <button
-                onClick={() => { clearExecutions(flowId); setSelectedId(null); }}
-                className="tc-btn danger" style={{ flex: 1, justifyContent: 'center', height: 30, fontSize: 11 }}
+                onClick={() => {
+                  if (!clearConfirm) {
+                    setClearConfirm(true);
+                    setTimeout(() => setClearConfirm(false), 3000);
+                  } else {
+                    clearExecutions(flowId);
+                    setSelectedId(null);
+                    setClearConfirm(false);
+                  }
+                }}
+                className={`tc-btn${clearConfirm ? ' danger' : ''}`}
+                style={{ flex: 1, justifyContent: 'center', height: 30, fontSize: 11 }}
+                title={clearConfirm ? 'Click again to confirm' : 'Clear execution history'}
               >
-                <Trash2 className="w-3.5 h-3.5" />Clear history
+                <Trash2 className="w-3.5 h-3.5" />
+                {clearConfirm ? 'Confirm clear?' : 'Clear history'}
               </button>
             )}
           </div>
@@ -257,14 +348,33 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             </div>
 
             {(() => {
-              // Prefer the snapshot recorded at execution time so old runs
-              // always render the graph + tree they actually executed against.
-              const execNodes = selectedExec.nodes && selectedExec.nodes.length > 0 ? selectedExec.nodes : flow.nodes;
-              const execEdges = selectedExec.edges && selectedExec.edges.length > 0 ? selectedExec.edges : flow.edges;
-              const hasNodes = execNodes && execNodes.length > 0;
-              const visibleLogs = selectedNodeId
+              const hasNodes = execNodes.length > 0;
+              const nodeFilteredLogs = selectedNodeId
                 ? selectedExec.logs.filter(l => l.nodeId === selectedNodeId)
                 : selectedExec.logs;
+              const typedLogs = hiddenTypes.size > 0
+                ? nodeFilteredLogs.filter(l => !hiddenTypes.has(l.type))
+                : nodeFilteredLogs;
+              // Hide entries whose ancestor flow-node is collapsed.
+              const visibleLogs = collapsedFlowNodes.size > 0
+                ? typedLogs.filter(l => {
+                    if (!l.nodeId) return true;
+                    let cur = l.nodeId;
+                    const seen = new Set<string>();
+                    while (parentMap.has(cur) && !seen.has(cur)) {
+                      seen.add(cur);
+                      const parent = parentMap.get(cur)!;
+                      if (collapsedFlowNodes.has(parent)) return false;
+                      cur = parent;
+                    }
+                    return true;
+                  })
+                : typedLogs;
+              const toggleType = (k: string) => setHiddenTypes(prev => {
+                const next = new Set(prev);
+                if (next.has(k)) next.delete(k); else next.add(k);
+                return next;
+              });
               return (
                 <>
                   {showGraph && hasNodes && (
@@ -290,33 +400,119 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                     )}
                     <div
                       ref={logRef}
-                      className="flex-1 overflow-auto p-3 space-y-0.5"
+                      className="flex-1 overflow-auto p-3"
                       style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--text)' }}
                     >
-                      {selectedNodeId && (
-                        <div className="flex items-center gap-2 mb-2 px-2 py-1 rounded" style={{ background: 'var(--bg-3)', color: 'var(--text-3)', fontSize: 11 }}>
-                          <span>Filtered to node <code style={{ color: 'var(--accent)' }}>{selectedNodeId}</code> ({visibleLogs.length} of {selectedExec.logs.length})</span>
-                          <button onClick={() => setSelectedNodeId(null)} className="ml-auto" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11 }}>clear</button>
+                      {/* Filter bar */}
+                      <div className="flex items-center gap-2 mb-2 flex-wrap" style={{ fontSize: 11, minHeight: 22 }}>
+                        {selectedNodeId ? (
+                          <>
+                            <span style={{ color: 'var(--text-3)' }}>Node:</span>
+                            <code style={{ color: 'var(--accent)' }}>{nodeNameMap.get(selectedNodeId) ?? selectedNodeId}</code>
+                            <button
+                              onClick={() => setSelectedNodeId(null)}
+                              style={{ color: 'var(--text-3)', background: 'none', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 10, padding: '0px 5px', borderRadius: 3 }}
+                            >clear</button>
+                          </>
+                        ) : (
+                          <span style={{ color: 'var(--text-mute)', fontSize: 10, fontStyle: 'italic' }}>all nodes</span>
+                        )}
+                        <span style={{ marginLeft: 'auto', color: 'var(--text-mute)', fontSize: 10 }}>
+                          {visibleLogs.length}/{selectedExec.logs.length}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {LOG_TYPE_DEFS.map(t => (
+                            <button
+                              key={t.key}
+                              onClick={() => toggleType(t.key)}
+                              style={{
+                                padding: '1px 6px',
+                                borderRadius: 3,
+                                border: `1px solid ${hiddenTypes.has(t.key) ? 'var(--border)' : t.color}`,
+                                background: hiddenTypes.has(t.key) ? 'transparent' : 'var(--bg-3)',
+                                color: hiddenTypes.has(t.key) ? 'var(--text-mute)' : t.color,
+                                fontSize: 10,
+                                fontFamily: 'var(--font-mono)',
+                                cursor: 'pointer',
+                                letterSpacing: '0.04em',
+                              }}
+                            >{t.label}</button>
+                          ))}
                         </div>
-                      )}
+                      </div>
+                      {/* Log rows */}
                       {visibleLogs.length === 0 ? (
                         <p style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
-                          {selectedExec.logs.length === 0 ? 'No logs yet...' : 'No logs for this node yet'}
+                          {selectedExec.logs.length === 0 ? 'No logs yet...' : 'No logs match the current filters'}
                         </p>
                       ) : (
-                        visibleLogs.map((log, i) => (
-                          <div key={i} className="grid grid-cols-[154px_54px_minmax(0,1fr)] gap-3 leading-5">
-                            <span className="select-none whitespace-nowrap" style={{ color: 'var(--text-mute)' }}>
-                              {formatLogTimestamp(log.timestamp)}
-                            </span>
-                            <span className="select-none uppercase" style={{
-                              color: log.type === 'error' ? 'var(--err)' : log.type === 'output' ? 'var(--accent)' : 'var(--text-3)',
-                            }}>
-                              {log.type}
-                            </span>
-                            <span className="min-w-0 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
-                          </div>
-                        ))
+                        <div className="space-y-0.5">
+                          {visibleLogs.map((log, i) => {
+                            const prev = i > 0 ? visibleLogs[i - 1] : null;
+                            const repeatMeta = !!prev &&
+                              formatLogTimestamp(prev.timestamp) === formatLogTimestamp(log.timestamp) &&
+                              prev.nodeId === log.nodeId;
+                            const typeColor = logTypeColor(log.type);
+                            const nodeName = log.nodeId ? (nodeNameMap.get(log.nodeId) ?? log.nodeId) : null;
+                            const depth = getNodeDepth(log.nodeId, parentMap);
+                            const isFlowMarker = log.type === 'flow' && typeof log.message === 'string' && log.message.startsWith('[flow] ');
+                            const isCollapsed = isFlowMarker && !!log.nodeId && collapsedFlowNodes.has(log.nodeId);
+                            return (
+                              <div
+                                key={i}
+                                className="grid gap-x-4 leading-5"
+                                style={{
+                                  gridTemplateColumns: '148px 108px 52px minmax(0,1fr)',
+                                  alignItems: 'baseline',
+                                  paddingLeft: depth * 14,
+                                }}
+                              >
+                                <span
+                                  className="select-none whitespace-nowrap"
+                                  style={{ color: 'var(--text-mute)', fontSize: 10.5, visibility: repeatMeta ? 'hidden' : 'visible' }}
+                                >
+                                  {formatLogTimestamp(log.timestamp)}
+                                </span>
+                                <span
+                                  className="select-none truncate"
+                                  style={{ color: 'var(--text-3)', fontSize: 10.5, visibility: repeatMeta ? 'hidden' : 'visible' }}
+                                  title={nodeName ?? ''}
+                                >
+                                  {nodeName ?? ''}
+                                </span>
+                                <span
+                                  className="select-none uppercase font-medium"
+                                  style={{ color: typeColor, fontSize: 10, letterSpacing: '0.06em' }}
+                                >
+                                  {log.type === 'input' ? 'INPUT' : log.type === 'output' ? 'OUTPUT' : log.type === 'error' ? 'ERROR' : log.type === 'flow' ? 'FLOW' : 'LOG'}
+                                </span>
+                                {isFlowMarker && log.nodeId ? (
+                                  <div
+                                    className="flex items-center gap-1 min-w-0 cursor-pointer select-none"
+                                    style={{ color: typeColor }}
+                                    onClick={() => setCollapsedFlowNodes(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(log.nodeId!)) next.delete(log.nodeId!); else next.add(log.nodeId!);
+                                      return next;
+                                    })}
+                                  >
+                                    {isCollapsed
+                                      ? <ChevronRight size={11} style={{ flexShrink: 0 }} />
+                                      : <ChevronDown size={11} style={{ flexShrink: 0 }} />
+                                    }
+                                    <span className="min-w-0 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
+                                  </div>
+                                ) : (
+                                  <span
+                                    className="min-w-0 whitespace-pre-wrap break-words"
+                                    style={{ color: typeColor }}
+                                    dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>

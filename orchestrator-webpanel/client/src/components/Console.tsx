@@ -21,7 +21,7 @@ const Console: React.FC = () => {
   } = useFlowStore();
 
   const consoleRef = React.useRef<HTMLDivElement>(null);
-  const [visibleTypes, setVisibleTypes] = React.useState<string[]>(['input', 'log', 'output', 'error']);
+  const [visibleTypes, setVisibleTypes] = React.useState<string[]>(['input', 'log', 'output', 'error', 'flow']);
   const [logDropdownOpen, setLogDropdownOpen] = React.useState(false);
   const [timeoutDropdownOpen, setTimeoutDropdownOpen] = React.useState(false);
   const logDropdownRef = React.useRef<HTMLDivElement>(null);
@@ -97,6 +97,7 @@ const Console: React.FC = () => {
     { label: 'Log', value: 'log' },
     { label: 'Output', value: 'output' },
     { label: 'Error', value: 'error' },
+    { label: 'Flow', value: 'flow' },
   ];
 
   function escapeHtml(text: string) {
@@ -354,7 +355,9 @@ const Console: React.FC = () => {
                   ? 'text-blue-600 dark:text-blue-400'
                   : msg.type === 'log'
                     ? 'text-gray-600 dark:text-gray-400'
-                    : 'text-green-600 dark:text-green-400'
+                    : msg.type === 'flow'
+                      ? 'text-yellow-600 dark:text-yellow-400'
+                      : 'text-green-600 dark:text-green-400'
               }`}
           >
             <span className="text-gray-500 shrink-0 pr-2 select-none">

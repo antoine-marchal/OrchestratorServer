@@ -296,13 +296,8 @@ async function executeFlowNode(
         undefined, // onProgress
         500, // poll interval (faster for real-time feel)
         (logEntry: StreamLogEntry) => {
-          // Display streaming logs in real-time
-          if (logEntry.type === 'error') {
-            addLog('error', logEntry.message);
-            hasStreamedError = true;
-          } else {
-            addLog('log', logEntry.message);
-          }
+          if (logEntry.type === 'error') hasStreamedError = true;
+          addLog(logEntry.type as ConsoleMessage['type'], logEntry.message);
         }
       );
 
@@ -521,13 +516,8 @@ async function executeRegularNode(
         undefined, // onProgress
         500, // poll interval (faster for real-time feel)
         (logEntry: StreamLogEntry) => {
-          // Display streaming logs in real-time
-          if (logEntry.type === 'error') {
-            addLog('error', logEntry.message);
-            hasStreamedError = true;
-          } else {
-            addLog('log', logEntry.message);
-          }
+          if (logEntry.type === 'error') hasStreamedError = true;
+          addLog(logEntry.type as ConsoleMessage['type'], logEntry.message);
         }
       );
 

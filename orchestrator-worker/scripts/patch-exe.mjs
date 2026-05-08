@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
 const [major, minor, patch] = (pkg.version || '1.0.0').split('.').map(Number);
 
-const EXE  = path.resolve(__dirname, '../release/orchestrator-worker-win.exe');
+const EXE  = path.resolve(__dirname, '../../release/orchestrator-worker-win.exe');
 const ICON = path.resolve(__dirname, '../assets/icon.ico');
 
 if (!fs.existsSync(EXE)) {
