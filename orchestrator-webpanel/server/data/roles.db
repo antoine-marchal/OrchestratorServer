@@ -1,0 +1,3 @@
+{"_id":"39ee737f-e61a-4456-80c1-c732c3356698","name":"admin","permissions":["*"]}
+{"_id":"ad1eec5c-7cf6-471c-aa21-0642cc62e414","name":"operator","permissions":["flows:read","flows:write","executions:read","executions:write","secrets:read","schedules:read","schedules:write"]}
+{"_id":"cbef02e6-9c40-4d04-87e1-71511e8ea481","name":"viewer","permissions":["flows:read","executions:read"]}
