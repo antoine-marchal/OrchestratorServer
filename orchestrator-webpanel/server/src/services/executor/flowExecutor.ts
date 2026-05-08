@@ -5,7 +5,7 @@ import { resolveSecretsDetailed } from '../../routes/secrets';
 import kill from 'tree-kill';
 import { ChildProcess } from 'child_process';
 
-const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright']);
+const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright', 'shell', 'bash']);
 
 export function parseFlowContent(flowContent: string): any {
   let flow: any;
@@ -407,6 +407,33 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   const startTime = new Date().toISOString();
   const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
 
+  // Resolve worker before inserting the execution so we can store the name.
+  let resolvedWorkerId: string | null = null;
+  let resolvedWorkerName: string | null = null;
+  if (flow.workerId) {
+    const workersCol = getCollection('workers');
+    const w = await workersCol.findOne({ _id: flow.workerId });
+    const ONLINE_THRESHOLD_MS = 30_000;
+    const isOnline = w?.lastSeenAt && (Date.now() - new Date(w.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS);
+    if (!w || !isOnline) {
+      const endTime = new Date().toISOString();
+      const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
+      const reason = !w ? 'Assigned worker not found' : `Assigned worker "${w.name}" is offline`;
+      const failedExec: any = {
+        _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
+        status: 'FAILED', triggeredBy, startTime, endTime, duration, jobId: null,
+        workerId: flow.workerId, workerName: w?.name || null,
+        logs: [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }],
+        output: null, error: reason, nodeStatuses: {}, nodes: flow.nodes || [], edges: flow.edges || [],
+      };
+      await execsCol.insert(failedExec);
+      await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status: 'FAILED', startTime, endTime, duration } } });
+      return executionId;
+    }
+    resolvedWorkerId = flow.workerId;
+    resolvedWorkerName = w.name || null;
+  }
+
   const execution: any = {
     _id: executionId,
     flowId,
@@ -418,13 +445,12 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     endTime: null,
     duration: null,
     jobId: null,
+    workerId: resolvedWorkerId,
+    workerName: resolvedWorkerName,
     logs: [],
     output: null,
     error: null,
     nodeStatuses: {},
-    // Snapshot of the flow definition at execution time. The Executions tab
-    // renders this rather than the live flow so an old execution always shows
-    // the graph it actually ran against, even after the flow is edited.
     nodes: flow.nodes || [],
     edges: flow.edges || [],
   };
@@ -434,24 +460,6 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
   const jobId = nowUid();
   const flowContent = JSON.stringify({ nodes: flow.nodes || [], edges: flow.edges || [] });
-
-  // If a worker is assigned, it must be online — no orchestrator fallback.
-  let resolvedWorkerId: string | null = null;
-  if (flow.workerId) {
-    const workersCol = getCollection('workers');
-    const w = await workersCol.findOne({ _id: flow.workerId });
-    const ONLINE_THRESHOLD_MS = 30_000;
-    const isOnline = w?.lastSeenAt && (Date.now() - new Date(w.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS);
-    if (!w || !isOnline) {
-      const endTime = new Date().toISOString();
-      const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
-      const reason = !w ? 'Assigned worker not found' : `Assigned worker "${w.name}" is offline`;
-      await execsCol.update({ _id: executionId }, { $set: { status: 'FAILED', endTime, duration, error: reason, logs: [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }] } });
-      await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status: 'FAILED', startTime, endTime, duration } } });
-      return executionId;
-    }
-    resolvedWorkerId = flow.workerId;
-  }
 
   const job: any = {
     jobId,

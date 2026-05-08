@@ -11,6 +11,7 @@ import StatusBadge from './StatusBadge';
 import CreateFlowModal from './CreateFlowModal';
 import ScheduleModal from './ScheduleModal';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
+import { useAuth } from '../../hooks/useAuth';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -48,6 +49,7 @@ const FlowsList: React.FC = () => {
   const navigate = useNavigate();
   const { flows, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
+  const { canEdit, isViewer } = useAuth();
 
   // Live-tail backend so cron/API-trigger executions update the row badges
   // (lastExecution status / time) without a manual refresh. Polls every 5s
@@ -178,21 +180,23 @@ const FlowsList: React.FC = () => {
             <span className="num">{flows.length}</span> flow{flows.length !== 1 ? 's' : ''}
           </span>
         </div>
-        <div className="tc-toolbar">
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".or"
-            className="hidden"
-            onChange={handleImport}
-          />
-          <button className="tc-btn ghost" onClick={() => importInputRef.current?.click()}>
-            <Upload size={13} />Import .or
-          </button>
-          <button className="tc-btn primary" onClick={() => setShowCreate(true)}>
-            <Plus size={13} />New Flow
-          </button>
-        </div>
+        {canEdit && (
+          <div className="tc-toolbar">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".or"
+              className="hidden"
+              onChange={handleImport}
+            />
+            <button className="tc-btn ghost" onClick={() => importInputRef.current?.click()}>
+              <Upload size={13} />Import .or
+            </button>
+            <button className="tc-btn primary" onClick={() => setShowCreate(true)}>
+              <Plus size={13} />New Flow
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Stats strip */}
@@ -249,7 +253,7 @@ const FlowsList: React.FC = () => {
               {filtered.map(flow => {
                 const canRun = true;
                 return (
-                  <tr key={flow.id} onClick={() => navigate(`/flows/${flow.id}`)}>
+                  <tr key={flow.id} onClick={() => navigate(`/flows/${flow.id}?tab=executions`)}>
                     <td>
                       <div className="tc-flow-cell">
                         <span className="tc-flow-icon"><GitBranch size={14} /></span>
@@ -261,20 +265,26 @@ const FlowsList: React.FC = () => {
                     </td>
 
                     <td>
-                      <select
-                        className="tc-worker-select"
-                        value={flow.workerId || ''}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
-                        title="Assign worker (server)"
-                      >
-                        <option value="">Server (default)</option>
-                        {serverWorkers.map(w => (
-                          <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                            {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                          </option>
-                        ))}
-                      </select>
+                      {isViewer ? (
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-3)' }}>
+                          {serverWorkers.find(w => w._id === flow.workerId)?.name ?? 'Server (default)'}
+                        </span>
+                      ) : (
+                        <select
+                          className="tc-worker-select"
+                          value={flow.workerId || ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
+                          title="Assign worker (server)"
+                        >
+                          <option value="">Server (default)</option>
+                          {serverWorkers.map(w => (
+                            <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                              {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
 
                     <td>
@@ -309,28 +319,34 @@ const FlowsList: React.FC = () => {
 
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
-                        <button
-                          className="tc-icon-btn"
-                          onClick={e => handleExecute(flow.id, e)}
-                          disabled={runningIds.has(flow.id) || !canRun}
-                          title="Execute flow"
-                        >
-                          {runningIds.has(flow.id) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-                        </button>
-                        <button
-                          className="tc-icon-btn"
-                          onClick={e => { e.stopPropagation(); navigate(`/flows/${flow.id}?tab=edit`); }}
-                          title="Edit flow"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          className="tc-icon-btn"
-                          onClick={e => { e.stopPropagation(); setScheduleFlow(flow); }}
-                          title="Configure schedule"
-                        >
-                          <Clock size={14} />
-                        </button>
+                        {canEdit && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={e => handleExecute(flow.id, e)}
+                            disabled={runningIds.has(flow.id) || !canRun}
+                            title="Execute flow"
+                          >
+                            {runningIds.has(flow.id) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          </button>
+                        )}
+                        {canEdit && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={e => { e.stopPropagation(); navigate(`/flows/${flow.id}?tab=edit`); }}
+                            title="Edit flow"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        )}
+                        {canEdit && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={e => { e.stopPropagation(); setScheduleFlow(flow); }}
+                            title="Configure schedule"
+                          >
+                            <Clock size={14} />
+                          </button>
+                        )}
                         <button
                           className="tc-icon-btn"
                           onClick={e => { e.stopPropagation(); exportFlowFile(flow); }}
@@ -338,20 +354,24 @@ const FlowsList: React.FC = () => {
                         >
                           <Download size={14} />
                         </button>
-                        <button
-                          className="tc-icon-btn"
-                          onClick={e => handleDuplicate(flow, e)}
-                          title="Duplicate flow"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          className={`tc-icon-btn${deleteConfirm === flow.id ? ' danger' : ''}`}
-                          onClick={e => handleDelete(flow.id, e)}
-                          title={deleteConfirm === flow.id ? 'Click again to confirm' : 'Delete flow'}
-                        >
-                          {deleteConfirm === flow.id ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
-                        </button>
+                        {canEdit && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={e => handleDuplicate(flow, e)}
+                            title="Duplicate flow"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        )}
+                        {canEdit && (
+                          <button
+                            className={`tc-icon-btn${deleteConfirm === flow.id ? ' danger' : ''}`}
+                            onClick={e => handleDelete(flow.id, e)}
+                            title={deleteConfirm === flow.id ? 'Click again to confirm' : 'Delete flow'}
+                          >
+                            {deleteConfirm === flow.id ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

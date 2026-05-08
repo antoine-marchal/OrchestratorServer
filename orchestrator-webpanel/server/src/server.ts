@@ -82,10 +82,10 @@ async function seedDefaultData(): Promise<void> {
     const passwordHash = await bcrypt.hash(password, 12);
     const now = new Date().toISOString();
     await usersCol.insert({
-      _id: uuidv4(), email: 'admin@orchestrator.local',
+      _id: uuidv4(), login: 'admin',
       passwordHash, role: 'admin', apiKeys: [], createdAt: now, updatedAt: now,
     });
-    console.log(`[Startup] Created default admin user: admin@orchestrator.local / ${password}`);
+    console.log(`[Startup] Created default admin user: admin / ${password}`);
     console.log('[Startup] Change the password after first login!');
   }
 }

@@ -18,7 +18,7 @@ interface ApiKey {
 
 interface User {
   _id: string;
-  email: string;
+  login: string;
   role: string;
   createdAt: string;
   apiKeys: ApiKey[];
@@ -100,7 +100,7 @@ export const AdminLayout: React.FC = () => {
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [rawKey, setRawKey] = useState<string | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
+  const [newLogin, setNewLogin] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('operator');
   const [showPwd, setShowPwd] = useState(false);
@@ -152,9 +152,9 @@ export const AdminLayout: React.FC = () => {
   /* ── User actions ── */
   const handleCreateUser = async () => {
     try {
-      await apiClient.post('/api/v1/users', { email: newEmail, password: newPassword, role: newRole });
+      await apiClient.post('/api/v1/users', { login: newLogin, password: newPassword, role: newRole });
       setShowCreateUser(false);
-      setNewEmail(''); setNewPassword(''); setNewRole('operator');
+      setNewLogin(''); setNewPassword(''); setNewRole('operator');
       await loadUsers();
     } catch (e: any) { setUsersError(e?.message ?? 'Failed to create user'); }
   };
@@ -218,7 +218,7 @@ export const AdminLayout: React.FC = () => {
   const filteredUsers = users.filter(u => {
     if (!userSearch) return true;
     const q = userSearch.toLowerCase();
-    return u.email.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
+    return u.login.toLowerCase().includes(q) || u.role.toLowerCase().includes(q);
   });
 
   const filteredSecrets = secrets.filter(s => {
@@ -329,9 +329,9 @@ export const AdminLayout: React.FC = () => {
               <div className="flex flex-col gap-3">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
                   <input
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
-                    placeholder="Email"
+                    value={newLogin}
+                    onChange={e => setNewLogin(e.target.value)}
+                    placeholder="Login"
                     className="px-3 py-1.5 rounded text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
@@ -381,7 +381,7 @@ export const AdminLayout: React.FC = () => {
             <input
               value={userSearch}
               onChange={e => setUserSearch(e.target.value)}
-              placeholder="Search by email or role…"
+              placeholder="Search by login or role…"
             />
           </div>
 
@@ -420,7 +420,7 @@ export const AdminLayout: React.FC = () => {
                               <ShieldCheck size={13} />
                             </span>
                             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--text)', fontWeight: 600 }}>
-                              {u.email}
+                              {u.login}
                             </span>
                           </div>
                         </td>

@@ -24,7 +24,7 @@ interface ApiKey {
 
 interface User {
   _id: string;
-  email: string;
+  login: string;
   role: string;
   createdAt: string;
   apiKeys: ApiKey[];
@@ -68,7 +68,7 @@ export const UsersPanel: React.FC = () => {
 
   // Create user form
   const [showCreate, setShowCreate] = useState(false);
-  const [email, setEmail] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('operator');
   const [showPwd, setShowPwd] = useState(false);
@@ -94,9 +94,9 @@ export const UsersPanel: React.FC = () => {
 
   const handleCreate = async () => {
     try {
-      await apiClient.post('/api/v1/users', { email, password, role });
+      await apiClient.post('/api/v1/users', { login, password, role });
       setShowCreate(false);
-      setEmail(''); setPassword(''); setRole('operator');
+      setLogin(''); setPassword(''); setRole('operator');
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to create user');
@@ -159,7 +159,7 @@ export const UsersPanel: React.FC = () => {
           <div className="p-4 rounded-lg" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
             <h3 className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>New User</h3>
             <div className="flex flex-col gap-3">
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <input value={login} onChange={e => setLogin(e.target.value)} placeholder="Login" className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               <div className="relative">
                 <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 <button onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
@@ -192,7 +192,7 @@ export const UsersPanel: React.FC = () => {
                   >
                     {expandedUser === u._id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
-                  <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{u.email}</span>
+                  <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{u.login}</span>
                   <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: 'var(--bg-3)', color: roleColor(u.role) }}>{u.role}</span>
                   <span className="text-xs" style={{ color: 'var(--text-3)' }}>{u.apiKeys?.length ?? 0} keys</span>
                   <button

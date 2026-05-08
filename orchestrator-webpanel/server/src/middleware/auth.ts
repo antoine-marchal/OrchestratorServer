@@ -5,7 +5,7 @@ import { getCollection } from '../services/db/index';
 
 export interface AuthUser {
   _id: string;
-  email: string;
+  login: string;
   role: string;
   authType: 'apikey' | 'jwt';
   apiKeyId?: string;
@@ -108,7 +108,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
       req.user = {
         _id: matchedUser._id,
-        email: matchedUser.email,
+        login: matchedUser.login,
         role: matchedUser.role,
         authType: 'apikey',
         apiKeyId: matchedKeyId || undefined,
@@ -126,7 +126,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       const payload: any = verifyJWT(token);
       req.user = {
         _id: payload._id,
-        email: payload.email,
+        login: payload.login,
         role: payload.role,
         authType: 'jwt',
       };
@@ -147,7 +147,7 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
   if (authHeader.startsWith('Bearer ')) {
     try {
       const payload: any = verifyJWT(authHeader.slice(7).trim());
-      req.user = { _id: payload._id, email: payload.email, role: payload.role, authType: 'jwt' };
+      req.user = { _id: payload._id, login: payload.login, role: payload.role, authType: 'jwt' };
     } catch { /* ignore */ }
   }
   next();

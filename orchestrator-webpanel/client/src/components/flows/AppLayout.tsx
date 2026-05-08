@@ -1,8 +1,10 @@
 import React from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
-import { Activity, Server, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Activity, Server, Sun, Moon, ShieldCheck, LogOut } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
+import { clearJwt } from '../../utils/apiClient';
+import { useAuth } from '../../hooks/useAuth';
 
 declare const __APP_VERSION__: string;
 
@@ -57,16 +59,25 @@ const Logo = () => (
   </span>
 );
 
-const NAV_ITEMS = [
-  { to: '/flows', icon: FlowIcon, label: 'Flows' },
-  { to: '/executions', icon: Activity, label: 'Executions' },
-  { to: '/workers', icon: Server, label: 'Workers' },
-  { to: '/admin', icon: ShieldCheck, label: 'Admin' },
+const ALL_NAV_ITEMS = [
+  { to: '/flows', icon: FlowIcon, label: 'Flows', adminOnly: false },
+  { to: '/executions', icon: Activity, label: 'Executions', adminOnly: false },
+  { to: '/workers', icon: Server, label: 'Workers', adminOnly: false },
+  { to: '/admin', icon: ShieldCheck, label: 'Admin', adminOnly: true },
 ];
 
 const AppLayout: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { workers } = useServerWorkers(15_000);
+  const navigate = useNavigate();
+  const { canAccessAdmin } = useAuth();
+
+  const handleLogout = () => {
+    clearJwt();
+    localStorage.removeItem('orchestrator_refresh');
+    localStorage.removeItem('orchestrator_user');
+    navigate('/login', { replace: true });
+  };
 
   const onlineCount = workers.filter(w => w.status === 'online').length;
   const totalCount = workers.length;
@@ -91,13 +102,20 @@ const AppLayout: React.FC = () => {
           >
             {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
           </button>
+          <button
+            className="tc-icon-btn"
+            onClick={handleLogout}
+            title="Logout"
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </div>
 
       {/* Sidebar */}
       <aside className="tc-sidebar">
         <nav>
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
+          {ALL_NAV_ITEMS.filter(item => !item.adminOnly || canAccessAdmin).map(({ to, icon: Icon, label }) => {
             const badgeCount =
               label === 'Workers' && totalCount > 0 && onlineCount < totalCount
                 ? `${onlineCount}/${totalCount}`

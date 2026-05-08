@@ -15,7 +15,7 @@ function isOnline(lastSeenAt: string): boolean {
 // Workers call this on startup to register. Open endpoint — no API key required.
 // Optional: set WORKER_REGISTRATION_SECRET env var to restrict who can register.
 router.post('/register', async (req: Request, res: Response) => {
-  const { name, capabilities = [], secret } = req.body;
+  const { name, platform = 'unknown', secret } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' }) as any;
 
   const expectedSecret = process.env.WORKER_REGISTRATION_SECRET;
@@ -29,13 +29,13 @@ router.post('/register', async (req: Request, res: Response) => {
   // Reuse record if worker re-registers with same name
   const existing = await col.findOne({ name });
   if (existing) {
-    await col.update({ _id: existing._id }, { $set: { capabilities, status: 'online', lastSeenAt: now } });
+    await col.update({ _id: existing._id }, { $set: { platform, status: 'online', lastSeenAt: now } });
     return res.json({ workerId: existing._id, status: 'online' });
   }
 
   const workerId = uuidv4();
   await col.insert({
-    _id: workerId, name, capabilities,
+    _id: workerId, name, platform,
     status: 'online', lastSeenAt: now, registeredAt: now,
   });
   res.json({ workerId, status: 'online' });

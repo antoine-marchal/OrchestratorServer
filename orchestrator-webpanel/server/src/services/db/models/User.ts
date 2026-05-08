@@ -9,7 +9,7 @@ export interface ApiKey {
 
 export interface User {
   _id: string;
-  email: string;
+  login: string;
   passwordHash: string;
   role: string;
   apiKeys: ApiKey[];

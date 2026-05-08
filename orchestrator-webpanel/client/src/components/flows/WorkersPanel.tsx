@@ -1,11 +1,28 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Server, RefreshCw, Trash2, Wifi, WifiOff, Terminal, AlertTriangle } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
+import { useAuth } from '../../hooks/useAuth';
+
+type WorkerPlatform = 'win32' | 'linux' | 'darwin' | 'unknown';
+
+const PLATFORM_LABEL: Record<WorkerPlatform, string> = {
+  win32: 'Windows',
+  linux: 'Linux',
+  darwin: 'macOS',
+  unknown: 'Unknown',
+};
+
+const PLATFORM_COLOR: Record<WorkerPlatform, string> = {
+  win32: 'var(--accent)',
+  linux: 'var(--ok)',
+  darwin: 'var(--text-2)',
+  unknown: 'var(--text-3)',
+};
 
 interface RemoteWorker {
   _id: string;
   name: string;
-  capabilities: string[];
+  platform: WorkerPlatform;
   status: 'online' | 'offline';
   lastSeenAt: string;
   registeredAt: string;
@@ -18,6 +35,7 @@ const WorkersPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [showConnect, setShowConnect] = useState(false);
+  const { canDeleteWorker } = useAuth();
 
   const load = useCallback(async () => {
     try {
@@ -160,27 +178,27 @@ npm start   # in orchestrator-worker/`}
                     <span className="kv-label">// registered</span>
                     <span className="kv-val">{new Date(w.registeredAt).toLocaleDateString()}</span>
                   </div>
-                  {w.capabilities?.length > 0 && (
-                    <div>
-                      <span className="kv-label">// capabilities</span>
-                      <span className="kv-val" style={{ fontFamily: 'var(--font-mono)' }}>
-                        {w.capabilities.join(', ')}
-                      </span>
-                    </div>
-                  )}
+                  <div>
+                    <span className="kv-label">// platform</span>
+                    <span className="kv-val" style={{ color: PLATFORM_COLOR[w.platform ?? 'unknown'], fontFamily: 'var(--font-mono)' }}>
+                      {PLATFORM_LABEL[w.platform ?? 'unknown']}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 4, alignSelf: 'flex-start' }}>
-                <button
-                  className="tc-icon-btn"
-                  title="Remove worker record"
-                  disabled={removing === w._id}
-                  onClick={() => handleRemove(w._id)}
-                >
-                  <Trash2 size={13} style={{ color: 'var(--err)' }} />
-                </button>
-              </div>
+              {canDeleteWorker && (
+                <div style={{ display: 'flex', gap: 4, alignSelf: 'flex-start' }}>
+                  <button
+                    className="tc-icon-btn"
+                    title="Remove worker record"
+                    disabled={removing === w._id}
+                    onClick={() => handleRemove(w._id)}
+                  >
+                    <Trash2 size={13} style={{ color: 'var(--err)' }} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

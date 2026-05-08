@@ -5,6 +5,7 @@ import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import StatusBadge from './StatusBadge';
 import ExecIdCell from './ExecIdCell';
 import type { ExecutionStatus } from '../../types/flows';
+import { useAuth } from '../../hooks/useAuth';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -30,6 +31,7 @@ const CHIP_LABELS: Record<string, string> = {
 const ExecutionsList: React.FC = () => {
   const navigate = useNavigate();
   const { executions, killExecution, clearExecutions, syncBackendExecutions } = useFlowLibraryStore();
+  const { canEdit } = useAuth();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ExecutionStatus | 'ALL'>('ALL');
@@ -81,13 +83,15 @@ const ExecutionsList: React.FC = () => {
           </span>
         </div>
         <div className="tc-toolbar">
-          <button
-            className="tc-btn danger"
-            onClick={() => clearExecutions()}
-            disabled={executions.length === 0}
-          >
-            <Trash2 size={13} />Clear history
-          </button>
+          {canEdit && (
+            <button
+              className="tc-btn danger"
+              onClick={() => clearExecutions()}
+              disabled={executions.length === 0}
+            >
+              <Trash2 size={13} />Clear history
+            </button>
+          )}
           <button
             className="tc-btn ghost"
             onClick={handleRefresh}
@@ -138,6 +142,7 @@ const ExecutionsList: React.FC = () => {
                 <th>Execution</th>
                 <th>Flow</th>
                 <th>Status</th>
+                <th>Worker</th>
                 <th>Trigger</th>
                 <th>Started</th>
                 <th>Duration</th>
@@ -167,6 +172,11 @@ const ExecutionsList: React.FC = () => {
                     </td>
                     <td><StatusBadge status={exec.status} /></td>
                     <td>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: exec.workerName ? 'var(--text-2)' : 'var(--text-3)' }}>
+                        {exec.workerName || 'server'}
+                      </span>
+                    </td>
+                    <td>
                       <span className="tc-trigger">{exec.triggeredBy}</span>
                     </td>
                     <td>
@@ -177,7 +187,7 @@ const ExecutionsList: React.FC = () => {
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
-                        {exec.status === 'RUNNING' && (
+                        {exec.status === 'RUNNING' && canEdit && (
                           <button
                             className="tc-icon-btn danger"
                             onClick={() => killExecution(exec.id)}

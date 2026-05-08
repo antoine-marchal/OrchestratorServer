@@ -12,9 +12,6 @@ import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, Chev
 import { apiClient, getJwt } from '../../utils/apiClient';
 import { NODE_TYPES } from '../../constants/nodeTypes';
 
-// Hide the default ReactFlow connection-handle dots since they look noisy in
-// a read-only graph. We still need <Handle> components mounted so edges anchor
-// correctly, just visually invisible.
 const HIDDEN_HANDLE: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
@@ -85,6 +82,66 @@ function aggregateStatus(children: NodeStatus[]): NodeExecStatus {
   return 'pending';
 }
 
+// Compute a clean left-to-right DAG layout using longest-path ranking.
+// nodeHeights allows expanded flow nodes to contribute their real rendered
+// height so that downstream columns stay vertically centered correctly.
+function computeLayout(
+  nodes: any[],
+  edges: any[],
+  nodeHeights?: Map<string, number>,
+): Map<string, { x: number; y: number }> {
+  const NODE_W = 200;
+  const DEFAULT_H = 46;
+  const H_GAP = 64;
+  const V_GAP = 12;
+
+  const nodeIds = new Set(nodes.map((n: any) => n.id as string));
+  const preds = new Map<string, Set<string>>();
+  for (const n of nodes) preds.set(n.id, new Set());
+  for (const e of edges) {
+    if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+      preds.get(e.target)!.add(e.source);
+    }
+  }
+
+  const rank = new Map<string, number>();
+  const computing = new Set<string>();
+  function assignRank(id: string): number {
+    if (rank.has(id)) return rank.get(id)!;
+    if (computing.has(id)) return 0; // cycle guard
+    computing.add(id);
+    let maxPred = -1;
+    for (const p of preds.get(id) || []) maxPred = Math.max(maxPred, assignRank(p));
+    const r = maxPred + 1;
+    rank.set(id, r);
+    computing.delete(id);
+    return r;
+  }
+  for (const n of nodes) assignRank(n.id);
+
+  const byRank = new Map<number, string[]>();
+  for (const [id, r] of rank) {
+    if (!byRank.has(r)) byRank.set(r, []);
+    byRank.get(r)!.push(id);
+  }
+
+  const nodeH = (id: string) => nodeHeights?.get(id) ?? DEFAULT_H;
+  const colTotalH = (ids: string[]) =>
+    ids.reduce((acc, id, i) => acc + nodeH(id) + (i > 0 ? V_GAP : 0), 0);
+
+  const maxColH = Math.max(...[...byRank.values()].map(colTotalH), DEFAULT_H);
+
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const [r, ids] of byRank) {
+    let y = (maxColH - colTotalH(ids)) / 2;
+    for (const id of ids) {
+      positions.set(id, { x: r * (NODE_W + H_GAP), y });
+      y += nodeH(id) + V_GAP;
+    }
+  }
+  return positions;
+}
+
 interface ExecutionNodeData {
   label?: string;
   id?: string;
@@ -96,6 +153,8 @@ interface ExecutionNodeData {
   innerChildren?: { id: string; label: string; type?: string; status: NodeExecStatus; attempt?: number }[];
   executionStatus?: NodeExecStatus;
   executionAttempt?: number;
+  isSelected?: boolean;
+  onSelect?: () => void;
 }
 
 function ExecutionNode({ data }: { data: ExecutionNodeData }) {
@@ -103,38 +162,44 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
   const isFlow = !!data.isFlowNode;
   const hasInner = !!data.hasInner;
   const expanded = !!data.expanded;
+  const isSelected = !!data.isSelected;
   const type = data.type;
 
-  // Whole-node click expands/collapses flow nodes — more discoverable than the
-  // chevron and immune to ReactFlow swallowing button clicks on read-only nodes.
-  const handleHeaderClick = (e: React.MouseEvent) => {
-    if (!isFlow || !hasInner) return;
+  const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    data.onToggleExpand?.();
+    if (isFlow && hasInner) data.onToggleExpand?.();
+    data.onSelect?.();
   };
+
+  const border = isSelected ? '2px solid var(--accent)' : statusBorder(status);
+  const shadow = isSelected
+    ? '0 0 0 3px rgba(59,130,246,0.28)'
+    : status === 'running' ? '0 0 0 3px rgba(59,130,246,0.15)' : 'none';
 
   return (
     <div
-      onClick={handleHeaderClick}
+      onClick={handleClick}
       style={{
         background: statusBg(status),
-        border: statusBorder(status),
+        border,
         borderRadius: 8,
-        minWidth: isFlow ? 220 : 180,
-        padding: '8px 12px',
+        minWidth: isFlow ? 200 : 160,
+        padding: '7px 11px',
         position: 'relative',
-        cursor: isFlow && hasInner ? 'pointer' : 'default',
-        boxShadow: status === 'running' ? '0 0 0 3px rgba(59,130,246,0.15)' : 'none',
+        cursor: 'pointer',
+        boxShadow: shadow,
         transition: 'border-color 200ms, box-shadow 200ms, background 200ms',
       }}
     >
       <Handle type="target" position={Position.Left} style={HIDDEN_HANDLE} />
       <div className="flex items-center gap-2">
         {isFlow && hasInner && (
-          expanded ? <ChevronDown size={13} style={{ color: 'var(--text-3)' }} /> : <ChevronRight size={13} style={{ color: 'var(--text-3)' }} />
+          expanded
+            ? <ChevronDown size={13} style={{ color: 'var(--text-3)' }} />
+            : <ChevronRight size={13} style={{ color: 'var(--text-3)' }} />
         )}
         <NodeTypeIcon type={type} size={15} />
-        <span className="text-xs font-medium truncate" style={{ color: 'var(--text)', maxWidth: 160 }}>
+        <span className="text-xs font-medium truncate" style={{ color: 'var(--text)', maxWidth: 140 }}>
           {data.label ?? data.id}
         </span>
         <span className="ml-auto" />
@@ -151,7 +216,7 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
           {data.innerChildren.map(child => (
             <div key={child.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-2)' }}>
               <NodeTypeIcon type={child.type} size={11} />
-              <span className="truncate flex-1" style={{ maxWidth: 140 }}>{child.label}</span>
+              <span className="truncate flex-1" style={{ maxWidth: 120 }}>{child.label}</span>
               <StatusIcon status={child.status} size={11} />
             </div>
           ))}
@@ -167,10 +232,10 @@ const nodeTypes = { execution: ExecutionNode };
 
 interface ExecutionGraphProps {
   executionId: string;
-  /** Pre-parsed flow definition `{ nodes, edges }` — should be the snapshot
-   *  of the *selected* execution, not necessarily the current flow definition. */
   flowDefinition?: { nodes: any[]; edges: any[] } | null;
   workerBaseUrl?: string;
+  selectedNodeId?: string | null;
+  onNodeSelect?: (id: string | null) => void;
 }
 
 function parseInnerFlow(node: any): { nodes: any[]; edges: any[] } | null {
@@ -187,16 +252,18 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   executionId,
   flowDefinition,
   workerBaseUrl,
+  selectedNodeId,
+  onNodeSelect,
 }) => {
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, NodeStatus>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const sseRef = useRef<EventSource | null>(null);
+  const onNodeSelectRef = useRef(onNodeSelect);
+  onNodeSelectRef.current = onNodeSelect;
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
 
-  // Reset overlays whenever the user picks a different execution so stale
-  // statuses from the previous one don't bleed into the new graph.
   useEffect(() => {
     setNodeStatuses({});
     setExpanded({});
@@ -214,15 +281,43 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
     return map;
   }, [flowDefinition]);
 
-  // Comment and variable nodes are noise in the execution graph; goto stays
-  // because it represents real control flow (its conditional jumps are
-  // rendered as lighter dashed edges below).
   const HIDDEN_TYPES = useMemo(() => new Set(['comment', 'variable']), []);
   const visibleNodes = useMemo(
     () => (flowDefinition?.nodes || []).filter((n: any) => !HIDDEN_TYPES.has(n?.data?.type)),
     [flowDefinition, HIDDEN_TYPES],
   );
   const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n: any) => n.id)), [visibleNodes]);
+
+  const visibleEdges = useMemo(
+    () => (flowDefinition?.edges || []).filter((e: any) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)),
+    [flowDefinition, visibleNodeIds],
+  );
+
+  // Height estimate for each node: expanded flow nodes grow by one row per child.
+  // These constants mirror the rendered CSS (padding 7px top+bottom, child row ~18px,
+  // gap-1 between rows, mt-2 pt-2 overhead when expanded).
+  const nodeHeights = useMemo(() => {
+    const CHILD_ROW_H = 18;
+    const EXPAND_OVERHEAD = 20; // mt-2 (8) + pt-2 (8) + border (4)
+    const CHILD_GAP = 4;
+    const h = new Map<string, number>();
+    for (const n of visibleNodes) {
+      const isFlow = n?.data?.type === 'flow';
+      const children = innerByParent[n.id];
+      if (isFlow && expanded[n.id] && children?.length > 0) {
+        const count = children.length;
+        h.set(n.id, 46 + EXPAND_OVERHEAD + count * CHILD_ROW_H + (count - 1) * CHILD_GAP);
+      } else {
+        h.set(n.id, 46);
+      }
+    }
+    return h;
+  }, [visibleNodes, expanded, innerByParent]);
+
+  const computedPositions = useMemo(
+    () => computeLayout(visibleNodes, visibleEdges, nodeHeights),
+    [visibleNodes, visibleEdges, nodeHeights],
+  );
 
   useEffect(() => {
     if (!visibleNodes.length) return;
@@ -246,52 +341,50 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         }
       }
 
+      const nodeId = n.id;
       return {
-        id: n.id,
+        id: nodeId,
         type: 'execution',
-        position: n.position ?? { x: i * 220, y: 0 },
+        position: computedPositions.get(nodeId) ?? { x: i * 264, y: 0 },
         data: {
           ...n.data,
           type: n.data?.type,
           isFlowNode: isFlow,
           hasInner,
-          expanded: !!expanded[n.id],
-          onToggleExpand: () => setExpanded(e => ({ ...e, [n.id]: !e[n.id] })),
+          expanded: !!expanded[nodeId],
+          onToggleExpand: () => setExpanded(e => ({ ...e, [nodeId]: !e[nodeId] })),
           innerChildren,
           executionStatus: status,
           executionAttempt: attempt,
+          isSelected: selectedNodeId === nodeId,
+          onSelect: () => {
+            const fn = onNodeSelectRef.current;
+            if (fn) fn(selectedNodeId === nodeId ? null : nodeId);
+          },
         } as ExecutionNodeData,
         draggable: false,
       };
     });
     setRfNodes(mapped);
-  }, [visibleNodes, nodeStatuses, expanded, innerByParent]);
+  }, [visibleNodes, nodeStatuses, expanded, innerByParent, computedPositions, selectedNodeId]);
 
   useEffect(() => {
     if (!flowDefinition) return;
-    // 1) Real edges, but drop any whose endpoint we hid (comment/variable).
-    const baseEdges = (flowDefinition.edges || [])
-      .filter((e: any) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target))
-      .map((e: any) => {
-        const targetStatus = nodeStatuses[e.target]?.status;
-        const isLive = targetStatus === 'running' || targetStatus === 'retrying';
-        const isDone = targetStatus === 'success';
-        const isFailed = targetStatus === 'failed';
-        const stroke = isFailed ? 'var(--err)' : isDone ? 'var(--ok)' : isLive ? 'var(--accent)' : 'var(--text-mute)';
-        return {
-          ...e,
-          type: 'smoothstep',
-          animated: isLive,
-          style: { stroke, strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
-        };
-      });
+    const baseEdges = visibleEdges.map((e: any) => {
+      const targetStatus = nodeStatuses[e.target]?.status;
+      const isLive = targetStatus === 'running' || targetStatus === 'retrying';
+      const isDone = targetStatus === 'success';
+      const isFailed = targetStatus === 'failed';
+      const stroke = isFailed ? 'var(--err)' : isDone ? 'var(--ok)' : isLive ? 'var(--accent)' : 'var(--text-mute)';
+      return {
+        ...e,
+        type: 'smoothstep',
+        animated: isLive,
+        style: { stroke, strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: stroke, width: 14, height: 14 },
+      };
+    });
 
-    // 2) Synthetic edges from goto nodes' conditions. The static edges array
-    //    only captures explicit graph wiring; goto conditional jumps are
-    //    declared in node.data.conditions as `{expr, goto, forwardInput}`.
-    //    Render those as lighter dashed edges so they're visually distinct
-    //    from the regular control flow but still legible.
     const gotoEdges: any[] = [];
     for (const n of visibleNodes) {
       if (n?.data?.type !== 'goto') continue;
@@ -316,7 +409,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
     }
 
     setRfEdges([...baseEdges, ...gotoEdges]);
-  }, [flowDefinition, nodeStatuses, visibleNodes, visibleNodeIds]);
+  }, [flowDefinition, nodeStatuses, visibleNodes, visibleNodeIds, visibleEdges]);
 
   useEffect(() => {
     if (!executionId) return;
@@ -365,7 +458,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.18 }}
         nodesDraggable={false}
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}

@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-worker",
-  "version": "2.2.0",
+  "version": "3.0.1",
   "description": "Orchestrator Worker - API server with MongoDB/NeDB persistence",
   "main": "dist/server.js",
   "scripts": {

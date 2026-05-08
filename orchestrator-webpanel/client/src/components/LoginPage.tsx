@@ -3,9 +3,41 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { setJwt } from '../utils/apiClient';
 
+declare const __APP_VERSION__: string;
+
+const BoltMark = ({ size = 14 }: { size?: number }) => (
+  <svg
+    width={size * 0.55}
+    height={size * 0.55}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    stroke="none"
+    style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
+  >
+    <path d="M13 6.5 8.5 13H12l-1 4.5L15.5 11H12l1-4.5Z" />
+  </svg>
+);
+
+const Logo = () => (
+  <span className="tc-brand">
+    <span className="word-group">
+      <span className="bracket">&lt;</span>
+      <span style={{ display: 'inline-block', color: 'var(--accent)', position: 'relative', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 13, lineHeight: 1 }}>
+        O
+        <BoltMark size={13} />
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--text)', fontSize: 13, lineHeight: 1 }}>
+        rchestrator
+      </span>
+      <span className="bracket">/&gt;</span>
+    </span>
+    <span className="ver">v{__APP_VERSION__}</span>
+  </span>
+);
+
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +51,7 @@ const LoginPage: React.FC = () => {
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ login, password }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -40,11 +72,9 @@ const LoginPage: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-xl font-bold tracking-tight" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
-            [Orchestrator]
-          </h1>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>Sign in to continue</p>
+        <div className="mb-6 text-center flex flex-col items-center gap-2">
+          <Logo />
+          <p className="text-xs" style={{ color: 'var(--text-3)' }}>Sign in to continue</p>
         </div>
 
         <form
@@ -59,12 +89,12 @@ const LoginPage: React.FC = () => {
             </div>
           )}
           <div>
-            <label className="text-xs mb-1 block" style={{ color: 'var(--text-3)' }}>Email</label>
+            <label className="text-xs mb-1 block" style={{ color: 'var(--text-3)' }}>Login</label>
             <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              autoComplete="email"
+              type="text"
+              value={login}
+              onChange={e => setLogin(e.target.value)}
+              autoComplete="username"
               required
               className="w-full px-3 py-2 rounded text-sm"
               style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
@@ -100,10 +130,6 @@ const LoginPage: React.FC = () => {
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
-
-        <p className="text-center text-xs mt-4" style={{ color: 'var(--text-3)' }}>
-          Default: <span style={{ color: 'var(--text-2)' }}>admin@orchestrator.local</span>
-        </p>
       </div>
     </div>
   );

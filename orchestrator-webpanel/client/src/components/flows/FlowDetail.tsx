@@ -32,6 +32,7 @@ import ExecutionGraph from '../execution/ExecutionGraph';
 import ExecutionNodeTree from '../execution/ExecutionNodeTree';
 import { ansiToHtml } from '../../utils/ansiToHtml';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
+import { useAuth } from '../../hooks/useAuth';
 
 type TabId = 'executions' | 'edit';
 
@@ -63,6 +64,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 }) => {
   const flowId = flow.id;
   const { executions, killExecution, clearExecutions, renameExecution, syncBackendExecutions } = useFlowLibraryStore();
+  const { canEdit } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
   const [showGraph, setShowGraph] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
@@ -169,12 +171,14 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={() => { clearExecutions(flowId); setSelectedId(null); }}
-              className="tc-btn danger" style={{ flex: 1, justifyContent: 'center', height: 30, fontSize: 11 }}
-            >
-              <Trash2 className="w-3.5 h-3.5" />Clear history
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { clearExecutions(flowId); setSelectedId(null); }}
+                className="tc-btn danger" style={{ flex: 1, justifyContent: 'center', height: 30, fontSize: 11 }}
+              >
+                <Trash2 className="w-3.5 h-3.5" />Clear history
+              </button>
+            )}
           </div>
         </div>
         {flowExecs.map(exec => (
@@ -191,7 +195,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
           >
             <div className="flex items-center justify-between mb-1">
               <StatusBadge status={exec.status} size="sm" />
-              {exec.status === 'RUNNING' && (
+              {exec.status === 'RUNNING' && canEdit && (
                 <button
                   onClick={e => { e.stopPropagation(); killExecution(exec.id); }}
                   className="tc-btn danger" style={{ height: 22, padding: '0 8px', fontSize: 11 }}
@@ -203,10 +207,14 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             <p className="font-mono text-xs mt-1 truncate" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{exec.displayName || `${exec.id.slice(0, 16)}...`}</p>
             <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
               <span>{formatRelative(exec.startTime)}</span>
-              <span>-</span>
+              <span>·</span>
               <span>{formatDuration(exec.duration)}</span>
-              <span>-</span>
+              <span>·</span>
               <span className="capitalize">{exec.triggeredBy}</span>
+              <span>·</span>
+              <span style={{ color: exec.workerName ? 'var(--text-2)' : 'var(--text-3)' }}>
+                {exec.workerName || 'server'}
+              </span>
             </div>
           </div>
         ))}
@@ -264,6 +272,8 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                       <ExecutionGraph
                         executionId={selectedExec.id}
                         flowDefinition={{ nodes: execNodes, edges: execEdges }}
+                        selectedNodeId={selectedNodeId}
+                        onNodeSelect={id => setSelectedNodeId(id)}
                       />
                     </div>
                   )}
@@ -398,9 +408,10 @@ const FlowDetail: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { flows, deleteFlow, executeFlow, updateFlow } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
+  const { canEdit, isViewer } = useAuth();
 
   const rawTabParam = searchParams.get('tab');
-  const tabParam: TabId = rawTabParam === 'executions' ? 'executions' : 'edit';
+  const tabParam: TabId = !isViewer && rawTabParam === 'edit' ? 'edit' : 'executions';
   // Schedule tab was removed — fall through to edit if a deep link still uses it.
   const highlightExec = searchParams.get('exec') || undefined;
   const [activeTab, setActiveTab] = useState<TabId>(tabParam);
@@ -479,7 +490,7 @@ const FlowDetail: React.FC = () => {
 
   const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
     { id: 'executions', label: 'Executions', icon: Activity },
-    { id: 'edit', label: 'Edit', icon: Edit3 },
+    ...(!isViewer ? [{ id: 'edit' as TabId, label: 'Edit', icon: Edit3 }] : []),
   ];
 
   return (
@@ -520,31 +531,54 @@ const FlowDetail: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {canEdit && (
+              <button
+                onClick={() => setShowSchedule(true)}
+                className="tc-btn ghost"
+                title={flow.schedule ? flow.schedule.cron : 'Schedule'}
+                style={{ height: 28, width: 28, padding: 0, justifyContent: 'center' }}
+              >
+                <Clock size={14} />
+              </button>
+            )}
             <button
-              onClick={() => setShowSchedule(true)}
+              onClick={() => {
+                const data = { name: flow.name, namespace: flow.namespace, description: flow.description, nodes: flow.nodes || [], edges: flow.edges || [] };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${flow.name.replace(/\s+/g, '-')}.or`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
               className="tc-btn ghost"
-              style={{ fontSize: 11, height: 28, fontFamily: 'var(--font-mono)' }}
-            >
-              <Clock size={12} />
-              {flow.schedule ? flow.schedule.cron : 'Schedule'}
-            </button>
-            <button
-              onClick={handleDelete}
-              className={`tc-btn${deleteConfirm ? ' danger' : ' ghost'}`}
+              title="Export .or file"
               style={{ height: 28, width: 28, padding: 0, justifyContent: 'center' }}
             >
-              {deleteConfirm ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
+              <Download size={14} />
             </button>
-            <button
-              onClick={handleExecute}
-              disabled={running}
-              title="Execute flow"
-              className="tc-btn primary"
-              style={{ height: 28 }}
-            >
-              {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-              {running ? 'Running…' : 'Execute'}
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleDelete}
+                className={`tc-btn${deleteConfirm ? ' danger' : ' ghost'}`}
+                style={{ height: 28, width: 28, padding: 0, justifyContent: 'center' }}
+              >
+                {deleteConfirm ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={handleExecute}
+                disabled={running}
+                title="Execute flow"
+                className="tc-btn primary"
+                style={{ height: 28 }}
+              >
+                {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                {running ? 'Running…' : 'Execute'}
+              </button>
+            )}
           </div>
         </div>
 

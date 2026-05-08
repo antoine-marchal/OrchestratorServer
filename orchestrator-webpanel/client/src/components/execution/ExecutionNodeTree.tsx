@@ -45,6 +45,37 @@ interface NodeRelations {
   succs: { id: string; label: string }[];
 }
 
+function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
+  const nodeById = new Map<string, Node>();
+  for (const n of nodes) nodeById.set(n.id, n);
+
+  const inDegree = new Map<string, number>();
+  const successors = new Map<string, string[]>();
+  for (const n of nodes) { inDegree.set(n.id, 0); successors.set(n.id, []); }
+  for (const e of edges) {
+    if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue;
+    successors.get(e.source)!.push(e.target);
+    inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+  }
+
+  const queue: Node[] = nodes.filter(n => inDegree.get(n.id) === 0);
+  const sorted: Node[] = [];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    if (visited.has(node.id)) continue;
+    visited.add(node.id);
+    sorted.push(node);
+    for (const succId of successors.get(node.id) || []) {
+      const deg = (inDegree.get(succId) || 1) - 1;
+      inDegree.set(succId, deg);
+      if (deg === 0) { const s = nodeById.get(succId); if (s) queue.push(s); }
+    }
+  }
+  for (const n of nodes) { if (!visited.has(n.id)) sorted.push(n); }
+  return sorted;
+}
+
 function buildRelations(nodes: Node[], edges: Edge[]): Record<string, NodeRelations> {
   const labelById = new Map<string, string>();
   for (const n of nodes) labelById.set(n.id, n.data?.label || n.id);
@@ -142,7 +173,7 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
       </div>
       {isFlow && expanded && childNodes.length > 0 && (
         <div>
-          {childNodes.filter(isVisibleInTree).map((child: Node) => (
+          {topologicalSort(childNodes, childEdges).filter(isVisibleInTree).map((child: Node) => (
             <NodeItemView
               key={child.id}
               node={child}
@@ -170,7 +201,7 @@ interface ExecutionNodeTreeProps {
 
 const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, selectedId, onSelect, statuses = {} }) => {
   const relations = useMemo(() => buildRelations(nodes, edges), [nodes, edges]);
-  const visible = nodes.filter(isVisibleInTree);
+  const visible = useMemo(() => topologicalSort(nodes, edges).filter(isVisibleInTree), [nodes, edges]);
 
   return (
     <div className="h-full overflow-y-auto py-2" style={{ background: 'var(--bg-2)', borderRight: '1px solid var(--border)' }}>

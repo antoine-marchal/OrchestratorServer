@@ -553,7 +553,7 @@ export function processJob(job: any): void {
   // assigned worker instead of running locally. JavaScript stays local because
   // it shares flowVariables in-process. Flow type stays here so that the
   // orchestrator parses the sub-graph and dispatches each inner script node.
-  const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright']);
+  const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright', 'shell', 'bash']);
   if (job.workerId && REMOTE_TYPES.has(type)) {
     (async () => {
       try {
