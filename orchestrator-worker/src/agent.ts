@@ -1,9 +1,10 @@
+import 'dotenv/config';
 import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { executeNode } from './executor/nodeExecutor';
 
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:3939';
-const WORKER_NAME = process.env.WORKER_NAME || `test` || `worker-${uuidv4().slice(0, 8)}`;
+const WORKER_NAME = process.env.WORKER_NAME ||  `worker-${uuidv4().slice(0, 8)}`;
 const WORKER_SECRET = process.env.WORKER_REGISTRATION_SECRET || 'd76b405918604bc577b946e9b9ab1f0207c0a3f16380706bb9f5caedc5734f68';
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '2000');
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000');

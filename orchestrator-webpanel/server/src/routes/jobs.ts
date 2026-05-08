@@ -1,15 +1,24 @@
 import { Router, Request, Response } from 'express';
 import { jobs, jobLogBuffers, jobLogListeners, processJob, terminateJobAndChildren, nowUid } from '../services/executor/nodeExecutor';
+import { resolveSecretsDetailed } from './secrets';
 
 const router = Router();
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const { type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId, variables, workerId } = req.body;
   if (!type) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job type is required' } }) as any;
 
+  // Resolve ${{ secrets.NAME }} placeholders before queuing so every language
+  // runner receives substituted code — same resolution the flow executor does.
+  let resolvedCode = code || '';
+  if (resolvedCode.includes('${{')) {
+    const { text } = await resolveSecretsDetailed(resolvedCode);
+    resolvedCode = text;
+  }
+
   const jobId = nowUid();
   const job: any = {
-    jobId, type, code, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId,
+    jobId, type, code: resolvedCode, codeFilePath, input, timeout, dontWaitForOutput, basePath, sessionId, runnerId,
     variables: variables || {}, workerId: workerId || null,
     status: 'queued', startTime: new Date().toISOString(), stopRequested: false,
   };
