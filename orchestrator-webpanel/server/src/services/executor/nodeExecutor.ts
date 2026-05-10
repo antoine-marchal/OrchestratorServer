@@ -144,18 +144,16 @@ function getNodeExecutablePath(): string {
 const nodeExecutablePath = getNodeExecutablePath();
 
 function resolveGroovyJar(): string {
-  // Packaged: prepare-pkg copies groovyExec.jar → dist/groovyExec.jar
-  // (two levels up from dist/services/executor/)
+  const workDir = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
   const candidates = [
-    path.join(__dirname, '../../groovyExec.jar'),       // packaged
-    path.join(__dirname, '../../..', 'groovyExec.jar'), // dev server root
-    path.join(process.cwd(), 'groovyExec.jar'),         // next to binary
-    process.env.GROOVY_JAR,                             // explicit override
+    process.env.GROOVY_JAR,                              // explicit override
+    path.join(workDir, 'groovyExec.jar'),                // WORK_DIR (extracted on startup)
+    path.join(process.cwd(), 'groovyExec.jar'),          // next to binary
+    path.join(__dirname, '../../groovyExec.jar'),        // dev: dist/
+    path.join(__dirname, '../../..', 'groovyExec.jar'), // dev: server root
   ].filter(Boolean) as string[];
   return candidates.find(p => fs.existsSync(p)) ?? candidates[0];
 }
-
-let groovyJarPath = resolveGroovyJar();
 
 /* ============================
    Log Collector (for flow-level logs)
@@ -340,7 +338,7 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
   try { fs.writeFileSync(tempGroovyPath, groovyCode, 'utf8'); }
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
 
-  const child = spawn('java', ['-jar', groovyJarPath, tempGroovyPath, 'lib'], { cwd: execCwd, shell: true });
+  const child = spawn('java', ['-jar', resolveGroovyJar(), tempGroovyPath, 'lib'], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
   child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
   child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -22,6 +23,26 @@ import { v4 as uuidv4 } from 'uuid';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3939;
 
+/* ─── pkg asset extraction ──────────────────────────────────────────────── */
+
+const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
+
+function extractGroovyJar(): void {
+  const dest = path.join(WORK_DIR, 'groovyExec.jar');
+  if (fs.existsSync(dest)) return;
+  if (!(process as any).pkg) return;
+  try {
+    fs.mkdirSync(WORK_DIR, { recursive: true });
+    const src = path.join(__dirname, 'groovyExec.jar');
+    fs.copyFileSync(src, dest);
+    console.log(`[server] Extracted groovyExec.jar → ${dest}`);
+  } catch (e: any) {
+    console.warn(`[server] Could not extract groovyExec.jar: ${e.message}`);
+  }
+}
+
+extractGroovyJar();
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -29,7 +50,6 @@ app.use(express.json({ limit: '50mb' }));
 // Serve webpanel static files (if built).
 // When packaged with pkg, prepare-pkg copies client/dist → dist/webpanel/
 // so we check that bundled path first, then fall back to the dev layout.
-import fs from 'fs';
 const panelDist = fs.existsSync(path.join(__dirname, 'webpanel'))
   ? path.join(__dirname, 'webpanel')
   : path.join(__dirname, '../../client/dist');

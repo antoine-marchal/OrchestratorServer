@@ -8,7 +8,7 @@ echo.
 echo  [Build Worker]  1/2  Building TypeScript...
 echo.
 cd /d "%~dp0orchestrator-worker"
-npm run build
+call npm run build
 if errorlevel 1 goto fail
 
 echo.
@@ -17,13 +17,13 @@ echo.
 
 if "%1"=="win" (
   echo  Target: Windows x64
-  npm run pkg:win
+  call npm run pkg:win
 ) else if "%1"=="linux" (
   echo  Target: Linux x64
-  npm run pkg:linux
+  call npm run pkg:linux
 ) else (
   echo  Target: Windows x64 + Linux x64
-  npm run pkg:all
+  call npm run pkg:all
 )
 
 if errorlevel 1 goto fail

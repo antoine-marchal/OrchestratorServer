@@ -8,7 +8,7 @@ echo.
 echo  [Build Server]  1/2  Building client + server TypeScript...
 echo.
 cd /d "%~dp0orchestrator-webpanel"
-npm run build:all
+call npm run build:all
 if errorlevel 1 goto fail
 
 echo.
@@ -18,13 +18,13 @@ cd /d "%~dp0orchestrator-webpanel\server"
 
 if "%1"=="win" (
   echo  Target: Windows x64
-  npm run pkg:win
+  call npm run pkg:win
 ) else if "%1"=="linux" (
   echo  Target: Linux x64
-  npm run pkg:linux
+  call npm run pkg:linux
 ) else (
   echo  Target: Windows x64 + Linux x64
-  npm run pkg:all
+  call npm run pkg:all
 )
 
 if errorlevel 1 goto fail
