@@ -11,7 +11,6 @@ interface JobRequest {
   codeFilePath?: string;
   input?: any;
   timeout?: number;
-  dontWaitForOutput?: boolean;
   basePath?: string;
   variables?: Record<string, any>;
 }

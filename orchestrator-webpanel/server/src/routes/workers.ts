@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getCollection } from '../services/db/index';
 import { authMiddleware } from '../middleware/auth';
-import { emitJobLog } from '../services/executor/nodeExecutor';
+import { emitJobLog, jobs } from '../services/executor/nodeExecutor';
+import { extractSecretNames, resolveSecretValues } from './secrets';
 
 const router = Router();
 
@@ -96,6 +97,25 @@ router.post('/:id/jobs/:jobId/log', async (req: Request, res: Response) => {
   }
 });
 
+// Worker requests the decrypted secret values referenced by one of its jobs.
+// Secrets are NEVER stored in the worker_jobs record — only the `${{ secrets.X }}`
+// placeholders inside the node's code. The worker calls this right before it runs
+// the node, so plaintext lives only transiently in the worker process (and over
+// the already-trusted worker channel), not at rest in the job queue.
+router.post('/:id/jobs/:jobId/secrets', async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('worker_jobs');
+    const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
+    if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
+    // Only resolve names that actually appear in this job's code — defence in depth.
+    const names = extractSecretNames(job?.node?.data?.code || '');
+    const { values, missing } = names.length ? await resolveSecretValues(names) : { values: {}, missing: [] };
+    res.json({ values, missing });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Worker reports job complete
 router.post('/:id/jobs/:jobId/complete', async (req: Request, res: Response) => {
   const { status, output, error, variables } = req.body;
@@ -165,14 +185,30 @@ export async function dispatchToWorker(workerId: string, node: any, executionId:
   });
 
   return new Promise((resolve, reject) => {
-    pendingWorkerJobs.set(jobId, { resolve, reject });
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      if (pendingWorkerJobs.has(jobId)) {
-        pendingWorkerJobs.delete(jobId);
-        reject(new Error('Worker job timed out'));
+    const startedAt = Date.now();
+    // Poll for: parent execution killed, or the 5-minute hard timeout.
+    const watch = setInterval(() => {
+      const parent = jobs.get(executionId);
+      const isKilled = !!(parent && parent.stopRequested);
+      const isTimedOut = Date.now() - startedAt > 5 * 60 * 1000;
+      if (!isKilled && !isTimedOut) return;
+      clearInterval(watch);
+      const pending = pendingWorkerJobs.get(jobId);
+      if (!pending) return;
+      pendingWorkerJobs.delete(jobId);
+      if (isKilled) {
+        // Best-effort: flag the worker_job so the worker can skip it if it hasn't started.
+        col.update({ _id: jobId }, { $set: { status: 'cancelled' } }).catch(() => {});
+        pending.reject(new Error('Execution killed'));
+      } else {
+        pending.reject(new Error('Worker job timed out'));
       }
-    }, 5 * 60 * 1000);
+    }, 1000);
+    const stopWatch = () => clearInterval(watch);
+    pendingWorkerJobs.set(jobId, {
+      resolve: (v) => { stopWatch(); resolve(v); },
+      reject: (e) => { stopWatch(); reject(e); },
+    });
   });
 }
 

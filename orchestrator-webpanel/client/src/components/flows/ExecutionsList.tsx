@@ -4,6 +4,7 @@ import { Search, RefreshCw, Trash2 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import StatusBadge from './StatusBadge';
 import ExecIdCell from './ExecIdCell';
+import ExecutionsChart from './ExecutionsChart';
 import type { ExecutionStatus } from '../../types/flows';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -126,6 +127,9 @@ const ExecutionsList: React.FC = () => {
           placeholder="Search by execution ID, flow name, namespace…"
         />
       </div>
+
+      {/* Chart for current filter */}
+      {filtered.length > 0 && <ExecutionsChart executions={filtered} />}
 
       {/* Table */}
       {filtered.length === 0 ? (

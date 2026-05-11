@@ -65,6 +65,41 @@ router.get('/:id/reveal', requireRole('admin'), async (req: Request, res: Respon
   }
 });
 
+// Single source of truth for the `${{ secrets.NAME }}` placeholder syntax.
+export const SECRET_REF_RE = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
+
+// Pull the distinct secret names referenced by a piece of code/config.
+export function extractSecretNames(text: string): string[] {
+  if (!text) return [];
+  const out = new Set<string>();
+  for (const m of text.matchAll(SECRET_REF_RE)) out.add(m[1]);
+  return Array.from(out);
+}
+
+// Decrypt a set of secrets by name. Returns a name→plaintext map for the ones
+// that exist plus the list of names that don't. Used by the worker callback
+// endpoint so secret plaintext is only ever produced at node-execution time —
+// never baked into a queued/persisted job record.
+export async function resolveSecretValues(names: string[]): Promise<{ values: Record<string, string>; missing: string[] }> {
+  const col = getCollection('secrets');
+  const masterKey = getMasterKey();
+  const values: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const name of new Set(names)) {
+    const secret = await col.findOne({ name });
+    if (secret) values[name] = decrypt(secret.value_enc, secret.iv, masterKey, secret.tag);
+    else missing.push(name);
+  }
+  return { values, missing };
+}
+
+// Substitute resolved values into code. Missing names become the literal
+// `undefined` so inlined code stays syntactically valid (avoids "missing : after
+// property id" from the raw `${{ secrets.NAME }}` token being parsed as JS).
+export function substituteSecrets(text: string, values: Record<string, string>): string {
+  return text.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
+}
+
 // Utility: resolve `${{ secrets.NAME }}` references in code/config at execution
 // time. Returns the substituted text plus a list of any names that were
 // referenced but didn't exist — callers should surface those to the user
@@ -76,29 +111,10 @@ export interface ResolvedSecrets {
 }
 
 export async function resolveSecretsDetailed(text: string): Promise<ResolvedSecrets> {
-  const col = getCollection('secrets');
-  const masterKey = getMasterKey();
-  const regex = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
-  const matches = [...text.matchAll(regex)];
-  const missing = new Set<string>();
-  const resolved = new Set<string>();
-  let result = text;
-  for (const match of matches) {
-    const secretName = match[1];
-    const secret = await col.findOne({ name: secretName });
-    if (secret) {
-      const value = decrypt(secret.value_enc, secret.iv, masterKey, secret.tag);
-      result = result.split(match[0]).join(value); // global replace, no regex side-effects
-      resolved.add(secretName);
-    } else {
-      // Leave a JS-safe placeholder so code that inlines the value stays
-      // syntactically valid (avoids "missing : after property id" from the
-      // raw `${{ secrets.NAME }}` token being parsed as JS block + object).
-      result = result.split(match[0]).join('undefined');
-      missing.add(secretName);
-    }
-  }
-  return { text: result, missing: Array.from(missing), resolved: Array.from(resolved) };
+  const names = extractSecretNames(text);
+  if (!names.length) return { text, missing: [], resolved: [] };
+  const { values, missing } = await resolveSecretValues(names);
+  return { text: substituteSecrets(text, values), missing, resolved: names.filter(n => n in values) };
 }
 
 // Backwards-compatible string-only API.

@@ -24,37 +24,21 @@ export function parseFlowContent(flowContent: string): any {
 }
 
 async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null): Promise<any> {
-  // Resolve `${{ secrets.NAME }}` placeholders in the node's code BEFORE
-  // we either dispatch to a worker or run locally. Done at the very top so
-  // every downstream branch (inline JS, transient job, remote dispatch) sees
-  // the substituted code. The original node object is left untouched.
   const rawCode: string = node?.data?.code || '';
-  let resolvedCode = rawCode;
-  if (rawCode.includes('${{')) {
-    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode);
-    resolvedCode = text;
-    if (jobId && resolved.length > 0) {
-      emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId);
-    }
-    if (jobId && missing.length > 0) {
-      // Surface missing secrets loudly — the placeholder will reach the
-      // runner unsubstituted, which usually breaks JS template literals or
-      // shell quoting. Better to fail with a clear message than parse error.
-      emitJobLog(jobId, 'error',
-        `[secrets] no secret found for: ${missing.map(m => `\`${m}\``).join(', ')} — create one in /admin or remove the placeholder`,
-        nodeId);
-    }
-  }
+  const nodeType = node?.data?.type;
 
   // Remote dispatch: send script-type nodes to the assigned worker.
-  // JS nodes stay local because they need direct access to flowVariables.
-  const nodeType = node?.data?.type;
+  // The node's code is sent with its `${{ secrets.NAME }}` placeholders INTACT —
+  // the worker fetches the decrypted values from the server right before it runs
+  // the node (see /workers/:id/jobs/:jobId/secrets), so secret plaintext never
+  // lands in the worker_jobs record or the poll response. JS nodes stay local
+  // because they need direct access to flowVariables.
   if (workerId && jobId && REMOTE_TYPES.has(nodeType)) {
     try {
       const remoteNode = {
         type: nodeType,
         data: {
-          code: resolvedCode,
+          code: rawCode,
           input: processedInputs,
           variables: flowVariables,
           timeout: timeout && timeout !== Infinity ? Math.ceil(timeout / 1000) : 0,
@@ -68,6 +52,23 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       return { output, variables: workerVars || {} };
     } catch (err: any) {
       throw new Error(`Worker dispatch failed for node ${nodeId}: ${err.message}`);
+    }
+  }
+
+  // Local execution path: resolve `${{ secrets.NAME }}` now — i.e. at the moment
+  // the node runs, not when the flow was queued. Treated the same as variables:
+  // they exist as references until execution time. The original node is untouched.
+  let resolvedCode = rawCode;
+  if (rawCode.includes('${{')) {
+    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode);
+    resolvedCode = text;
+    if (jobId && resolved.length > 0) {
+      emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId);
+    }
+    if (jobId && missing.length > 0) {
+      emitJobLog(jobId, 'error',
+        `[secrets] no secret found for: ${missing.map(m => `\`${m}\``).join(', ')} — create one in /admin or remove the placeholder`,
+        nodeId);
     }
   }
 
@@ -114,7 +115,6 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       codeFilePath: codeFilePath || null,
       input: processedInputs,
       timeout,
-      dontWaitForOutput: false,
       basePath,
       variables: flowVariables,
       // Carry workerId so nested flow nodes still dispatch their inner script-type
@@ -300,37 +300,74 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId);
       }
 
-      // Check retry config
-      const retry = node.data?.retry;
-      const maxAttempts = retry?.maxAttempts ?? 1;
-      const delayMs = retry?.delayMs ?? 1000;
-      const backoff = retry?.backoff ?? 'fixed';
+      // Error-handling policy for this node:
+      //   'stop'     — (default) a failure aborts the whole flow.
+      //   'continue' — log the failure and carry on with a null result.
+      //   'retry'    — re-run up to retry.maxAttempts with a fixed / linear /
+      //                exponential backoff; if every attempt fails, the flow stops.
+      const onErrorRaw = node.data?.onError;
+      const onError: 'stop' | 'continue' | 'retry' =
+        onErrorRaw === 'continue' || onErrorRaw === 'retry' ? onErrorRaw : 'stop';
+      const retryCfg = node.data?.retry || {};
+      const maxAttempts = onError === 'retry' ? Math.max(1, Number(retryCfg.maxAttempts) || 3) : 1;
+      // Accept either the new `delaySec` or the legacy `delayMs`.
+      const baseDelayMs = retryCfg.delayMs != null ? Number(retryCfg.delayMs) : (Number(retryCfg.delaySec) || 1) * 1000;
+      const backoff: 'fixed' | 'linear' | 'exponential' =
+        retryCfg.backoff === 'linear' || retryCfg.backoff === 'exponential' ? retryCfg.backoff : 'fixed';
+      const nodeLabel = node.data?.label || nodeId;
+
+      // True once the flow execution has been killed — aborts retries / waits.
+      const killed = () => { const fj = jobId ? jobs.get(jobId) : null; return !!(fj && fj.stopRequested); };
 
       let attempt = 0;
       let res: any;
-      let lastError: Error | null = null;
 
-      while (attempt < maxAttempts) {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (killed()) return;
         if (attempt > 0) {
-          const waitMs = backoff === 'exponential' ? delayMs * Math.pow(2, attempt - 1) : delayMs;
-          if (jobId) emitNodeStatus(jobId, nodeId, 'retrying', { attempt, waitMs, parentNodeId });
-          await new Promise(r => setTimeout(r, waitMs));
+          const waitMs = backoff === 'exponential' ? baseDelayMs * Math.pow(2, attempt - 1)
+            : backoff === 'linear' ? baseDelayMs * attempt
+            : baseDelayMs;
+          if (jobId) {
+            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" retry ${attempt}/${maxAttempts - 1} in ${Math.round(waitMs / 1000)}s`, nodeId);
+            emitNodeStatus(jobId, nodeId, 'retrying', { attempt, waitMs, parentNodeId });
+          }
+          // Interruptible back-off: a kill during the wait aborts immediately.
+          for (let waited = 0; waited < waitMs; waited += 200) {
+            if (killed()) return;
+            await new Promise(r => setTimeout(r, Math.min(200, waitMs - waited)));
+          }
+          if (killed()) return;
         }
 
         if (jobId) emitNodeStatus(jobId, nodeId, attempt === 0 ? 'running' : 'retrying', { attempt, parentNodeId });
 
         try {
           res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId);
-          lastError = null;
           if (jobId) emitNodeStatus(jobId, nodeId, 'success', { attempt, parentNodeId });
           break;
         } catch (err: any) {
-          lastError = err;
+          // A failure caused by the execution being killed isn't a real failure —
+          // don't retry, don't mark it failed; just unwind.
+          if (killed()) return;
           attempt++;
-          if (attempt >= maxAttempts) {
-            if (jobId) emitNodeStatus(jobId, nodeId, 'failed', { attempt, error: err.message, parentNodeId });
-            throw err;
+          if (attempt < maxAttempts) {
+            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message}`, nodeId);
+            continue;
           }
+          // No retries left (or none configured).
+          if (jobId) emitNodeStatus(jobId, nodeId, 'failed', { attempt, error: err.message, parentNodeId });
+          if (onError === 'continue') {
+            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message} — continuing`, nodeId);
+            res = { output: null, variables: {} };
+            break;
+          }
+          if (jobId) {
+            const suffix = maxAttempts > 1 ? ` after ${maxAttempts} attempts` : '';
+            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed${suffix}: ${err.message} — stopping flow`, nodeId);
+          }
+          throw err;
         }
       }
 
@@ -473,7 +510,6 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     codeFilePath: null,
     input: null,
     timeout: 0,
-    dontWaitForOutput: false,
     basePath: WORK_DIR,
     variables: {},
     workerId: resolvedWorkerId,
@@ -495,7 +531,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
     const endTime = new Date().toISOString();
     const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
-    const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
+    const status = j.stopRequested ? 'KILLED' : j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
     const logBuf = jobLogBuffers.get(jobId) || [];
     // Snapshot final per-node statuses so the graph can re-render them on
     // future visits (after the in-memory buffer is freed).

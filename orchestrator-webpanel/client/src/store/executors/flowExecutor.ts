@@ -120,15 +120,19 @@ export async function executeFlow(
     return;
   }
 
-  // reset goto decisions freshly and injectedvalues
+  // Fresh run: clear goto decisions, injected inputs, and stale per-node
+  // execution-status overlays (the file tree reads node.data.executionStatus).
   updateFlowState({
     nodes: activeFlowState.nodes.map(n =>
       n.data?.type === 'goto' ? { ...n, data: { ...n.data, gotoDecision: null } } : n
     ),
   });
+  activeFlowState = sessionStore().getActiveFlowState()!;
   updateFlowState({
     nodes: activeFlowState.nodes.map(n =>
-      n.data?._injectedInput ? { ...n, data: { ...n.data, _injectedInput: undefined } } : n
+      (n.data?._injectedInput || n.data?.executionStatus || (n.data as any)?.executionAttempt != null)
+        ? { ...n, data: { ...n.data, _injectedInput: undefined, executionStatus: undefined, executionAttempt: undefined } }
+        : n
     ),
   });
 
@@ -229,9 +233,51 @@ export async function executeFlow(
         });
       }
     } else {
-      // Execute regular nodes using the full executeNode logic
-      // Pass true to indicate this is from flow execution context
-      await executeNode(nodeId, true, sessionStore);
+      // Execute regular nodes using the full executeNode logic, honoring the
+      // node's on-error policy (stop / continue / retry) — same semantics as the
+      // server-side flow executor.
+      const onErrorRaw = (node.data as any)?.onError;
+      const onError: 'stop' | 'continue' | 'retry' =
+        onErrorRaw === 'continue' || onErrorRaw === 'retry' ? onErrorRaw : 'stop';
+      const retryCfg = (node.data as any)?.retry || {};
+      const maxAttempts = onError === 'retry' ? Math.max(1, Number(retryCfg.maxAttempts) || 3) : 1;
+      const baseDelaySec = retryCfg.delaySec != null ? Number(retryCfg.delaySec)
+        : (retryCfg.delayMs != null ? Number(retryCfg.delayMs) / 1000 : 1);
+      const backoff: 'fixed' | 'linear' | 'exponential' =
+        retryCfg.backoff === 'linear' || retryCfg.backoff === 'exponential' ? retryCfg.backoff : 'fixed';
+      const label = node.data?.label || nodeId;
+      const flowLog = (message: string) => {
+        activeFlowState = sessionStore().getActiveFlowState()!;
+        updateFlowState({ consoleMessages: [...activeFlowState.consoleMessages, { nodeId, type: 'flow', message, timestamp: Date.now() }] });
+      };
+
+      let attempt = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { error } = await executeNode(nodeId, true, sessionStore);
+        if (!error) break;
+        attempt++;
+        if (attempt < maxAttempts) {
+          const waitSec = backoff === 'exponential' ? baseDelaySec * Math.pow(2, attempt - 1)
+            : backoff === 'linear' ? baseDelaySec * attempt
+            : baseDelaySec;
+          flowLog(`[FLOW] node "${label}" failed: ${error} — retry ${attempt}/${maxAttempts - 1} in ${Math.round(waitSec)}s`);
+          activeFlowState = sessionStore().getActiveFlowState()!;
+          updateFlowState({
+            nodes: activeFlowState.nodes.map(n =>
+              n.id === nodeId ? { ...n, data: { ...n.data, executionStatus: 'retrying', executionAttempt: attempt } } : n
+            ),
+          });
+          await new Promise(resolve => setTimeout(resolve, Math.max(0, waitSec * 1000)));
+          continue;
+        }
+        if (onError === 'continue') {
+          flowLog(`[FLOW] node "${label}" failed: ${error} — continuing`);
+          break;
+        }
+        flowLog(`[FLOW] node "${label}" failed${maxAttempts > 1 ? ` after ${maxAttempts} attempts` : ''}: ${error} — stopping flow`);
+        throw new Error(`Flow stopped at node "${label}": ${error}`);
+      }
 
       // CRITICAL: Wait for state to be fully updated before continuing
       // This ensures the node's output is available before goto nodes read it
@@ -291,5 +337,18 @@ export async function executeFlow(
     for (const e of outs) await stepTo(e.target, stepBudget);
   };
 
-  await stepTo(entryId, { left: MAX_STEPS });
+  try {
+    await stepTo(entryId, { left: MAX_STEPS });
+  } catch (err: any) {
+    // A node with onError='stop' threw — surface it and end the walk cleanly.
+    activeFlowState = sessionStore().getActiveFlowState()!;
+    updateFlowState({
+      consoleMessages: [...activeFlowState.consoleMessages, {
+        nodeId: '',
+        type: 'error',
+        message: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+      }],
+    });
+  }
 }

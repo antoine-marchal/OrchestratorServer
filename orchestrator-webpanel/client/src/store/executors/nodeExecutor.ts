@@ -41,9 +41,9 @@ export async function executeNode(
   nodeId: string,
   fromFlowExecution: boolean,
   sessionStore: SessionStoreGetter
-): Promise<void> {
+): Promise<{ error?: any }> {
   let activeFlowState = sessionStore().getActiveFlowState();
-  if (!activeFlowState) return;
+  if (!activeFlowState) return {};
 
   const updateFlowState = (updates: Partial<FlowState>) => {
     sessionStore().updateActiveFlowState(updates);
@@ -60,12 +60,21 @@ export async function executeNode(
         timestamp: Date.now(),
       }],
     });
-    return;
+    return { error: 'already running' };
   }
 
   updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: true } });
   const node = activeFlowState.nodes.find((n) => n.id === nodeId);
-  if (!node) return;
+  if (!node) return {};
+
+  // Live status overlay (consumed by the node file tree). Cleared/refreshed by
+  // the flow walker at the start of each run.
+  activeFlowState = sessionStore().getActiveFlowState()!;
+  updateFlowState({
+    nodes: activeFlowState.nodes.map(n =>
+      n.id === nodeId ? { ...n, data: { ...n.data, executionStatus: 'running' } } : n
+    ),
+  });
 
   const addLog = (type: ConsoleMessage['type'], message: string) => {
     activeFlowState = sessionStore().getActiveFlowState()!;
@@ -79,19 +88,13 @@ export async function executeNode(
     });
   };
 
-  // If this node has dontWaitForOutput set, log it
-  if (node.data.dontWaitForOutput) {
-    addLog('log', 'Node is set to not wait for output - execution will continue in parallel');
-    addLog('log', 'This node will run indefinitely until manually stopped');
-  }
-
   try {
     let result: any, log: any, error: any;
     let hasStreamedError = false; // Track if errors were already streamed via polling
 
     if (node.data.type === 'goto') {
       await executeGotoNode(nodeId, sessionStore, updateFlowState, addLog);
-      return;
+      return {};
     } else if (node.data.type === 'variable') {
       result = executeVariableNode(node);
     } else if (node.data.type === 'flow') {
@@ -113,11 +116,7 @@ export async function executeNode(
       hasStreamedError = executionResult.hasStreamedError;
     }
 
-    // Only set loading to false if this is not a dontWaitForOutput node
-    // or if it's a dontWaitForOutput node that has actually completed
-    if (!(node.data.dontWaitForOutput && result?.dontWaitForOutput)) {
-      updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
-    }
+    updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
 
     // Display final output
     if (result !== undefined && result !== null && typeof result === 'object' && 'output' in result) {
@@ -131,23 +130,14 @@ export async function executeNode(
       addLog('error', error);
     }
 
-    // For nodes with dontWaitForOutput, we need to keep the jobId
-    // so that the node can be stopped later
-    if (node.data.dontWaitForOutput && result?.dontWaitForOutput) {
-      // Only update the output, keep the jobId
-      updateFlowState({
-        nodes: activeFlowState.nodes.map(n =>
-          n.id === nodeId ? { ...n, data: { ...n.data, output: result } } : n
-        ),
-      });
-    } else {
-      // For regular nodes, update node data with result and clear jobId
-      updateFlowState({
-        nodes: activeFlowState.nodes.map(n =>
-          n.id === nodeId ? { ...n, data: { ...n.data, output: result, jobId: undefined } } : n
-        ),
-      });
-    }
+    // Update node data with result, status overlay and clear jobId
+    updateFlowState({
+      nodes: activeFlowState.nodes.map(n =>
+        n.id === nodeId ? { ...n, data: { ...n.data, output: result, jobId: undefined, executionStatus: error ? 'failed' : 'success' } } : n
+      ),
+    });
+
+    return { error: error || undefined };
   } catch (error: any) {
     addLog('error', `Error: ${error instanceof Error ? error.message : String(error)}`);
     updateFlowState({ nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false } });
@@ -155,9 +145,11 @@ export async function executeNode(
     // Clear the job ID when an error occurs
     updateFlowState({
       nodes: activeFlowState.nodes.map(n =>
-        n.id === nodeId ? { ...n, data: { ...n.data, jobId: undefined } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, jobId: undefined, executionStatus: 'failed' } } : n
       ),
     });
+
+    return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -489,7 +481,6 @@ async function executeRegularNode(
         codeFilePath: codeFilePath,
         input: processedInputs,
         timeout: activeFlowState.nodeExecutionTimeout,
-        dontWaitForOutput: node.data.dontWaitForOutput,
         basePath: basePath,
         variables: variables,
         workerId: resolveWorkerIdForActiveSession(),
@@ -503,12 +494,6 @@ async function executeRegularNode(
           n.id === nodeId ? { ...n, data: { ...n.data, jobId } } : n
         ),
       });
-
-      // For dontWaitForOutput nodes, we don't wait for completion
-      if (node.data.dontWaitForOutput) {
-        // Keep the node in loading state and store jobId for stopping
-        return { result, error, hasStreamedError };
-      }
 
       // Poll for job completion with streaming logs
       const jobResult = await apiClient.pollJobStatus(

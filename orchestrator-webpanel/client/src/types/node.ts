@@ -12,7 +12,6 @@ export interface NodeData {
   executionTime?: number;
   isRelativePath?: boolean;
   isStarterNode?: boolean;
-  dontWaitForOutput?: boolean;
   jobId?: string;
   
   //Add Goto-specific fields
@@ -26,11 +25,15 @@ export interface NodeData {
   // Linked session for editing flow nodes
   linkedSessionId?: string;
 
-  // Autoretry config
+  // Error-handling policy when the node fails during a flow run.
+  //   'stop'     — (default) abort the whole flow
+  //   'continue' — log a [FLOW] line and carry on with a null result
+  //   'retry'    — re-run per `retry` config, then stop if still failing
+  onError?: 'stop' | 'continue' | 'retry';
   retry?: {
-    maxAttempts: number;
-    delayMs: number;
-    backoff: 'fixed' | 'exponential';
+    maxAttempts: number;                          // total attempts incl. the first (>=1)
+    delaySec: number;                             // delay before each retry, in seconds
+    backoff: 'fixed' | 'linear' | 'exponential';
   };
 
   // Execution status overlay (set during live execution view)

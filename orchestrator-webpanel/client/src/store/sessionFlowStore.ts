@@ -72,7 +72,6 @@ export const useFlowStore = (): FlowStoreInterface => {
       removeNode: () => {},
       updateNodeData: () => {},
       updateCodeFilePath: () => {},
-      toggleDontWaitForOutput: () => {},
       toggleConsole: () => {},
       setFullscreen: () => {},
       addConsoleMessage: () => {},
@@ -184,23 +183,6 @@ export const useFlowStore = (): FlowStoreInterface => {
               isStarterNode: node.id === nodeId
             }
           })),
-          ...historyUpdate
-        });
-      }
-    },
-
-    toggleDontWaitForOutput: (nodeId: string) => {
-      const nodes = activeFlowState.nodes;
-      const node = nodes.find(n => n.id === nodeId);
-
-      if (node) {
-        // Add to history
-        const historyUpdate = historyActions.addToHistoryWithState(nodes, activeFlowState.edges, activeFlowState);
-
-        updateFlowState({
-          nodes: nodes.map((n) =>
-            n.id === nodeId ? { ...n, data: { ...n.data, dontWaitForOutput: !n.data.dontWaitForOutput } } : n
-          ),
           ...historyUpdate
         });
       }
@@ -418,58 +400,15 @@ export const useFlowStore = (): FlowStoreInterface => {
       // Find the job ID for this node
       const node = activeFlowState.nodes.find(n => n.id === nodeId);
       if (node && node.data && node.data.jobId) {
-        // Stop job via HTTP API
+        // Stop job via HTTP API — the polling loop in executeNode will see the
+        // 'stopped' status and clear the loading/jobId state.
         apiClient.stopJob(node.data.jobId)
           .then(() => {
             console.log(`Stop signal sent for job ${node.data.jobId}`);
-
-            // For nodes with dontWaitForOutput, we need to manually set the loading state to false
-            if (node.data.dontWaitForOutput) {
-              setTimeout(() => {
-                let currentStoppingNodes: Set<string>;
-                try {
-                  if (activeFlowState.stoppingNodes instanceof Set) {
-                    currentStoppingNodes = activeFlowState.stoppingNodes;
-                  } else if (Array.isArray(activeFlowState.stoppingNodes)) {
-                    currentStoppingNodes = new Set(activeFlowState.stoppingNodes);
-                  } else {
-                    currentStoppingNodes = new Set<string>();
-                  }
-                } catch (error) {
-                  console.warn('stoppingNodes was corrupted, resetting to empty Set:', error);
-                  currentStoppingNodes = new Set<string>();
-                }
-                updateFlowState({
-                  nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false },
-                  stoppingNodes: new Set([...currentStoppingNodes].filter(id => id !== nodeId)),
-                });
-
-                updateFlowState({
-                  nodes: activeFlowState.nodes.map(n =>
-                    n.id === nodeId ? { ...n, data: { ...n.data, jobId: undefined } } : n
-                  ),
-                });
-
-                const stopMessage = {
-                  nodeId,
-                  type: 'log' as const,
-                  message: `Node execution stopped`,
-                  timestamp: Date.now(),
-                };
-                updateFlowState({
-                  consoleMessages: [...activeFlowState.consoleMessages, stopMessage],
-                });
-              }, 500);
-            }
           })
           .catch((err: Error) => {
             console.error(`Error stopping job: ${err.message}`);
           });
-      }
-
-      // For regular nodes (not dontWaitForOutput), call executeNode with the stop action flag
-      if (!node?.data.dontWaitForOutput) {
-        // This will be handled by executeNode
       }
     },
 

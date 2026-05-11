@@ -236,6 +236,8 @@ interface ExecutionGraphProps {
   workerBaseUrl?: string;
   selectedNodeId?: string | null;
   onNodeSelect?: (id: string | null) => void;
+  /** Fired whenever live per-node statuses change (id -> 'running'|'retrying'|'success'|'failed'|...). */
+  onStatusesChange?: (statuses: Record<string, string>) => void;
 }
 
 function parseInnerFlow(node: any): { nodes: any[]; edges: any[] } | null {
@@ -254,12 +256,23 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   workerBaseUrl,
   selectedNodeId,
   onNodeSelect,
+  onStatusesChange,
 }) => {
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, NodeStatus>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const sseRef = useRef<EventSource | null>(null);
   const onNodeSelectRef = useRef(onNodeSelect);
   onNodeSelectRef.current = onNodeSelect;
+  const onStatusesChangeRef = useRef(onStatusesChange);
+  onStatusesChangeRef.current = onStatusesChange;
+
+  // Mirror the live status map up to the parent (used by the node tree).
+  useEffect(() => {
+    if (!onStatusesChangeRef.current) return;
+    const flat: Record<string, string> = {};
+    for (const [id, st] of Object.entries(nodeStatuses)) flat[id] = st.status;
+    onStatusesChangeRef.current(flat);
+  }, [nodeStatuses]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);

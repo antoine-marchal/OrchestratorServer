@@ -12,6 +12,15 @@ const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '2000');
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000');
 const WORK_DIR         = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
 
+// How the worker picks up jobs:
+//   'parallel'   (default) — take jobs as they arrive, even while a node from
+//                 another flow is still running on this worker.
+//   'sequential' — finish every in-flight job from the current flow before
+//                 accepting a job that belongs to a different flow. Jobs from
+//                 other flows stay queued (not ack'd) until the worker is idle.
+const EXECUTION_MODE: 'parallel' | 'sequential' =
+  (process.env.WORKER_EXECUTION_MODE || 'parallel').toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+
 /* ─── pkg asset extraction ──────────────────────────────────────────────── */
 
 const IS_PKG = !!(process as any).pkg;
@@ -51,19 +60,73 @@ async function register(): Promise<string> {
 
 /* ─── Job polling & execution ───────────────────────────────────────────── */
 
+// Sequential-mode bookkeeping: the flow execution id we're currently bound to
+// and how many of its jobs are still running. When the count drops to 0 the
+// worker is free to bind to whichever flow's job arrives next.
+let activeExecutionId: string | null = null;
+let runningJobs = 0;
+
 async function poll(workerId: string): Promise<void> {
   try {
     const res = await http.get(`/api/v1/workers/${workerId}/jobs`);
     const jobs: any[] = res.data.jobs || [];
     for (const job of jobs) {
+      if (
+        EXECUTION_MODE === 'sequential' &&
+        activeExecutionId !== null &&
+        job.executionId !== activeExecutionId
+      ) {
+        continue; // leave it pending — a later poll picks it up once we're idle
+      }
+      if (activeExecutionId === null) activeExecutionId = job.executionId ?? null;
+      runningJobs++;
       await http.post(`/api/v1/workers/${workerId}/jobs/${job._id}/ack`).catch(() => {});
-      executeJob(workerId, job).catch(console.error);
+      executeJob(workerId, job)
+        .catch(console.error)
+        .finally(() => {
+          runningJobs--;
+          if (runningJobs === 0) activeExecutionId = null;
+        });
     }
   } catch (e: any) {
     if (e.code !== 'ECONNREFUSED' && e.code !== 'ETIMEDOUT') {
       console.error('[worker] poll error:', e.message);
     }
   }
+}
+
+/* ─── Secret resolution ─────────────────────────────────────────────────── */
+
+const SECRET_REF_RE = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
+
+// Resolve `${{ secrets.NAME }}` placeholders in the node's code at execution
+// time. The job record only carries the placeholders; we fetch the decrypted
+// values from the orchestrator over the worker channel right before running.
+async function resolveSecrets(
+  workerId: string,
+  jobId: string,
+  code: string,
+  onLog: (type: 'log' | 'error', message: string) => void,
+): Promise<string> {
+  if (!code || !code.includes('${{')) return code;
+  const names = [...new Set([...code.matchAll(SECRET_REF_RE)].map(m => m[1]))];
+  if (!names.length) return code;
+
+  let values: Record<string, string> = {};
+  try {
+    const res = await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/secrets`, { names });
+    values = (res.data && res.data.values) || {};
+  } catch (e: any) {
+    onLog('error', `[secrets] failed to fetch secrets: ${e.message}`);
+  }
+
+  const resolved = names.filter(n => n in values);
+  const missing = names.filter(n => !(n in values));
+  if (resolved.length) onLog('log', `[secrets] resolved: ${resolved.join(', ')}`);
+  if (missing.length) onLog('error', `[secrets] no secret found for: ${missing.map(m => `\`${m}\``).join(', ')} — create one in /admin or remove the placeholder`);
+
+  // Missing names become the literal `undefined` so inlined code stays valid.
+  return code.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
 }
 
 async function executeJob(workerId: string, job: any): Promise<void> {
@@ -74,6 +137,9 @@ async function executeJob(workerId: string, job: any): Promise<void> {
   try {
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/status`, { status: 'running' });
     onLog('log', `[worker] running ${job.node?.type ?? 'node'} on "${WORKER_NAME}" (${process.platform}, cwd=${WORK_DIR})`);
+    if (job.node?.data) {
+      job.node.data.code = await resolveSecrets(workerId, jobId, job.node.data.code || '', onLog);
+    }
     const result = await executeNode(job.node, onLog);
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/complete`, {
       output: result.output, variables: result.variables, status: 'success',
@@ -93,6 +159,7 @@ async function executeJob(workerId: string, job: any): Promise<void> {
 async function main(): Promise<void> {
   extractGroovyJar();
   console.log(`[worker] Starting "${WORKER_NAME}" (${process.platform}), connecting to ${ORCHESTRATOR_URL}`);
+  console.log(`[worker] Execution mode: ${EXECUTION_MODE}`);
 
   let workerId = '';
   while (true) {

@@ -3,6 +3,7 @@ import {
   Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal,
   TerminalSquare, MessageSquare, CornerRightDown, ChevronRight,
   ChevronDown, Circle, ArrowDownLeft, ArrowUpRight,
+  Loader2, CheckCircle2, AlertCircle, RefreshCw,
 } from 'lucide-react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useFlowStore } from '../../store/sessionFlowStore';
@@ -12,6 +13,17 @@ const CODE_NODE_TYPES = new Set(['javascript', 'jsbackend', 'groovy', 'batch', '
 // Types that don't carry user code/sub-graph and clutter the tree.
 const HIDDEN_FROM_TREE = new Set(['goto', 'comment', 'variable']);
 const isVisibleInTree = (n: Node) => !HIDDEN_FROM_TREE.has(n.data?.type || 'javascript');
+
+// Live execution status overlay — same colour code as the execution view.
+function StatusIcon({ status }: { status?: string }) {
+  switch (status) {
+    case 'running': return <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />;
+    case 'retrying': return <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: 'var(--warn)' }} />;
+    case 'success': return <CheckCircle2 className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--ok)' }} />;
+    case 'failed': return <AlertCircle className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--err)' }} />;
+    default: return null;
+  }
+}
 
 function NodeIcon({ type }: { type: string }) {
   switch (type) {
@@ -164,6 +176,7 @@ function NodeItem({ node, depth, editingNodeId, onSelect, modifiedNodeIds, paren
         <RelationBadge direction="in" items={rel.preds} />
         <RelationBadge direction="out" items={rel.succs} />
         {isModified && <Circle className="w-1.5 h-1.5 fill-orange-400 text-orange-400 flex-shrink-0" />}
+        <StatusIcon status={(node.data as any)?.executionStatus} />
       </div>
       {isFlow && expanded && childNodes.length > 0 && (
         <div>

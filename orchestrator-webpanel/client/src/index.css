@@ -94,18 +94,21 @@ html, body, #root {
 }
 
 /* ===== App shell ===== */
-.tc-app {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: 44px 1fr;
-  height: 100vh;
-  background: var(--bg);
+.tc-grid-bg {
+  background-color: var(--bg);
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 32px 32px;
   background-position: -1px -1px;
+}
+.tc-app {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 44px 1fr;
+  height: 100vh;
   color: var(--text);
+  background-color: var(--bg);
   background-image:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);

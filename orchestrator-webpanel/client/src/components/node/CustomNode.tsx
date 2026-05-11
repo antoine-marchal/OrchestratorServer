@@ -70,9 +70,6 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
     }
   };
   
-  // Check if this node has dontWaitForOutput enabled
-  const hasDontWaitForOutput = data.dontWaitForOutput;
-
   const [expanded, setExpanded] = useState(false);
   const [connecting, setConnecting] = useState(false);
   
@@ -175,19 +172,9 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
 
       {isLoading && (
         <div
-          className={`
-            absolute inset-0 flex
-            ${hasDontWaitForOutput ? 'items-start pt-4 pl-4' : 'items-center justify-center'}
-            bg-black/30 rounded-lg
-            pointer-events-none z-10
-          `}
+          className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg pointer-events-none z-10"
         >
-          <Loader2
-            className={`
-              text-blue-400 animate-spin
-              ${hasDontWaitForOutput ? 'w-5 h-5 pointer-events-auto z-20' : 'w-10 h-10'}
-            `}
-          />
+          <Loader2 className="text-blue-400 animate-spin w-10 h-10" />
         </div>
       )}
     </div>

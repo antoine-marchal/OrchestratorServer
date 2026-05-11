@@ -113,6 +113,32 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const prevSessionIdRef = useRef<string | null>(null);
 
+  // Some browsers/layouts mount this editor before the container has a real
+  // size (e.g. it's inside a tab that just became visible). When that happens
+  // ReactFlow measures 0×0, `fitView` is a no-op and `onlyRenderVisibleElements`
+  // culls every node — so the canvas looks empty until a resize/scroll forces a
+  // re-measure. Watch the wrapper and re-fit the first time it has real
+  // dimensions so the graph shows up immediately.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const didInitialFitRef = useRef(false);
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (didInitialFitRef.current) return;
+      const { width, height } = el.getBoundingClientRect();
+      if (width > 0 && height > 0) {
+        didInitialFitRef.current = true;
+        // Defer a frame so ReactFlow has picked up the same dimensions.
+        requestAnimationFrame(() => {
+          fitView({ padding: 0.2, minZoom: 0.3, maxZoom: 1.5 });
+        });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitView]);
+
   // Auto-fit view when switching sessions
   useEffect(() => {
     // Skip on initial render (when prevSessionIdRef is null and we're just mounting)
@@ -566,7 +592,7 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
   );
 
   return (
-    <div className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
+    <div ref={wrapperRef} className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
       <ReactFlow
         className="react-flow__dark"
         nodes={nodes}

@@ -20,8 +20,13 @@ export async function saveFlow(sessionStore: SessionStoreGetter): Promise<void> 
   const activeFlowState = sessionStore().getActiveFlowState();
   if (!activeFlowState) return;
 
-  // Create a deep copy of nodes to avoid modifying the original nodes
+  // Create a deep copy of nodes to avoid modifying the original nodes.
+  // Drop transient run overlays so they don't get persisted into the flow.
   let nodesToSave = JSON.parse(JSON.stringify(activeFlowState.nodes));
+  nodesToSave = nodesToSave.map((n: any) => {
+    if (n?.data) { delete n.data.executionStatus; delete n.data.executionAttempt; }
+    return n;
+  });
 
   // If we have a flow path, convert all flow node paths to relative paths
   // and save code to separate files
@@ -32,11 +37,6 @@ export async function saveFlow(sessionStore: SessionStoreGetter): Promise<void> 
 
     // Process each node
     nodesToSave = await Promise.all(nodesToSave.map(async (node: Node) => {
-      // Preserve the dontWaitForOutput property when saving
-      if (node.data.dontWaitForOutput) {
-        node.data.dontWaitForOutput = true;
-      }
-
       // Handle flow nodes (convert paths to relative)
       if (node.data.type === 'flow' && node.data.code) {
         // Check if the path is absolute (regardless of isRelativePath flag)

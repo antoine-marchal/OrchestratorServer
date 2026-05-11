@@ -102,7 +102,6 @@ export interface FlowStoreInterface {
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: any, addHistory?: boolean) => void;
   updateCodeFilePath: (nodeId: string, label: string) => void;
-  toggleDontWaitForOutput: (nodeId: string) => void;
   toggleConsole: () => void;
   setFullscreen: () => void;
   addConsoleMessage: (message: ConsoleMessage) => void;

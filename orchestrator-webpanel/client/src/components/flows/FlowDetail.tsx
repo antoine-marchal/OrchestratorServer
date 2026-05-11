@@ -100,6 +100,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // to entries with `nodeId === selectedNodeId`. Toggle off by clicking the
   // same node again or hitting "clear".
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Live per-node execution status (fed by the SSE stream inside ExecutionGraph)
+  // so the node tree shows the same running/retrying/success/error colour code.
+  const [nodeStatuses, setNodeStatuses] = useState<Record<string, any>>({});
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [collapsedFlowNodes, setCollapsedFlowNodes] = useState<Set<string>>(new Set());
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -384,6 +387,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                         flowDefinition={{ nodes: execNodes, edges: execEdges }}
                         selectedNodeId={selectedNodeId}
                         onNodeSelect={id => setSelectedNodeId(id)}
+                        onStatusesChange={setNodeStatuses}
                       />
                     </div>
                   )}
@@ -395,6 +399,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                           edges={execEdges}
                           selectedId={selectedNodeId}
                           onSelect={setSelectedNodeId}
+                          statuses={nodeStatuses}
                         />
                       </div>
                     )}
@@ -570,7 +575,9 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     if (!isFlowSession || !hydratedRef.current) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
-      updateFlow(flow.id, { nodes, edges });
+      // Don't persist transient run overlays (live status / attempt counters).
+      const cleanNodes = nodes.map(n => ({ ...n, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } }));
+      updateFlow(flow.id, { nodes: cleanNodes, edges });
       setSaveState('saved');
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => setSaveState('idle'), 2000);
@@ -762,6 +769,26 @@ const FlowDetail: React.FC = () => {
               >
                 {deleteConfirm ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
               </button>
+            )}
+            {canEdit && (
+              <select
+                value={flow.workerId || ''}
+                onChange={(e) => updateFlow(flow.id, { workerId: e.target.value })}
+                title="Run this flow on"
+                style={{
+                  height: 28, padding: '0 8px', borderRadius: 6,
+                  background: 'var(--bg-2)', color: 'var(--text)',
+                  border: '1px solid var(--border)', fontSize: 12,
+                  fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 180,
+                }}
+              >
+                <option value="">Local (server)</option>
+                {serverWorkers.map(w => (
+                  <option key={w._id} value={w._id}>
+                    {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                  </option>
+                ))}
+              </select>
             )}
             {canEdit && (
               <button

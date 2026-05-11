@@ -517,7 +517,7 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
    ============================ */
 
 export function processJob(job: any): void {
-  const { jobId, type, codeFilePath, input, timeout, dontWaitForOutput } = job;
+  const { jobId, type, codeFilePath, input, timeout } = job;
   job.input = normalizeInput(input);
   job.status = 'running';
 
@@ -619,4 +619,13 @@ export function terminateJobAndChildren(jobId: string): void {
   terminateProcess(jobId);
   const job = jobs.get(jobId);
   if (job) job.stopRequested = true;
+  // A flow execution spawns transient sub-jobs (one per node run, tagged with
+  // execId === the flow's jobId). Flag them and kill their running child
+  // processes too, so a kill takes effect immediately even mid-node or mid-retry.
+  for (const [id, j] of jobs) {
+    if (id !== jobId && j && j.execId === jobId) {
+      j.stopRequested = true;
+      terminateProcess(id);
+    }
+  }
 }
