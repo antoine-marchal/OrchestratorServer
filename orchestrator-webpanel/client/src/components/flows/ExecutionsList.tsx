@@ -38,6 +38,7 @@ const ExecutionsList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<ExecutionStatus | 'ALL'>('ALL');
   const [, setTick] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 3000);
@@ -86,11 +87,20 @@ const ExecutionsList: React.FC = () => {
         <div className="tc-toolbar">
           {canEdit && (
             <button
-              className="tc-btn danger"
-              onClick={() => clearExecutions()}
+              className={`tc-btn${clearConfirm ? ' danger' : ''}`}
+              onClick={() => {
+                if (!clearConfirm) {
+                  setClearConfirm(true);
+                  setTimeout(() => setClearConfirm(false), 3000);
+                } else {
+                  clearExecutions();
+                  setClearConfirm(false);
+                }
+              }}
               disabled={executions.length === 0}
+              title={clearConfirm ? 'Click again to confirm' : 'Clear execution history'}
             >
-              <Trash2 size={13} />Clear history
+              <Trash2 size={13} />{clearConfirm ? 'Confirm clear?' : 'Clear history'}
             </button>
           )}
           <button

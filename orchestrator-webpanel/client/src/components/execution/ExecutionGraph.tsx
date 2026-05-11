@@ -6,11 +6,13 @@ import ReactFlow, {
   Handle,
   Position,
   MarkerType,
+  type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, ChevronRight, ChevronDown } from 'lucide-react';
 import { apiClient, getJwt } from '../../utils/apiClient';
 import { NODE_TYPES } from '../../constants/nodeTypes';
+import { formatDurationShort } from '../../utils/execTiming';
 
 const HIDDEN_HANDLE: React.CSSProperties = {
   background: 'transparent',
@@ -150,9 +152,10 @@ interface ExecutionNodeData {
   hasInner?: boolean;
   expanded?: boolean;
   onToggleExpand?: () => void;
-  innerChildren?: { id: string; label: string; type?: string; status: NodeExecStatus; attempt?: number }[];
+  innerChildren?: { id: string; label: string; type?: string; status: NodeExecStatus; attempt?: number; durationMs?: number | null }[];
   executionStatus?: NodeExecStatus;
   executionAttempt?: number;
+  durationMs?: number | null;
   isSelected?: boolean;
   onSelect?: () => void;
 }
@@ -176,9 +179,12 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
     ? '0 0 0 3px rgba(59,130,246,0.28)'
     : status === 'running' ? '0 0 0 3px rgba(59,130,246,0.15)' : 'none';
 
+  const title = `${data.label ?? data.id ?? ''} · ${status}${data.durationMs != null ? ` · ${formatDurationShort(data.durationMs)}` : ''}`;
+
   return (
     <div
       onClick={handleClick}
+      title={title}
       style={{
         background: statusBg(status),
         border,
@@ -203,6 +209,11 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
           {data.label ?? data.id}
         </span>
         <span className="ml-auto" />
+        {data.durationMs != null && (
+          <span style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+            {formatDurationShort(data.durationMs)}
+          </span>
+        )}
         <StatusIcon status={status} size={13} />
         {data.executionAttempt != null && data.executionAttempt > 1 && (
           <span className="text-xs px-1 rounded" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontSize: 10 }}>
@@ -214,9 +225,14 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
       {isFlow && expanded && data.innerChildren && data.innerChildren.length > 0 && (
         <div className="flex flex-col gap-1 mt-2 pt-2" style={{ borderTop: '1px dashed var(--border)' }}>
           {data.innerChildren.map(child => (
-            <div key={child.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-2)' }}>
+            <div key={child.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-2)' }} title={`${child.label} · ${child.status}${child.durationMs != null ? ` · ${formatDurationShort(child.durationMs)}` : ''}`}>
               <NodeTypeIcon type={child.type} size={11} />
               <span className="truncate flex-1" style={{ maxWidth: 120 }}>{child.label}</span>
+              {child.durationMs != null && (
+                <span style={{ fontSize: 9.5, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                  {formatDurationShort(child.durationMs)}
+                </span>
+              )}
               <StatusIcon status={child.status} size={11} />
             </div>
           ))}
@@ -238,6 +254,8 @@ interface ExecutionGraphProps {
   onNodeSelect?: (id: string | null) => void;
   /** Fired whenever live per-node statuses change (id -> 'running'|'retrying'|'success'|'failed'|...). */
   onStatusesChange?: (statuses: Record<string, string>) => void;
+  /** Per-node wall-clock duration in ms (derived from logs by the parent). */
+  nodeDurations?: Record<string, number>;
 }
 
 function parseInnerFlow(node: any): { nodes: any[]; edges: any[] } | null {
@@ -257,6 +275,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   selectedNodeId,
   onNodeSelect,
   onStatusesChange,
+  nodeDurations,
 }) => {
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, NodeStatus>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -276,11 +295,23 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
+  const rfInstance = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     setNodeStatuses({});
     setExpanded({});
   }, [executionId]);
+
+  // Re-fit the viewport whenever the *set* of nodes changes (switching execution,
+  // or the flow definition arriving late on a deep link). Without this, ReactFlow
+  // keeps the previous pan/zoom and part of a larger graph stays off-screen — the
+  // classic "I don't see all the nodes" after opening a cron/trigger execution.
+  const nodeIdKey = useMemo(() => rfNodes.map(n => n.id).join('|'), [rfNodes]);
+  useEffect(() => {
+    if (!rfInstance.current || rfNodes.length === 0) return;
+    const id = requestAnimationFrame(() => rfInstance.current?.fitView({ padding: 0.18 }));
+    return () => cancelAnimationFrame(id);
+  }, [nodeIdKey]);
 
   const innerByParent = useMemo(() => {
     const map: Record<string, any[]> = {};
@@ -348,6 +379,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
           type: child.data?.type,
           status: nodeStatuses[child.id]?.status ?? 'pending',
           attempt: nodeStatuses[child.id]?.attempt,
+          durationMs: nodeDurations?.[child.id] ?? null,
         }));
         if (!nodeStatuses[n.id]) {
           status = aggregateStatus(innerChildren as any);
@@ -369,6 +401,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
           innerChildren,
           executionStatus: status,
           executionAttempt: attempt,
+          durationMs: nodeDurations?.[nodeId] ?? null,
           isSelected: selectedNodeId === nodeId,
           onSelect: () => {
             const fn = onNodeSelectRef.current;
@@ -379,7 +412,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
       };
     });
     setRfNodes(mapped);
-  }, [visibleNodes, nodeStatuses, expanded, innerByParent, computedPositions, selectedNodeId]);
+  }, [visibleNodes, nodeStatuses, expanded, innerByParent, computedPositions, selectedNodeId, nodeDurations]);
 
   useEffect(() => {
     if (!flowDefinition) return;
@@ -469,6 +502,7 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onInit={inst => { rfInstance.current = inst; }}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.18 }}

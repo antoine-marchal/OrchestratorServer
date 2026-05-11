@@ -12,7 +12,9 @@ import {
   Clock,
   Download,
   Edit3,
+  GanttChartSquare,
   GitBranch,
+  GripHorizontal,
   Loader2,
   Play,
   RefreshCw,
@@ -30,6 +32,8 @@ import SessionTabs from '../SessionTabs';
 import { EditorLayout } from '../editor/EditorLayout';
 import ExecutionGraph from '../execution/ExecutionGraph';
 import ExecutionNodeTree from '../execution/ExecutionNodeTree';
+import ExecutionTimeline from '../execution/ExecutionTimeline';
+import { lastNodeDurations } from '../../utils/execTiming';
 import { ansiToHtml } from '../../utils/ansiToHtml';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
@@ -84,6 +88,39 @@ function getNodeDepth(nodeId: string | null | undefined, parentMap: Map<string, 
 }
 
 
+const ResizeHandle: React.FC<{ height: number; setHeight: (h: number) => void; title?: string }> = ({ height, setHeight, title }) => {
+  const drag = useRef<{ y: number; h: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drag.current) return;
+      setHeight(Math.min(Math.max(drag.current.h + (e.clientY - drag.current.y), 120), 700));
+    };
+    const onUp = () => {
+      if (!drag.current) return;
+      drag.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [setHeight]);
+  return (
+    <div
+      onMouseDown={e => {
+        drag.current = { y: e.clientY, h: height };
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+      }}
+      title={title ?? 'Drag to resize'}
+      className="flex items-center justify-center flex-shrink-0"
+      style={{ height: 9, cursor: 'ns-resize', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
+    >
+      <GripHorizontal size={12} style={{ color: 'var(--text-mute)' }} />
+    </div>
+  );
+};
+
 const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; onSelectExec: (id: string) => void }> = ({
   flow,
   highlightId,
@@ -94,6 +131,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const { canEdit } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
   const [showGraph, setShowGraph] = useState(true);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [graphHeight, setGraphHeight] = useState(280);
+  const [timelineHeight, setTimelineHeight] = useState(240);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Selected node id from the structure tree — when set, log pane filters
@@ -159,6 +199,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const execEdges = useMemo(
     () => (selectedExec?.edges?.length ? selectedExec.edges : flow.edges) ?? [],
     [selectedExec, flow.edges],
+  );
+
+  // Per-node duration (ms) of the LATEST run — fed to the execution graph badge.
+  // (The timeline panel derives its own per-run segments from the log stream.)
+  const nodeDurations = useMemo(
+    () => (selectedExec ? lastNodeDurations(selectedExec.logs) : {}),
+    [selectedExec?.id, selectedExec?.logs],
   );
 
   // Map child-node-id → parent-flow-node-id (for depth + collapse filtering).
@@ -337,6 +384,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                 <GitBranch size={14} />
               </button>
               <button
+                onClick={() => setShowTimeline(t => !t)}
+                className={`tc-icon-btn${showTimeline ? ' active' : ''}`}
+                title={showTimeline ? 'Hide timeline' : 'Show execution timeline (Gantt)'}
+              >
+                <GanttChartSquare size={14} />
+              </button>
+              <button
                 onClick={exportSelectedLogs}
                 className="tc-icon-btn"
                 title="Export logs"
@@ -381,14 +435,35 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               return (
                 <>
                   {showGraph && hasNodes && (
-                    <div className="flex-shrink-0 border-b" style={{ height: 280, borderColor: 'var(--border)', background: 'var(--bg-2)' }}>
-                      <ExecutionGraph
-                        executionId={selectedExec.id}
-                        flowDefinition={{ nodes: execNodes, edges: execEdges }}
-                        selectedNodeId={selectedNodeId}
-                        onNodeSelect={id => setSelectedNodeId(id)}
-                        onStatusesChange={setNodeStatuses}
-                      />
+                    <div className="flex-shrink-0">
+                      <div style={{ height: graphHeight, background: 'var(--bg-2)' }}>
+                        <ExecutionGraph
+                          executionId={selectedExec.id}
+                          flowDefinition={{ nodes: execNodes, edges: execEdges }}
+                          selectedNodeId={selectedNodeId}
+                          onNodeSelect={id => setSelectedNodeId(id)}
+                          onStatusesChange={setNodeStatuses}
+                          nodeDurations={nodeDurations}
+                        />
+                      </div>
+                      <ResizeHandle height={graphHeight} setHeight={setGraphHeight} title="Drag to resize the flow graph" />
+                    </div>
+                  )}
+                  {showTimeline && hasNodes && (
+                    <div className="flex-shrink-0">
+                      <div style={{ height: timelineHeight }}>
+                        <ExecutionTimeline
+                          exec={selectedExec}
+                          nodes={execNodes}
+                          edges={execEdges}
+                          parentMap={parentMap}
+                          nodeNameMap={nodeNameMap}
+                          statuses={nodeStatuses}
+                          selectedNodeId={selectedNodeId}
+                          onSelect={id => setSelectedNodeId(id)}
+                        />
+                      </div>
+                      <ResizeHandle height={timelineHeight} setHeight={setTimelineHeight} title="Drag to resize the timeline" />
                     </div>
                   )}
                   <div className="flex-1 flex overflow-hidden">

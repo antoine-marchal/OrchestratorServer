@@ -8,9 +8,9 @@ import {
 import { Node, Edge } from 'reactflow';
 
 const HIDDEN_TYPES = new Set(['comment', 'variable']);
-const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || '');
+export const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || '');
 
-function NodeIcon({ type }: { type: string }) {
+export function NodeIcon({ type }: { type: string }) {
   switch (type) {
     case 'variable': return <Hash className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />;
     case 'flow': return <GitBranch className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />;
@@ -28,7 +28,7 @@ function NodeIcon({ type }: { type: string }) {
 
 export type NodeExecStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'retrying';
 
-function StatusIcon({ status }: { status?: NodeExecStatus }) {
+export function StatusIcon({ status }: { status?: NodeExecStatus }) {
   switch (status) {
     case 'running': return <Loader2 className="w-3 h-3 animate-spin" style={{ color: 'var(--accent)' }} />;
     case 'success': return <CheckCircle2 className="w-3 h-3" style={{ color: 'var(--ok)' }} />;
@@ -45,7 +45,7 @@ interface NodeRelations {
   succs: { id: string; label: string }[];
 }
 
-function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
+export function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
   const nodeById = new Map<string, Node>();
   for (const n of nodes) nodeById.set(n.id, n);
 
@@ -76,7 +76,7 @@ function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
   return sorted;
 }
 
-function buildRelations(nodes: Node[], edges: Edge[]): Record<string, NodeRelations> {
+export function buildRelations(nodes: Node[], edges: Edge[]): Record<string, NodeRelations> {
   const labelById = new Map<string, string>();
   for (const n of nodes) labelById.set(n.id, n.data?.label || n.id);
   const map: Record<string, NodeRelations> = {};
@@ -96,7 +96,7 @@ function summarize(items: { label: string }[]): string {
   return `${items[0].label} +${items.length - 1}`;
 }
 
-function RelationBadge({ direction, items }: { direction: 'in' | 'out'; items: { id: string; label: string }[] }) {
+export function RelationBadge({ direction, items }: { direction: 'in' | 'out'; items: { id: string; label: string }[] }) {
   if (!items.length) return null;
   const Icon = direction === 'in' ? ArrowDownLeft : ArrowUpRight;
   const tooltip = items.map(i => `${direction === 'in' ? '← ' : '→ '}${i.label}`).join('\n');
