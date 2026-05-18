@@ -61,24 +61,23 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
 
     try {
       const users = getCollection('users');
-      const allUsers: any[] = await users.find({});
+      // Direct lookup via nested field — Mongo uses the apiKeys.keyHash index;
+      // NeDB still scans but the query semantics are identical, so we avoid
+      // dragging every user document into Node memory on every request.
+      const matched: any[] = await users.find({ 'apiKeys.keyHash': keyHash });
       let matchedUser: any = null;
       let matchedKeyId: string | null = null;
-
-      for (const user of allUsers) {
+      for (const user of matched) {
         const apiKey = (user.apiKeys || []).find((k: any) => k.keyHash === keyHash);
-        if (apiKey) {
-          // Check expiry
-          if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) continue;
-          matchedUser = user;
-          matchedKeyId = apiKey.id;
-          // Update lastUsedAt
-          const updatedKeys = user.apiKeys.map((k: any) =>
-            k.id === apiKey.id ? { ...k, lastUsedAt: new Date().toISOString() } : k
-          );
-          await users.update({ _id: user._id }, { $set: { apiKeys: updatedKeys } });
-          break;
-        }
+        if (!apiKey) continue;
+        if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) continue;
+        matchedUser = user;
+        matchedKeyId = apiKey.id;
+        const updatedKeys = user.apiKeys.map((k: any) =>
+          k.id === apiKey.id ? { ...k, lastUsedAt: new Date().toISOString() } : k
+        );
+        await users.update({ _id: user._id }, { $set: { apiKeys: updatedKeys } });
+        break;
       }
 
       if (!matchedUser) {

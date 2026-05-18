@@ -8,8 +8,14 @@ const COLLECTION_NAMES = [
 
 /* ─── Shared interface ───────────────────────────────────────────────────── */
 
+export interface FindOptions {
+  sort?: Record<string, 1 | -1>;
+  skip?: number;
+  limit?: number;
+}
+
 export interface ICollection {
-  find(query?: object): Promise<any[]>;
+  find(query?: object, options?: FindOptions): Promise<any[]>;
   findOne(query: object): Promise<any | null>;
   insert(doc: object): Promise<any>;
   update(query: object, update: object, options?: { multi?: boolean; [k: string]: any }): Promise<number>;
@@ -23,8 +29,12 @@ export interface ICollection {
 class MongoCollection implements ICollection {
   constructor(private col: any) {}
 
-  find(query: object = {}): Promise<any[]> {
-    return this.col.find(query).toArray();
+  find(query: object = {}, options: FindOptions = {}): Promise<any[]> {
+    let cursor = this.col.find(query);
+    if (options.sort) cursor = cursor.sort(options.sort);
+    if (options.skip) cursor = cursor.skip(options.skip);
+    if (options.limit) cursor = cursor.limit(options.limit);
+    return cursor.toArray();
   }
 
   findOne(query: object): Promise<any | null> {
@@ -79,8 +89,14 @@ function promisify<T>(fn: Function, ...args: any[]): Promise<T> {
 class NeDBCollection implements ICollection {
   constructor(private ds: any) {}
 
-  find(query: object = {}): Promise<any[]> {
-    return promisify(this.ds.find.bind(this.ds), query);
+  find(query: object = {}, options: FindOptions = {}): Promise<any[]> {
+    return new Promise((resolve, reject) => {
+      let cursor = this.ds.find(query);
+      if (options.sort) cursor = cursor.sort(options.sort);
+      if (options.skip) cursor = cursor.skip(options.skip);
+      if (options.limit) cursor = cursor.limit(options.limit);
+      cursor.exec((err: any, docs: any[]) => err ? reject(err) : resolve(docs));
+    });
   }
 
   findOne(query: object): Promise<any | null> {
@@ -149,6 +165,24 @@ export async function connectDB(): Promise<void> {
   }
 
   _connected = true;
+
+  // Hot-path indexes. ensureIndex is idempotent on both Mongo and NeDB.
+  try {
+    await _db['users'].ensureIndex({ fieldName: 'apiKeys.keyHash' });
+    await _db['users'].ensureIndex({ fieldName: 'login', unique: true });
+    await _db['workers'].ensureIndex({ fieldName: 'name' });
+    await _db['workers'].ensureIndex({ fieldName: 'lastSeenAt' });
+    await _db['worker_jobs'].ensureIndex({ fieldName: 'workerId' });
+    await _db['worker_jobs'].ensureIndex({ fieldName: 'status' });
+    await _db['worker_jobs'].ensureIndex({ fieldName: 'executionId' });
+    await _db['executions'].ensureIndex({ fieldName: 'flowId' });
+    await _db['executions'].ensureIndex({ fieldName: 'status' });
+    await _db['executions'].ensureIndex({ fieldName: 'startTime' });
+    await _db['schedules'].ensureIndex({ fieldName: 'flowId' });
+    await _db['secrets'].ensureIndex({ fieldName: 'name' });
+  } catch (err: any) {
+    console.warn('[DB] ensureIndex failed:', err.message);
+  }
 }
 
 export function getCollection(name: string): ICollection {

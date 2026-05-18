@@ -133,12 +133,33 @@ function cleanupStopSignal(id: string): void {
   safeUnlinkSync(path.join(INBOX, `${id}.stop`));
 }
 
+// Resolve an artifact's `name` to an absolute path strictly inside `targetDir`.
+// Rejects:
+//   - absolute paths (Windows drive, leading slash, UNC)
+//   - parent traversal (`..` segments) that climb out of targetDir
+//   - empty / whitespace-only names
+// Returns null when the name is unsafe; callers should skip the artifact.
+export function safeArtifactPath(name: string, targetDir: string): string | null {
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  // Normalize separators first so Linux-style "../" on Windows is caught.
+  const normalized = trimmed.replace(/\\/g, '/');
+  if (path.isAbsolute(normalized) || /^[a-zA-Z]:/.test(normalized) || normalized.startsWith('//')) return null;
+  const resolvedTarget = path.resolve(targetDir);
+  const resolved = path.resolve(resolvedTarget, normalized);
+  const rel = path.relative(resolvedTarget, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
 export function extractArtifacts(artifacts: Array<{name: string; data: string}>, targetDir: string): string[] {
   const extracted: string[] = [];
   if (!artifacts || !artifacts.length) return extracted;
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
   for (const artifact of artifacts) {
-    const destPath = path.join(targetDir, artifact.name);
+    const destPath = safeArtifactPath(artifact.name, targetDir);
+    if (!destPath) { console.warn(`[artifact] rejected unsafe name: ${artifact.name}`); continue; }
     const destDir = path.dirname(destPath);
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
     const newData = Buffer.from(artifact.data, 'base64');
@@ -155,7 +176,9 @@ export function extractArtifacts(artifacts: Array<{name: string; data: string}>,
 export function cleanupArtifacts(artifacts: Array<{name: string; data: string}>, targetDir: string): void {
   if (!artifacts || !artifacts.length) return;
   for (const artifact of artifacts) {
-    try { safeUnlinkSync(path.join(targetDir, artifact.name)); } catch { }
+    const p = safeArtifactPath(artifact.name, targetDir);
+    if (!p) continue;
+    try { safeUnlinkSync(p); } catch { }
   }
 }
 

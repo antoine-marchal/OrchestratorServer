@@ -7,15 +7,21 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   try {
     const col = getCollection('executions');
-    let query: any = {};
+    const query: any = {};
     if (req.query.flowId) query.flowId = req.query.flowId;
     if (req.query.status) query.status = req.query.status;
-    let execs = await col.find(query);
-    if (req.query.since) { const since = new Date(req.query.since as string); execs = execs.filter((e: any) => new Date(e.startTime) > since); }
-    execs.sort((a: any, b: any) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-    const limit = parseInt((req.query.limit as string) || '50', 10);
-    const offset = parseInt((req.query.offset as string) || '0', 10);
-    const page = execs.slice(offset, offset + limit);
+    if (req.query.since) query.startTime = { $gt: new Date(req.query.since as string).toISOString() };
+
+    const limit = Math.min(parseInt((req.query.limit as string) || '50', 10) || 50, 500);
+    const offset = Math.max(parseInt((req.query.offset as string) || '0', 10) || 0, 0);
+
+    // DB-level sort + skip + limit — uses the (flowId, startTime) index on
+    // Mongo. NeDB still scans but at least doesn't materialise every doc
+    // through this Node process before slicing.
+    const [page, total] = await Promise.all([
+      col.find(query, { sort: { startTime: -1 }, skip: offset, limit }),
+      col.count(query),
+    ]);
 
     // For still-running executions, the persisted `logs` field on the DB row
     // is empty — logs only get written at completion. Merge the live in-memory
@@ -28,7 +34,7 @@ router.get('/', async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ executions: page, total: execs.length });
+    res.json({ executions: page, total });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
@@ -80,6 +86,16 @@ router.get('/:id', async (req: Request, res: Response) => {
           exec = { ...exec, ...updates };
           await flowsCol.update({ _id: exec.flowId }, { $set: { lastExecution: { id: exec._id, status, startTime: exec.startTime, endTime, duration: updates.duration } } });
         }
+      } else {
+        // No in-memory job — server restarted while it was running, or the
+        // job record was already drained. Reconcile to FAILED so the UI
+        // stops polling instead of spinning forever.
+        const endTime = new Date().toISOString();
+        const duration = new Date(endTime).getTime() - new Date(exec.startTime).getTime();
+        const updates = { status: 'FAILED', endTime, duration, error: 'Execution lost: server restarted while running' };
+        await execsCol.update({ _id: req.params.id }, { $set: updates });
+        exec = { ...exec, ...updates };
+        await flowsCol.update({ _id: exec.flowId }, { $set: { lastExecution: { id: exec._id, status: 'FAILED', startTime: exec.startTime, endTime, duration } } });
       }
     }
     res.json(exec);

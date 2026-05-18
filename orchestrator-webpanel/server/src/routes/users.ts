@@ -178,7 +178,23 @@ router.get('/authProxy', async (req: Request, res: Response) => {
   }
 
   try {
-    const validateUrl = `${proxyUrl}?${paramName}=${encodeURIComponent(ticket)}`;
+    // Some SSO/CAS servers require the `service` parameter on the validation
+    // call to match the URL the ticket was originally issued for. Build it
+    // from PROTOCOL + DOMAIN + PORT so it matches what the browser used.
+    const protocol = (process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true') ? 'https' : 'http';
+    const domain = process.env.DOMAIN || process.env.ORCHESTRATOR_DOMAIN || 'http://localhost';
+    const port = process.env.PORT ? parseInt(process.env.PORT) : 3939;
+    // If DOMAIN already includes scheme, use it as-is; otherwise prepend.
+    let serviceBase: string;
+    if (/^https?:\/\//i.test(domain)) {
+      serviceBase = domain.replace(/\/$/, '');
+    } else {
+      serviceBase = `${protocol}://${domain.replace(/\/$/, '')}`;
+    }
+    // Only append port if not already present in serviceBase.
+    const hasPort = /:\d+$/.test(serviceBase.replace(/^https?:\/\//, ''));
+    const serviceUrl = hasPort ? serviceBase : `${serviceBase}:${port}`;
+    const validateUrl = `${proxyUrl}?${paramName}=${encodeURIComponent(ticket)}&service=${encodeURIComponent(serviceUrl)}`;
     const body = await new Promise<string>((resolve, reject) => {
       const client = validateUrl.startsWith('https://') ? https : http;
       client.get(validateUrl, (response) => {

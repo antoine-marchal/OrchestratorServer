@@ -1,4 +1,4 @@
-import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, extractArtifacts, cleanupArtifacts } from './nodeExecutor';
+import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts } from './nodeExecutor';
 import { getCollection } from '../db/index';
 import { dispatchToWorker } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
@@ -558,9 +558,30 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
     const status = j.stopRequested ? 'KILLED' : j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
     const logBuf = jobLogBuffers.get(jobId) || [];
+    // Sweep stale `running`/`retrying` node statuses: when the flow ends
+    // (kill, fatal error, server-side abort), per-node `success`/`failed`
+    // emit_status calls may never have fired for nodes still in flight.
+    // Without this they'd stay spinning forever in the execution graph.
+    const finalNodeState = status === 'SUCCESS' ? 'success' : status === 'KILLED' ? 'killed' : 'failed';
+    const ns = executionNodeStatuses.get(jobId) || executionNodeStatuses.get(executionId);
+    if (ns) {
+      for (const [nodeId, payload] of Object.entries(ns)) {
+        if (payload && (payload.status === 'running' || payload.status === 'retrying')) {
+          (payload as any).status = finalNodeState;
+          (payload as any).ts = Date.now();
+          // Broadcast to any live SSE listeners so the graph overlay updates immediately.
+          const listeners = executionSSEListeners.get(jobId) || executionSSEListeners.get(executionId);
+          if (listeners) {
+            for (const res of listeners) {
+              try { res.write(`data: ${JSON.stringify({ ...payload, nodeId })}\n\n`); } catch { /* client gone */ }
+            }
+          }
+        }
+      }
+    }
     // Snapshot final per-node statuses so the graph can re-render them on
     // future visits (after the in-memory buffer is freed).
-    const nodeStatuses = executionNodeStatuses.get(jobId) || executionNodeStatuses.get(executionId) || {};
+    const nodeStatuses = ns || {};
 
     await execsCol.update({ _id: executionId }, { $set: { status, endTime, duration, output: j.output, error: j.error, logs: logBuf, nodeStatuses } });
     await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status, startTime, endTime, duration } } });

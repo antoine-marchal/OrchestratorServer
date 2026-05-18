@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -23,6 +25,30 @@ import { v4 as uuidv4 } from 'uuid';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3939;
 
+/* ─── Production secret guards ──────────────────────────────────────────────
+ * Refuse to start in production if any secret is at its placeholder default.
+ * A misconfigured prod deploy with the dev fallbacks would let any attacker
+ * mint admin JWTs and decrypt every stored secret, so this is a hard fail.
+ */
+const DEFAULT_SECRETS: Array<{ name: string; defaults: string[] }> = [
+  { name: 'JWT_SECRET', defaults: ['change_me_in_production', 'orchestrator-jwt-secret-change-in-prod', ''] },
+  { name: 'ORCHESTRATOR_MASTER_KEY', defaults: ['change_me_in_production', 'orchestrator-default-dev-key-change-in-prod', ''] },
+  { name: 'WORKER_REGISTRATION_SECRET', defaults: ['change_me_in_production'] },
+  { name: 'ADMIN_PASSWORD', defaults: ['admin'] },
+];
+if (process.env.NODE_ENV === 'production') {
+  const offenders = DEFAULT_SECRETS.filter(s => {
+    const v = process.env[s.name] ?? '';
+    return s.defaults.includes(v);
+  });
+  if (offenders.length) {
+    console.error('\n[Startup] FATAL: refusing to start in production with default/placeholder secrets:');
+    for (const o of offenders) console.error(`  - ${o.name}`);
+    console.error('\nSet each variable to a long random value in the environment, then restart.\n');
+    process.exit(1);
+  }
+}
+
 /* ─── pkg asset extraction ──────────────────────────────────────────────── */
 
 const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
@@ -44,8 +70,36 @@ function extractGroovyJar(): void {
 extractGroovyJar();
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+
+// CORS: in production, restrict to the configured DOMAIN (+ any extras in
+// ORCHESTRATOR_CORS_ORIGINS, comma-separated). Same-origin requests from the
+// bundled web panel always work because the browser does not send Origin for
+// same-origin fetches. Workers use Bearer tokens and aren't browser-origin
+// constrained, so they're unaffected.
+const corsOrigins = (() => {
+  const list: string[] = [];
+  if (process.env.DOMAIN) list.push(process.env.DOMAIN.replace(/\/$/, ''));
+  if (process.env.ORCHESTRATOR_CORS_ORIGINS) {
+    for (const o of process.env.ORCHESTRATOR_CORS_ORIGINS.split(',')) {
+      const t = o.trim().replace(/\/$/, '');
+      if (t) list.push(t);
+    }
+  }
+  return list;
+})();
+if (process.env.NODE_ENV === 'production' && corsOrigins.length) {
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      const o = origin.replace(/\/$/, '');
+      cb(null, corsOrigins.some(allowed => o === allowed || o.startsWith(allowed)));
+    },
+    credentials: true,
+  }));
+} else {
+  app.use(cors());
+}
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '50mb' }));
 
 // Serve webpanel static files (if built).
 // When packaged with pkg, prepare-pkg copies client/dist → dist/webpanel/
@@ -145,10 +199,42 @@ async function migrateLegacyFlowSchedules(): Promise<void> {
   }
 }
 
+// On startup, mark every execution still flagged RUNNING (and every worker_job
+// still pending/acked/running) as FAILED. The in-memory `jobs` map and the
+// completion-monitor setInterval are reset on every process restart, so an
+// exec that was RUNNING when the server died will never transition. Without
+// this, the UI shows a permanently-spinning execution and FlowsList badges
+// stay "running" forever.
+async function reconcileStrandedExecutions(): Promise<void> {
+  try {
+    const execsCol = getCollection('executions');
+    const flowsCol = getCollection('flows');
+    const workerJobsCol = getCollection('worker_jobs');
+    const stranded: any[] = await execsCol.find({ status: 'RUNNING' });
+    const now = new Date().toISOString();
+    const reason = 'Server restarted while execution was running';
+    for (const e of stranded) {
+      const duration = new Date(now).getTime() - new Date(e.startTime).getTime();
+      await execsCol.update({ _id: e._id }, { $set: { status: 'FAILED', endTime: now, duration, error: reason } });
+      await flowsCol.update({ _id: e.flowId }, { $set: { lastExecution: { id: e._id, status: 'FAILED', startTime: e.startTime, endTime: now, duration } } });
+    }
+    const orphanedJobs = await workerJobsCol.find({ status: { $in: ['pending', 'acked', 'running'] } });
+    for (const j of orphanedJobs) {
+      await workerJobsCol.update({ _id: j._id }, { $set: { status: 'cancelled', error: reason, completedAt: now } });
+    }
+    if (stranded.length || orphanedJobs.length) {
+      console.log(`[Startup] Reconciled ${stranded.length} stranded execution(s) and ${orphanedJobs.length} worker job(s)`);
+    }
+  } catch (err) {
+    console.warn('[Startup] Stranded execution reconciliation failed:', (err as Error).message);
+  }
+}
+
 async function start(): Promise<void> {
   await connectDB();
   await seedDefaultData();
   await migrateLegacyFlowSchedules();
+  await reconcileStrandedExecutions();
 
   // Set executor function for cron scheduler
   setExecuteFlowFn(executeOrchestratorFlow);
@@ -191,11 +277,72 @@ async function start(): Promise<void> {
     } catch { }
   }, 60000);
 
-  const server = app.listen(PORT, () => {
-    console.log(`\n🚀 Orchestrator started on port ${PORT}`);
-    console.log(`   API: http://localhost:${PORT}/api/v1`);
-    console.log(`   Env: ${process.env.NODE_ENV || 'development'}`);
-  });
+  // Worker reaper: when a worker stops heartbeating but had in-flight jobs,
+  // those worker_jobs would stay 'running' (and the parent execution would
+  // sit waiting on the 5-min hard timeout in dispatchToWorker). Sweep every
+  // 30s — workers untouched for > WORKER_OFFLINE_TIMEOUT_MS get their pending
+  // jobs flipped to 'cancelled' with a reason; the awaiting executor then
+  // rejects on its next poll.
+  const WORKER_OFFLINE_TIMEOUT_MS = parseInt(process.env.WORKER_OFFLINE_TIMEOUT_MS || '60000');
+  setInterval(async () => {
+    try {
+      const workersCol = getCollection('workers');
+      const jobsCol = getCollection('worker_jobs');
+      const cutoff = new Date(Date.now() - WORKER_OFFLINE_TIMEOUT_MS).toISOString();
+      const offlineWorkers: any[] = await workersCol.find({ lastSeenAt: { $lt: cutoff } });
+      if (!offlineWorkers.length) return;
+      const now = new Date().toISOString();
+      for (const w of offlineWorkers) {
+        const stale: any[] = await jobsCol.find({
+          workerId: w._id,
+          status: { $in: ['pending', 'acked', 'running'] },
+        });
+        for (const j of stale) {
+          await jobsCol.update(
+            { _id: j._id },
+            { $set: { status: 'cancelled', error: `Worker "${w.name}" offline`, completedAt: now } },
+          );
+          // Notify in-memory awaiter so dispatchToWorker resolves immediately
+          // rather than waiting for its 5-minute hard timeout.
+          try {
+            const { pendingWorkerJobs } = await import('./routes/workers');
+            const pending = pendingWorkerJobs.get(j._id);
+            if (pending) {
+              pendingWorkerJobs.delete(j._id);
+              pending.reject(new Error(`Worker "${w.name}" went offline mid-job`));
+            }
+          } catch { /* non-fatal */ }
+        }
+        if (stale.length) {
+          console.log(`[Reaper] worker "${w.name}" offline — cancelled ${stale.length} stale job(s)`);
+        }
+      }
+    } catch (err) {
+      console.warn('[Reaper] sweep failed:', (err as Error).message);
+    }
+  }, 30000);
+
+  const httpsEnabled = process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true';
+  let server: http.Server | https.Server;
+  if (httpsEnabled) {
+    const certPath = process.env.HTTPS_CERT || path.join(WORK_DIR, 'certs', 'server.crt');
+    const keyPath = process.env.HTTPS_KEY || path.join(WORK_DIR, 'certs', 'server.key');
+    if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+      throw new Error(`HTTPS enabled but cert/key not found:\n  cert: ${certPath}\n  key:  ${keyPath}\nRun scripts/gen-cert.bat to generate a self-signed pair.`);
+    }
+    const credentials = { cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) };
+    server = https.createServer(credentials, app).listen(PORT, () => {
+      console.log(`\n🚀 Orchestrator started on port ${PORT} (HTTPS)`);
+      console.log(`   API: https://localhost:${PORT}/api/v1`);
+      console.log(`   Env: ${process.env.NODE_ENV || 'development'}`);
+    });
+  } else {
+    server = app.listen(PORT, () => {
+      console.log(`\n🚀 Orchestrator started on port ${PORT}`);
+      console.log(`   API: http://localhost:${PORT}/api/v1`);
+      console.log(`   Env: ${process.env.NODE_ENV || 'development'}`);
+    });
+  }
 
   const shutdown = (signal: string) => {
     console.log(`\nReceived ${signal}. Shutting down...`);

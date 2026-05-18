@@ -7,6 +7,9 @@
     "dev": "ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "gen-cert": "scripts\\gen-cert.bat",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "pkg:prepare": "node scripts/prepare-pkg.mjs",
     "pkg:win": "npm run pkg:prepare && pkg dist/server.js --config package.json --targets node18-win-x64 --output ../../release/orchestrator-server-win.exe && node scripts/patch-exe.mjs",
     "pkg:linux": "npm run pkg:prepare && pkg dist/server.js --config package.json --targets node18-linux-x64 --output ../../release/orchestrator-server-linux",
@@ -50,7 +53,8 @@
     "@yao-pkg/pkg": "^5.16.1",
     "resedit": "^3.0.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.3"
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">=18"

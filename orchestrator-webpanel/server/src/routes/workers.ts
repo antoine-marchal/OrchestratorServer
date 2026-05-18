@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { getCollection } from '../services/db/index';
 import { authMiddleware } from '../middleware/auth';
@@ -13,8 +14,64 @@ function isOnline(lastSeenAt: string): boolean {
   return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
 }
 
-// Workers call this on startup to register. Open endpoint — no API key required.
-// Optional: set WORKER_REGISTRATION_SECRET env var to restrict who can register.
+// Per-worker bearer token middleware. /register is the only worker endpoint
+// without it. We hash the token at rest so a DB leak doesn't expose live
+// worker credentials; constant-time compare to avoid trivial timing oracles.
+function hashWorkerToken(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+async function workerAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const workerId = req.params.id;
+  const auth = req.headers['authorization'];
+  if (!auth || typeof auth !== 'string' || !auth.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Missing worker token' });
+    return;
+  }
+  const raw = auth.slice(7).trim();
+  if (!raw) { res.status(401).json({ error: 'Empty worker token' }); return; }
+  try {
+    const col = getCollection('workers');
+    const w = await col.findOne({ _id: workerId });
+    if (!w) { res.status(404).json({ error: 'Worker not found' }); return; }
+    // Legacy workers registered before per-worker tokens existed have no
+    // tokenHash. Accept once so they keep working, then prompt re-register.
+    if (!w.tokenHash) {
+      console.warn(`[workerAuth] legacy worker "${w.name}" missing tokenHash; allowing once`);
+      next();
+      return;
+    }
+    const got = hashWorkerToken(raw);
+    const a = Buffer.from(got, 'hex');
+    const b = Buffer.from(w.tokenHash, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      res.status(401).json({ error: 'Invalid worker token' });
+      return;
+    }
+    next();
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// In-memory long-poll waiters per worker. When a new job is dispatched, we
+// resolve any parked GET /jobs requests so the worker picks it up immediately
+// instead of waiting for the next short-poll tick.
+const jobWaiters = new Map<string, Set<() => void>>();
+export function notifyWorkerJob(workerId: string): void {
+  const set = jobWaiters.get(workerId);
+  if (!set) return;
+  for (const resolve of [...set]) {
+    set.delete(resolve);
+    try { resolve(); } catch { /* ignore */ }
+  }
+  if (!set.size) jobWaiters.delete(workerId);
+}
+
+// Workers call this on startup to register. Open endpoint guarded only by
+// WORKER_REGISTRATION_SECRET. Returns a fresh per-worker bearer token that
+// the worker must send on every subsequent call — this is what /heartbeat,
+// /jobs, /log, /complete, etc. authenticate against.
 router.post('/register', async (req: Request, res: Response) => {
   const { name, platform = 'unknown', secret, group } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' }) as any;
@@ -27,61 +84,94 @@ router.post('/register', async (req: Request, res: Response) => {
   const col = getCollection('workers');
   const now = new Date().toISOString();
 
-  // Reuse record if worker re-registers with same name
+  // Mint a fresh token on every register call — re-registering a worker
+  // (e.g., after restart) rotates its credential automatically.
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashWorkerToken(rawToken);
+
   const existing = await col.findOne({ name });
   if (existing) {
-    const updateFields: any = { platform, status: 'online', lastSeenAt: now };
+    const updateFields: any = { platform, status: 'online', lastSeenAt: now, tokenHash };
     if (group !== undefined) updateFields.group = group;
     await col.update({ _id: existing._id }, { $set: updateFields });
-    return res.json({ workerId: existing._id, status: 'online' });
+    return res.json({ workerId: existing._id, token: rawToken, status: 'online' });
   }
 
   const workerId = uuidv4();
   await col.insert({
     _id: workerId, name, platform, group: group || undefined,
     status: 'online', lastSeenAt: now, registeredAt: now,
+    tokenHash,
   });
-  res.json({ workerId, status: 'online' });
+  res.json({ workerId, token: rawToken, status: 'online' });
 });
 
 // Workers heartbeat — keeps status online
-router.post('/:id/heartbeat', async (req: Request, res: Response) => {
+router.post('/:id/heartbeat', workerAuth, async (req: Request, res: Response) => {
   const col = getCollection('workers');
   await col.update({ _id: req.params.id }, { $set: { status: 'online', lastSeenAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
 
-// Workers poll this for pending jobs
-router.get('/:id/jobs', async (req: Request, res: Response) => {
-  const col = getCollection('workers');
-  const worker = await col.findOne({ _id: req.params.id });
-  if (!worker) return res.status(404).json({ error: 'Worker not found' }) as any;
-
-  // Update heartbeat on every poll
-  await col.update({ _id: req.params.id }, { $set: { status: 'online', lastSeenAt: new Date().toISOString() } });
-
+// Workers long-poll this for pending jobs. The connection is held open until
+// either (a) a pending job exists for the worker, or (b) WAIT_MS elapses.
+// Cuts average dispatch latency from POLL_INTERVAL_MS (~2s) to single-digit ms
+// without burning request count.
+const LONG_POLL_WAIT_MS = parseInt(process.env.WORKER_LONG_POLL_MS || '25000');
+router.get('/:id/jobs', workerAuth, async (req: Request, res: Response) => {
+  const workersCol = getCollection('workers');
   const jobsCol = getCollection('worker_jobs');
-  const jobs = await jobsCol.find({ workerId: req.params.id, status: 'pending' });
-  res.json({ jobs });
+  const workerId = req.params.id;
+  const worker = await workersCol.findOne({ _id: workerId });
+  if (!worker) return res.status(404).json({ error: 'Worker not found' }) as any;
+  await workersCol.update({ _id: workerId }, { $set: { status: 'online', lastSeenAt: new Date().toISOString() } });
+
+  const queryJobs = () => jobsCol.find({ workerId, status: 'pending' });
+
+  let jobsList = await queryJobs();
+  if (jobsList.length || req.query.wait === '0') {
+    res.json({ jobs: jobsList });
+    return;
+  }
+
+  // Park the connection. Resolves when notifyWorkerJob() fires (new dispatch)
+  // or the wait deadline hits. Client-side close is handled too — don't hang
+  // request handler memory if the worker walks away.
+  await new Promise<void>(resolve => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      const set = jobWaiters.get(workerId);
+      if (set) { set.delete(finish); if (!set.size) jobWaiters.delete(workerId); }
+      clearTimeout(timer);
+      req.removeListener('close', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, LONG_POLL_WAIT_MS);
+    req.on('close', finish);
+    if (!jobWaiters.has(workerId)) jobWaiters.set(workerId, new Set());
+    jobWaiters.get(workerId)!.add(finish);
+  });
+
+  if (res.writableEnded) return;
+  jobsList = await queryJobs();
+  res.json({ jobs: jobsList });
 });
 
-// Worker acks a job (preventing reassignment)
-router.post('/:id/jobs/:jobId/ack', async (req: Request, res: Response) => {
+router.post('/:id/jobs/:jobId/ack', workerAuth, async (req: Request, res: Response) => {
   const col = getCollection('worker_jobs');
   await col.update({ _id: req.params.jobId, workerId: req.params.id }, { $set: { status: 'acked', ackedAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
 
-// Worker reports job running
-router.post('/:id/jobs/:jobId/status', async (req: Request, res: Response) => {
+router.post('/:id/jobs/:jobId/status', workerAuth, async (req: Request, res: Response) => {
   const col = getCollection('worker_jobs');
   await col.update({ _id: req.params.jobId, workerId: req.params.id }, { $set: { status: 'running', startedAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
 
-// Worker streams a chunk of stdout/stderr for an in-flight job.
-// Body: { type: 'log' | 'error', message: string }
-router.post('/:id/jobs/:jobId/log', async (req: Request, res: Response) => {
+router.post('/:id/jobs/:jobId/log', workerAuth, async (req: Request, res: Response) => {
   const { type, message } = req.body || {};
   if (!message) return res.json({ ok: true }) as any;
 
@@ -104,7 +194,7 @@ router.post('/:id/jobs/:jobId/log', async (req: Request, res: Response) => {
 // placeholders inside the node's code. The worker calls this right before it runs
 // the node, so plaintext lives only transiently in the worker process (and over
 // the already-trusted worker channel), not at rest in the job queue.
-router.post('/:id/jobs/:jobId/secrets', async (req: Request, res: Response) => {
+router.post('/:id/jobs/:jobId/secrets', workerAuth, async (req: Request, res: Response) => {
   try {
     const col = getCollection('worker_jobs');
     const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
@@ -118,28 +208,42 @@ router.post('/:id/jobs/:jobId/secrets', async (req: Request, res: Response) => {
   }
 });
 
-// Worker reports job complete
-router.post('/:id/jobs/:jobId/complete', async (req: Request, res: Response) => {
+// Worker reports job complete. Idempotent: a worker that retries `/complete`
+// after the parent execution was already killed (or after a server restart
+// that lost the in-memory awaiting promise) still gets a 200 — we always
+// persist the outcome on the worker_job record, then best-effort notify.
+router.post('/:id/jobs/:jobId/complete', workerAuth, async (req: Request, res: Response) => {
   const { status, output, error, variables } = req.body;
   const col = getCollection('worker_jobs');
   const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
   if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
 
-  await col.update({ _id: req.params.jobId }, { $set: { status, output, variables, error, completedAt: new Date().toISOString() } });
+  // Only persist if we're going from a non-terminal state — protects against
+  // a late-arriving `failed` overwriting a `success` already recorded.
+  if (!['success', 'failed', 'cancelled'].includes(job.status)) {
+    await col.update(
+      { _id: req.params.jobId },
+      { $set: { status, output, variables, error, completedAt: new Date().toISOString() } },
+    );
+  }
 
-  // Notify any awaiting execution flow (resolve the pending promise via callback)
+  // Notify the in-memory awaiter (if any). After a server restart the
+  // pendingWorkerJobs entry is gone — that's fine, the executor's catch
+  // path (worker_job poller / 5-min timeout) will have already rejected.
   const pending = pendingWorkerJobs.get(req.params.jobId);
   if (pending) {
     pendingWorkerJobs.delete(req.params.jobId);
-    if (status === 'success') pending.resolve({ output, variables: variables || {} });
-    else pending.reject(new Error(error || 'Worker job failed'));
+    try {
+      if (status === 'success') pending.resolve({ output, variables: variables || {} });
+      else pending.reject(new Error(error || 'Worker job failed'));
+    } catch { /* awaiter already settled */ }
   }
 
   res.json({ ok: true });
 });
 
 // Worker deregisters on shutdown
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', workerAuth, async (req: Request, res: Response) => {
   const col = getCollection('workers');
   await col.update({ _id: req.params.id }, { $set: { status: 'offline' } });
   res.json({ ok: true });
@@ -203,6 +307,9 @@ export async function dispatchToWorker(workerId: string, node: any, executionId:
     artifacts: artifacts && artifacts.length ? artifacts : undefined,
     status: 'pending', createdAt: new Date().toISOString(),
   });
+
+  // Wake any worker currently long-polling /jobs so dispatch latency is ~0.
+  notifyWorkerJob(workerId);
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();

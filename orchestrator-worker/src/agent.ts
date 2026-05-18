@@ -51,13 +51,19 @@ const http: AxiosInstance = axios.create({
 
 /* ─── Registration ──────────────────────────────────────────────────────── */
 
-async function register(): Promise<string> {
+async function register(): Promise<{ workerId: string; token: string }> {
   const res = await http.post('/api/v1/workers/register', {
     name: WORKER_NAME,
     secret: WORKER_SECRET,
     platform: process.platform,   // 'win32' | 'linux' | 'darwin'
   });
-  return res.data.workerId;
+  return { workerId: res.data.workerId, token: res.data.token || '' };
+}
+
+// Attach the per-worker token issued at register on every subsequent request.
+function setWorkerToken(token: string): void {
+  if (token) http.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  else delete http.defaults.headers.common['Authorization'];
 }
 
 /* ─── Job polling & execution ───────────────────────────────────────────── */
@@ -68,9 +74,14 @@ async function register(): Promise<string> {
 let activeExecutionId: string | null = null;
 let runningJobs = 0;
 
+// Long-poll request timeout — must exceed the server's WORKER_LONG_POLL_MS
+// (default 25s) plus a small margin, otherwise axios cancels before the
+// server replies and we spin in a tight error loop.
+const POLL_HTTP_TIMEOUT_MS = parseInt(process.env.WORKER_LONG_POLL_HTTP_TIMEOUT_MS || '35000');
+
 async function poll(workerId: string): Promise<void> {
   try {
-    const res = await http.get(`/api/v1/workers/${workerId}/jobs`);
+    const res = await http.get(`/api/v1/workers/${workerId}/jobs`, { timeout: POLL_HTTP_TIMEOUT_MS });
     const jobs: any[] = res.data.jobs || [];
     for (const job of jobs) {
       if (
@@ -94,6 +105,7 @@ async function poll(workerId: string): Promise<void> {
     if (e.code !== 'ECONNREFUSED' && e.code !== 'ETIMEDOUT') {
       console.error('[worker] poll error:', e.message);
     }
+    throw e; // surface to pollLoop so it can back off / re-register
   }
 }
 
@@ -131,11 +143,27 @@ async function resolveSecrets(
   return code.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
 }
 
+// Reject absolute paths and any `..` traversal that escapes EXECUTION_DIR.
+// Returns null when the artifact name is unsafe; callers should skip it.
+function safeArtifactPath(name: string): string | null {
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/\\/g, '/');
+  if (path.isAbsolute(normalized) || /^[a-zA-Z]:/.test(normalized) || normalized.startsWith('//')) return null;
+  const resolvedTarget = path.resolve(EXECUTION_DIR);
+  const resolved = path.resolve(resolvedTarget, normalized);
+  const rel = path.relative(resolvedTarget, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return resolved;
+}
+
 function extractArtifacts(artifacts: Array<{name: string; data: string}>): void {
   if (!artifacts || !artifacts.length) return;
   if (!fs.existsSync(EXECUTION_DIR)) fs.mkdirSync(EXECUTION_DIR, { recursive: true });
   for (const artifact of artifacts) {
-    const destPath = path.join(EXECUTION_DIR, artifact.name);
+    const destPath = safeArtifactPath(artifact.name);
+    if (!destPath) { console.warn(`[worker] rejected unsafe artifact name: ${artifact.name}`); continue; }
     const destDir = path.dirname(destPath);
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
     const newData = Buffer.from(artifact.data, 'base64');
@@ -151,10 +179,9 @@ function extractArtifacts(artifacts: Array<{name: string; data: string}>): void 
 function cleanupArtifacts(artifacts: Array<{name: string; data: string}>): void {
   if (!artifacts || !artifacts.length) return;
   for (const artifact of artifacts) {
-    try {
-      const p = path.join(EXECUTION_DIR, artifact.name);
-      if (fs.existsSync(p)) fs.unlinkSync(p);
-    } catch { }
+    const p = safeArtifactPath(artifact.name);
+    if (!p) continue;
+    try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch { }
   }
 }
 
@@ -206,9 +233,15 @@ async function main(): Promise<void> {
   console.log(`[worker] Execution mode: ${EXECUTION_MODE}`);
 
   let workerId = '';
+  const registerAndAuth = async () => {
+    const { workerId: id, token } = await register();
+    workerId = id;
+    setWorkerToken(token);
+    return id;
+  };
   while (true) {
     try {
-      workerId = await register();
+      await registerAndAuth();
       console.log(`[worker] Registered as ${workerId}`);
       break;
     } catch (e: any) {
@@ -217,7 +250,35 @@ async function main(): Promise<void> {
     }
   }
 
-  setInterval(() => poll(workerId), POLL_INTERVAL_MS);
+  // Long-poll loop: re-issue immediately after each poll completes. The
+  // server holds the connection open up to ~25s, so this naturally throttles
+  // and we don't need POLL_INTERVAL_MS as a wait — only as a back-off after
+  // an error/disconnect.
+  let pollErrCount = 0;
+  const pollLoop = async () => {
+    while (true) {
+      try {
+        await poll(workerId);
+        pollErrCount = 0;
+      } catch (e: any) {
+        pollErrCount++;
+        // On 401 the token was invalidated (server restart / re-register
+        // elsewhere). Re-register transparently to get a fresh token.
+        if (e?.response?.status === 401) {
+          try {
+            await registerAndAuth();
+            pollErrCount = 0;
+            continue;
+          } catch (re: any) {
+            console.error('[worker] Re-registration failed:', re.message);
+          }
+        }
+        const wait = Math.min(POLL_INTERVAL_MS * Math.pow(2, Math.min(pollErrCount, 6)), 60000);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  };
+  pollLoop();
 
   setInterval(async () => {
     try { await http.post(`/api/v1/workers/${workerId}/heartbeat`); } catch {}
