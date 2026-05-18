@@ -642,20 +642,15 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
   const codeWithInput = `let output = "";\nconst input = ${JSON.stringify(input)};\nconst __variables = ${JSON.stringify(variables)};\nimport fs from 'fs';\n${variableDeclarations}\n${userCode}\n${variableCapture}\nfs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf8');\n`;
   fs.writeFileSync(tempScriptPath, codeWithInput, 'utf8');
 
-  // Spawn the user script's Node process WITHOUT `shell: true`. Going through
-  // cmd.exe makes the script process a grandchild of the shell and corrupts
-  // the file-descriptor table the child needs — in particular, Playwright's
-  // `--remote-debugging-pipe` mode opens fds 3/4 between the script process
-  // and the browser; once those are non-inheritable the pipe closes the
-  // instant Edge connects back, surfacing as
-  //   "browserType.launch: Target page, context or browser has been closed".
-  // Node's spawn handles `.exe`/PATHEXT resolution itself since Node 18, so
-  // a bare `node` command still works on Windows without the shell.
+  // Spawn the user script's Node process directly (no shell). Going through
+  // cmd.exe corrupted the file-descriptor table Playwright's pipe mode needs.
+  // Leave stdio at defaults (pipe) and don't pass `windowsHide`: both can
+  // leave the script process without an attached console session, which
+  // breaks Edge's `--remote-debugging-pipe` handshake on Windows and surfaces
+  // as `browserType.launch: Target page, context or browser has been closed`.
   const child = spawn(nodeExecutablePath, [tempScriptPath], {
     cwd: execCwd,
     shell: false,
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
     timeout: JS_BACKEND_TIMEOUT_MS || undefined,
   });
   let stdout = '', stderr = '';
