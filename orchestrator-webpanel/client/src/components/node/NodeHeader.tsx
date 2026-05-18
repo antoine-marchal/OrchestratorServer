@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Code2,
   Hash,
@@ -40,6 +41,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   onExecute,
   onDelete,
 }) => {
+  const navigate = useNavigate();
   const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath, updateNodeData } = useFlowStore();
   const sessionStore = useSessionStore();
 
@@ -62,6 +64,11 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   }[onErrorMode];
 
   const handleEditFlowNode = async () => {
+    // flowRef: navigate to the referenced flow in the library
+    if (data.flowRef) {
+      navigate(`/flows/${data.flowRef}?tab=edit`);
+      return;
+    }
     // If flow node has a linked session that exists, switch to it
     if (data.linkedSessionId) {
       const existingSession = sessionStore.sessions.find(s => s.id === data.linkedSessionId);

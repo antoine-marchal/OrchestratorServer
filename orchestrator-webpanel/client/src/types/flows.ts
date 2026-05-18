@@ -2,6 +2,11 @@
 
 export type ExecutionStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'KILLED' | 'QUEUED';
 
+export interface FlowArtifact {
+  name: string;
+  data: string; // base64
+}
+
 export interface OrchestratorFlow {
   id: string;
   name: string;
@@ -10,6 +15,7 @@ export interface OrchestratorFlow {
   workerId: string;
   nodes: any[];
   edges: any[];
+  artifacts?: FlowArtifact[];
   schedule: { cron: string; enabled: boolean; timezone: string } | null;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +46,7 @@ export interface FlowExecution {
   jobId: string;
   status: ExecutionStatus;
   triggeredBy: 'manual' | 'schedule';
+  triggeredUser?: string;
   startTime: string;
   endTime: string | null;
   duration: number | null;

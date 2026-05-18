@@ -1,6 +1,35 @@
 import { Node } from 'reactflow';
 import { useSessionStore } from '../store/sessionStore';
 
+export interface FlowNodeFromLibraryParams {
+  flowId: string;
+  flowName: string;
+  position: { x: number; y: number };
+  setNodes: (update: (nodes: Node[]) => Node[]) => void;
+}
+
+export const handleFlowNodeFromLibrary = ({
+  flowId,
+  flowName,
+  position,
+  setNodes,
+}: FlowNodeFromLibraryParams) => {
+  const newNode = {
+    id: `node-${Date.now()}`,
+    type: 'custom',
+    position: position || { x: 100, y: 100 },
+    data: {
+      label: flowName,
+      type: 'flow' as const,
+      code: '',
+      flowRef: flowId,
+      isRelativePath: false,
+    },
+    draggable: true,
+  };
+  setNodes((nds) => [...nds, newNode]);
+};
+
 export interface FlowNodeFromSessionParams {
   sessionId: string;
   sessionName: string;

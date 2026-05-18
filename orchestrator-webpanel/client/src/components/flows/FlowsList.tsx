@@ -29,12 +29,24 @@ function formatRelativeTime(iso: string): string {
 }
 
 function exportFlowFile(flow: OrchestratorFlow) {
+  const allFlows = useFlowLibraryStore.getState().flows;
+  const resolvedNodes = (flow.nodes || []).map((node: any) => {
+    if (node.data?.flowRef) {
+      const ref = allFlows.find((f: any) => f.id === node.data.flowRef);
+      if (ref) {
+        const { flowRef, ...dataWithoutRef } = node.data;
+        return { ...node, data: { ...dataWithoutRef, code: JSON.stringify({ nodes: ref.nodes || [], edges: ref.edges || [] }) } };
+      }
+    }
+    return node;
+  });
   const data = {
     name: flow.name,
     namespace: flow.namespace,
     description: flow.description,
-    nodes: flow.nodes || [],
+    nodes: resolvedNodes,
     edges: flow.edges || [],
+    artifacts: flow.artifacts || [],
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -71,7 +83,23 @@ const FlowsList: React.FC = () => {
   const [scheduleFlow, setScheduleFlow] = useState<OrchestratorFlow | null>(null);
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const startRename = useCallback((flow: OrchestratorFlow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(flow.id);
+    setRenameValue(flow.name);
+  }, []);
+
+  const commitRename = useCallback((flowId: string) => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== flows.find(f => f.id === flowId)?.name) {
+      updateFlow(flowId, { name: trimmed });
+    }
+    setRenamingId(null);
+  }, [renameValue, flows, updateFlow]);
 
   const filtered = flows.filter(f => {
     if (!search) return true;
@@ -154,8 +182,8 @@ const FlowsList: React.FC = () => {
           description: data.description || '',
           workerId: '',
         });
-        if (data.nodes || data.edges) {
-          updateFlow(flow.id, { nodes: data.nodes || [], edges: data.edges || [] });
+        if (data.nodes || data.edges || data.artifacts) {
+          updateFlow(flow.id, { nodes: data.nodes || [], edges: data.edges || [], artifacts: data.artifacts || [] });
         }
         navigate(`/flows/${flow.id}?tab=edit`);
       } catch {
@@ -257,8 +285,28 @@ const FlowsList: React.FC = () => {
                     <td>
                       <div className="tc-flow-cell">
                         <span className="tc-flow-icon"><GitBranch size={14} /></span>
-                        <div>
-                          <div className="tc-flow-name">{flow.name}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {renamingId === flow.id ? (
+                            <input
+                              autoFocus
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onBlur={() => commitRename(flow.id)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') commitRename(flow.id);
+                                if (e.key === 'Escape') setRenamingId(null);
+                              }}
+                              onClick={e => e.stopPropagation()}
+                              style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 13, padding: '2px 6px', width: '100%' }}
+                            />
+                          ) : (
+                            <div
+                              className="tc-flow-name"
+                              onClick={e => e.stopPropagation()}
+                              onDoubleClick={canEdit ? e => startRename(flow, e) : undefined}
+                              title={canEdit ? 'Double-click to rename' : undefined}
+                            >{flow.name}</div>
+                          )}
                           <div className="tc-flow-ns">{flow.namespace}{flow.description ? ` · ${flow.description}` : ''}</div>
                         </div>
                       </div>
@@ -270,20 +318,40 @@ const FlowsList: React.FC = () => {
                           {serverWorkers.find(w => w._id === flow.workerId)?.name ?? 'Server (default)'}
                         </span>
                       ) : (
-                        <select
-                          className="tc-worker-select"
-                          value={flow.workerId || ''}
-                          onClick={e => e.stopPropagation()}
-                          onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
-                          title="Assign worker (server)"
-                        >
-                          <option value="">Server (default)</option>
-                          {serverWorkers.map(w => (
-                            <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                              {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                            </option>
-                          ))}
-                        </select>
+                        (() => {
+                          const grouped = serverWorkers.reduce((acc, w) => {
+                            const g = w.group || '';
+                            (acc[g] = acc[g] || []).push(w);
+                            return acc;
+                          }, {} as Record<string, typeof serverWorkers>);
+                          const ungrouped = grouped[''] || [];
+                          const namedGroups = Object.keys(grouped).filter(k => k !== '').sort();
+                          return (
+                            <select
+                              className="tc-worker-select"
+                              value={flow.workerId || ''}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
+                              title="Assign worker (server)"
+                            >
+                              <option value="">Server (default)</option>
+                              {ungrouped.map(w => (
+                                <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                  {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                </option>
+                              ))}
+                              {namedGroups.map(g => (
+                                <optgroup key={g} label={g}>
+                                  {(grouped[g] || []).map(w => (
+                                    <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                      {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          );
+                        })()
                       )}
                     </td>
 

@@ -1,3 +1,8 @@
+export interface FlowArtifact {
+  name: string;
+  data: string; // base64
+}
+
 export interface Flow {
   _id: string;
   name: string;
@@ -5,6 +10,7 @@ export interface Flow {
   description: string;
   nodes: any[];
   edges: any[];
+  artifacts?: FlowArtifact[];
   schedule?: {
     cron: string;
     enabled: boolean;

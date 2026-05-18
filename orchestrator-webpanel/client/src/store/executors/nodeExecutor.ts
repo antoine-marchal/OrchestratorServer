@@ -217,6 +217,13 @@ async function executeFlowNode(
     // Get the flow content - either from linked session or from node's code
     let flowContent = node.data.code;
 
+    // flowRef: no embedded code — load live from the library store
+    if (!flowContent && node.data.flowRef) {
+      const refFlow = useFlowLibraryStore.getState().flows.find(f => f.id === node.data.flowRef);
+      if (!refFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
+      flowContent = JSON.stringify({ nodes: refFlow.nodes || [], edges: refFlow.edges || [] });
+    }
+
     // If flow node is linked to a session, get current content from that session
     if (node.data.linkedSessionId) {
       const linkedSession = sessionStore().getSession(node.data.linkedSessionId);

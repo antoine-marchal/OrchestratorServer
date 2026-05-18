@@ -142,6 +142,7 @@ export async function connectDB(): Promise<void> {
     const Datastore = (await import('@seald-io/nedb')).default;
     for (const name of COLLECTION_NAMES) {
       const ds = new Datastore({ filename: path.join(DATA_DIR, `${name}.db`), autoload: true });
+      ds.setAutocompactionInterval(10 * 60 * 1000);
       _db[name] = new NeDBCollection(ds);
     }
     console.log('[DB] Using NeDB at', DATA_DIR);

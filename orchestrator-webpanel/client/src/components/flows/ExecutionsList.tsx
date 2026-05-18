@@ -191,7 +191,7 @@ const ExecutionsList: React.FC = () => {
                       </span>
                     </td>
                     <td>
-                      <span className="tc-trigger">{exec.triggeredBy}</span>
+                      <span className="tc-trigger">{exec.triggeredBy}{exec.triggeredUser ? ` · ${exec.triggeredUser}` : ''}</span>
                     </td>
                     <td>
                       <span className="tc-reltime">{formatRelative(exec.startTime)}</span>

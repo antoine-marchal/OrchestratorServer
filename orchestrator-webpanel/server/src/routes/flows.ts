@@ -47,12 +47,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     const col = getCollection('flows');
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
-      const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '' } = req.body;
-      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+      const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '', artifacts = [] } = req.body;
+      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
       await col.insert(flow);
     } else {
       const updates: any = { updatedAt: now };
-      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId']) {
+      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts']) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
       }
       await col.update({ _id: req.params.id }, { $set: updates });
@@ -80,7 +80,8 @@ router.post('/:id/execute', async (req: Request, res: Response) => {
     const col = getCollection('flows');
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
-    const executionId = await executeOrchestratorFlow(req.params.id, 'manual');
+    const triggeredUser: string | undefined = (req as any).user?.login;
+    const executionId = await executeOrchestratorFlow(req.params.id, 'manual', triggeredUser);
     res.json({ executionId, message: 'Execution started' });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });

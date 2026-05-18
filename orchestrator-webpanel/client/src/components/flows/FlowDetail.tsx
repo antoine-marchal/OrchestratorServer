@@ -15,11 +15,14 @@ import {
   GanttChartSquare,
   GitBranch,
   GripHorizontal,
+  GripVertical,
   Loader2,
+  Paperclip,
   Play,
   RefreshCw,
   StopCircle,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
@@ -88,6 +91,39 @@ function getNodeDepth(nodeId: string | null | undefined, parentMap: Map<string, 
 }
 
 
+const ResizeHandleV: React.FC<{ width: number; setWidth: (w: number) => void }> = ({ width, setWidth }) => {
+  const drag = useRef<{ x: number; w: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drag.current) return;
+      setWidth(Math.min(Math.max(drag.current.w + (e.clientX - drag.current.x), 120), 480));
+    };
+    const onUp = () => {
+      if (!drag.current) return;
+      drag.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [setWidth]);
+  return (
+    <div
+      onMouseDown={e => {
+        drag.current = { x: e.clientX, w: width };
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+      }}
+      title="Drag to resize"
+      className="flex items-center justify-center flex-shrink-0"
+      style={{ width: 9, cursor: 'ew-resize', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}
+    >
+      <GripVertical size={12} style={{ color: 'var(--text-mute)' }} />
+    </div>
+  );
+};
+
 const ResizeHandle: React.FC<{ height: number; setHeight: (h: number) => void; title?: string }> = ({ height, setHeight, title }) => {
   const drag = useRef<{ y: number; h: number } | null>(null);
   useEffect(() => {
@@ -134,6 +170,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const [showTimeline, setShowTimeline] = useState(false);
   const [graphHeight, setGraphHeight] = useState(280);
   const [timelineHeight, setTimelineHeight] = useState(240);
+  const [nodeTreeWidth, setNodeTreeWidth] = useState(220);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Selected node id from the structure tree — when set, log pane filters
@@ -351,7 +388,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               <span>·</span>
               <span>{formatDuration(exec.duration)}</span>
               <span>·</span>
-              <span className="capitalize">{exec.triggeredBy}</span>
+              <span>{exec.triggeredBy}{exec.triggeredUser ? ` · ${exec.triggeredUser}` : ''}</span>
               <span>·</span>
               <span style={{ color: exec.workerName ? 'var(--text-2)' : 'var(--text-3)' }}>
                 {exec.workerName || 'server'}
@@ -468,15 +505,18 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                   )}
                   <div className="flex-1 flex overflow-hidden">
                     {hasNodes && (
-                      <div style={{ width: 220, flexShrink: 0 }}>
-                        <ExecutionNodeTree
-                          nodes={execNodes}
-                          edges={execEdges}
-                          selectedId={selectedNodeId}
-                          onSelect={setSelectedNodeId}
-                          statuses={nodeStatuses}
-                        />
-                      </div>
+                      <>
+                        <div style={{ width: nodeTreeWidth, flexShrink: 0, overflow: 'hidden' }}>
+                          <ExecutionNodeTree
+                            nodes={execNodes}
+                            edges={execEdges}
+                            selectedId={selectedNodeId}
+                            onSelect={setSelectedNodeId}
+                            statuses={nodeStatuses}
+                          />
+                        </div>
+                        <ResizeHandleV width={nodeTreeWidth} setWidth={setNodeTreeWidth} />
+                      </>
                     )}
                     <div
                       ref={logRef}
@@ -620,6 +660,8 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
+  const [showArtifacts, setShowArtifacts] = useState(false);
+  const artifacts = flow.artifacts || [];
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const isFlowSession = activeSession?.linkedFlowId === flow.id;
@@ -660,6 +702,29 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
   }, [nodes, edges, isFlowSession]);
 
+  const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    Promise.all(files.map(file => new Promise<{name: string; data: string}>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = ev => resolve({ name: file.name, data: (ev.target?.result as string).split(',')[1] });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    }))).then(newArtifacts => {
+      const merged = [...artifacts];
+      for (const a of newArtifacts) {
+        const idx = merged.findIndex(x => x.name === a.name);
+        if (idx >= 0) merged[idx] = a; else merged.push(a);
+      }
+      updateFlow(flow.id, { artifacts: merged });
+    });
+    e.target.value = '';
+  };
+
+  const handleArtifactRemove = (name: string) => {
+    updateFlow(flow.id, { artifacts: artifacts.filter(a => a.name !== name) });
+  };
+
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--bg)' }}>
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
@@ -670,8 +735,45 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
               <CheckCircle2 size={12} />Saved
             </span>
           )}
+          <button
+            onClick={() => setShowArtifacts(v => !v)}
+            className={`tc-btn ghost`}
+            style={{ height: 24, padding: '0 8px', gap: 4, fontSize: 11, color: artifacts.length ? 'var(--accent)' : undefined }}
+            title="Manage flow artifacts"
+          >
+            <Paperclip size={11} />
+            Artifacts{artifacts.length > 0 ? ` (${artifacts.length})` : ''}
+          </button>
         </div>
       </div>
+
+      {showArtifacts && (
+        <div className="flex-shrink-0 px-3 py-2 border-b" style={{ background: 'var(--bg-2)', borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Artifacts</span>
+            <span style={{ fontSize: 10, color: 'var(--text-mute)' }}>— files extracted to ORCHESTRATOR_EXECUTION_DIR before each execution</span>
+            <label className="tc-btn ghost" style={{ height: 22, padding: '0 8px', fontSize: 11, cursor: 'pointer', marginLeft: 'auto' }}>
+              + Add files
+              <input type="file" multiple style={{ display: 'none' }} onChange={handleArtifactUpload} />
+            </label>
+          </div>
+          {artifacts.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--text-mute)', fontStyle: 'italic' }}>No artifacts. Add files to deploy alongside this flow.</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {artifacts.map(a => (
+                <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px' }}>
+                  <Paperclip size={10} style={{ color: 'var(--text-3)' }} />
+                  <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{a.name}</span>
+                  <button onClick={() => handleArtifactRemove(a.name)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, marginLeft: 2 }}>
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0">
         <EditorLayout graphPanel={<FlowEditor embedded flowId={flow.id} />} />
@@ -696,6 +798,8 @@ const FlowDetail: React.FC = () => {
   const [showSchedule, setShowSchedule] = useState(false);
   const [running, setRunning] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [renamingName, setRenamingName] = useState(false);
+  const [nameValue, setNameValue] = useState('');
 
   const flow = flows.find(f => f.id === id);
   const assignedWorker = flow?.workerId ? serverWorkers.find(w => w._id === flow.workerId) : undefined;
@@ -790,9 +894,31 @@ const FlowDetail: React.FC = () => {
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h1 style={{ margin: 0, fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 15, color: 'var(--text)' }}>
-                {flow.name}
-              </h1>
+              {renamingName ? (
+                <input
+                  autoFocus
+                  value={nameValue}
+                  onChange={e => setNameValue(e.target.value)}
+                  onBlur={() => {
+                    const t = nameValue.trim();
+                    if (t && t !== flow.name) updateFlow(flow.id, { name: t });
+                    setRenamingName(false);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { const t = nameValue.trim(); if (t && t !== flow.name) updateFlow(flow.id, { name: t }); setRenamingName(false); }
+                    if (e.key === 'Escape') setRenamingName(false);
+                  }}
+                  style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 4, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 15, padding: '1px 6px', minWidth: 120 }}
+                />
+              ) : (
+                <h1
+                  style={{ margin: 0, fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 15, color: 'var(--text)', cursor: canEdit ? 'text' : 'default' }}
+                  onDoubleClick={canEdit ? () => { setNameValue(flow.name); setRenamingName(true); } : undefined}
+                  title={canEdit ? 'Double-click to rename' : undefined}
+                >
+                  {flow.name}
+                </h1>
+              )}
               {flow.lastExecution && <StatusBadge status={flow.lastExecution.status} />}
             </div>
             {assignedWorker && (
@@ -821,7 +947,18 @@ const FlowDetail: React.FC = () => {
             )}
             <button
               onClick={() => {
-                const data = { name: flow.name, namespace: flow.namespace, description: flow.description, nodes: flow.nodes || [], edges: flow.edges || [] };
+                const allFlows = useFlowLibraryStore.getState().flows;
+                const resolvedNodes = (flow.nodes || []).map((node: any) => {
+                  if (node.data?.flowRef) {
+                    const ref = allFlows.find((f: any) => f.id === node.data.flowRef);
+                    if (ref) {
+                      const { flowRef, ...dataWithoutRef } = node.data;
+                      return { ...node, data: { ...dataWithoutRef, code: JSON.stringify({ nodes: ref.nodes || [], edges: ref.edges || [] }) } };
+                    }
+                  }
+                  return node;
+                });
+                const data = { name: flow.name, namespace: flow.namespace, description: flow.description, nodes: resolvedNodes, edges: flow.edges || [], artifacts: flow.artifacts || [] };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -845,26 +982,44 @@ const FlowDetail: React.FC = () => {
                 {deleteConfirm ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
               </button>
             )}
-            {canEdit && (
-              <select
-                value={flow.workerId || ''}
-                onChange={(e) => updateFlow(flow.id, { workerId: e.target.value })}
-                title="Run this flow on"
-                style={{
-                  height: 28, padding: '0 8px', borderRadius: 6,
-                  background: 'var(--bg-2)', color: 'var(--text)',
-                  border: '1px solid var(--border)', fontSize: 12,
-                  fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 180,
-                }}
-              >
-                <option value="">Local (server)</option>
-                {serverWorkers.map(w => (
-                  <option key={w._id} value={w._id}>
-                    {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                  </option>
-                ))}
-              </select>
-            )}
+            {canEdit && (() => {
+              const grouped = serverWorkers.reduce((acc, w) => {
+                const g = w.group || '';
+                (acc[g] = acc[g] || []).push(w);
+                return acc;
+              }, {} as Record<string, typeof serverWorkers>);
+              const ungrouped = grouped[''] || [];
+              const namedGroups = Object.keys(grouped).filter(k => k !== '').sort();
+              return (
+                <select
+                  value={flow.workerId || ''}
+                  onChange={(e) => updateFlow(flow.id, { workerId: e.target.value })}
+                  title="Run this flow on"
+                  style={{
+                    height: 28, padding: '0 8px', borderRadius: 6,
+                    background: 'var(--bg-2)', color: 'var(--text)',
+                    border: '1px solid var(--border)', fontSize: 12,
+                    fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 180,
+                  }}
+                >
+                  <option value="">Local (server)</option>
+                  {ungrouped.map(w => (
+                    <option key={w._id} value={w._id}>
+                      {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                    </option>
+                  ))}
+                  {namedGroups.map(g => (
+                    <optgroup key={g} label={g}>
+                      {(grouped[g] || []).map(w => (
+                        <option key={w._id} value={w._id}>
+                          {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              );
+            })()}
             {canEdit && (
               <button
                 onClick={handleExecute}

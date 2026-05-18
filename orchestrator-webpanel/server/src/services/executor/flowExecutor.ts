@@ -1,9 +1,12 @@
-import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses } from './nodeExecutor';
+import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, extractArtifacts, cleanupArtifacts } from './nodeExecutor';
 import { getCollection } from '../db/index';
 import { dispatchToWorker } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
 import kill from 'tree-kill';
 import { ChildProcess } from 'child_process';
+
+const EXECUTION_DIR = process.env.ORCHESTRATOR_EXECUTION_DIR || process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
+const KEEP_ARTIFACTS = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
 
 const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright', 'shell', 'bash']);
 
@@ -23,9 +26,21 @@ export function parseFlowContent(flowContent: string): any {
   return { flow, nodeMap, incomingMap, outgoingMap, roots };
 }
 
-async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null): Promise<any> {
-  const rawCode: string = node?.data?.code || '';
-  const nodeType = node?.data?.type;
+async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>): Promise<any> {
+  let rawCode: string = node?.data?.code || '';
+  let nodeType = node?.data?.type;
+
+  // flowRef: node references another flow by ID — load it from DB and execute inline.
+  if (nodeType === 'flow' && node?.data?.flowRef) {
+    try {
+      const flowsCol = getCollection('flows');
+      const referencedFlow = await flowsCol.findOne({ _id: node.data.flowRef });
+      if (!referencedFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
+      rawCode = JSON.stringify({ nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] });
+    } catch (err: any) {
+      throw new Error(`Failed to load referenced flow: ${err.message}`);
+    }
+  }
 
   // Remote dispatch: send script-type nodes to the assigned worker.
   // The node's code is sent with its `${{ secrets.NAME }}` placeholders INTACT —
@@ -45,7 +60,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         },
       };
       emitJobLog(jobId, 'log', `[remote] dispatching ${nodeType} node to worker ${workerId}`, nodeId);
-      const { output, variables: workerVars } = await dispatchToWorker(workerId, remoteNode, jobId, nodeId);
+      const { output, variables: workerVars } = await dispatchToWorker(workerId, remoteNode, jobId, nodeId, artifacts);
       emitJobLog(jobId, 'log', `[remote] node ${nodeId} completed on worker`, nodeId);
       // Merge variable mutations from the remote node back into the flow's shared dict.
       if (workerVars && typeof workerVars === 'object') Object.assign(flowVariables, workerVars);
@@ -158,7 +173,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   });
 }
 
-export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null): Promise<any> {
+export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>): Promise<any> {
   const { flow, nodeMap, incomingMap, outgoingMap, roots } = tempFlow;
 
   const starter = flow.nodes.find((n: any) => n?.data?.isStarterNode);
@@ -344,7 +359,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         if (jobId) emitNodeStatus(jobId, nodeId, attempt === 0 ? 'running' : 'retrying', { attempt, parentNodeId });
 
         try {
-          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId);
+          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts);
           if (jobId) emitNodeStatus(jobId, nodeId, 'success', { attempt, parentNodeId });
           break;
         } catch (err: any) {
@@ -436,7 +451,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
    Orchestrator flow execution (library)
    ============================ */
 
-export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual'): Promise<string | null> {
+export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string): Promise<string | null> {
   const flowsCol = getCollection('flows');
   const execsCol = getCollection('executions');
 
@@ -462,7 +477,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
       const reason = !w ? 'Assigned worker not found' : `Assigned worker "${w.name}" is offline`;
       const failedExec: any = {
         _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
-        status: 'FAILED', triggeredBy, startTime, endTime, duration, jobId: null,
+        status: 'FAILED', triggeredBy, triggeredUser: triggeredUser || null, startTime, endTime, duration, jobId: null,
         workerId: flow.workerId, workerName: w?.name || null,
         logs: [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }],
         output: null, error: reason, nodeStatuses: {}, nodes: flow.nodes || [], edges: flow.edges || [],
@@ -482,6 +497,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     namespace: flow.namespace || 'default',
     status: 'RUNNING',
     triggeredBy,
+    triggeredUser: triggeredUser || null,
     startTime,
     endTime: null,
     duration: null,
@@ -501,6 +517,14 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
   const jobId = nowUid();
   const flowContent = JSON.stringify({ nodes: flow.nodes || [], edges: flow.edges || [] });
+  const flowArtifacts: Array<{name: string; data: string}> = flow.artifacts || [];
+
+  // Extract artifacts locally before execution (for server-side nodes)
+  if (flowArtifacts.length && !resolvedWorkerId) {
+    try { extractArtifacts(flowArtifacts, EXECUTION_DIR); } catch (e: any) {
+      console.warn('[flow] artifact extraction warning:', e.message);
+    }
+  }
 
   const job: any = {
     jobId,
@@ -510,9 +534,10 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     codeFilePath: null,
     input: null,
     timeout: 0,
-    basePath: WORK_DIR,
+    basePath: EXECUTION_DIR,
     variables: {},
     workerId: resolvedWorkerId,
+    artifacts: flowArtifacts.length ? flowArtifacts : undefined,
     status: 'queued',
     startTime: new Date().toISOString(),
     stopRequested: false,
@@ -539,6 +564,11 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
     await execsCol.update({ _id: executionId }, { $set: { status, endTime, duration, output: j.output, error: j.error, logs: logBuf, nodeStatuses } });
     await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status, startTime, endTime, duration } } });
+
+    // Clean up locally extracted artifacts if ORCHESTRATOR_KEEP_ARTIFACTS is not set
+    if (flowArtifacts.length && !resolvedWorkerId && !KEEP_ARTIFACTS) {
+      try { cleanupArtifacts(flowArtifacts, EXECUTION_DIR); } catch { }
+    }
 
     // Drop the in-memory buffer for this run after a grace period (let any
     // currently-connected SSE clients finish their last replay first).

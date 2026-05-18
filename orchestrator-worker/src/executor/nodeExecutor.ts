@@ -5,6 +5,7 @@ import os from 'os';
 import kill from 'tree-kill';
 
 const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
+const EXECUTION_DIR = process.env.ORCHESTRATOR_EXECUTION_DIR || WORK_DIR;
 const INBOX = path.join(WORK_DIR, 'inbox');
 const GROOVY_JAR = process.env.GROOVY_JAR || path.join(WORK_DIR, 'groovyExec.jar');
 
@@ -40,7 +41,7 @@ interface RunOpts {
 function runProcess(cmd: string, args: string[], opts: RunOpts): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
-      cwd: opts.cwd || WORK_DIR,
+      cwd: opts.cwd || EXECUTION_DIR,
       env: { ...process.env, ...opts.env },
       shell: opts.shell ?? false,
     });

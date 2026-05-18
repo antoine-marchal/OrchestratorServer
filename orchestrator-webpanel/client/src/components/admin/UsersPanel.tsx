@@ -77,6 +77,11 @@ export const UsersPanel: React.FC = () => {
   const [keyUserId, setKeyUserId] = useState<string | null>(null);
   const [keyLabel, setKeyLabel] = useState('');
 
+  // Change password form
+  const [pwdUserId, setPwdUserId] = useState<string | null>(null);
+  const [newPwd, setNewPwd] = useState('');
+  const [showNewPwd, setShowNewPwd] = useState(false);
+
   const load = async () => {
     setLoading(true);
     setError(null);
@@ -131,6 +136,17 @@ export const UsersPanel: React.FC = () => {
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to revoke API key');
+    }
+  };
+
+  const handleChangePassword = async (userId: string) => {
+    if (!newPwd.trim()) return;
+    try {
+      await apiClient.patch(`/api/v1/users/${userId}/password`, { password: newPwd });
+      setPwdUserId(null);
+      setNewPwd('');
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to change password');
     }
   };
 
@@ -203,6 +219,14 @@ export const UsersPanel: React.FC = () => {
                   >
                     <Key size={11} />
                   </button>
+                  <button
+                    onClick={() => { setPwdUserId(pwdUserId === u._id ? null : u._id); setNewPwd(''); }}
+                    className="tc-btn ghost"
+                    style={{ height: 24, padding: '0 8px', gap: 4, fontSize: 11 }}
+                    title="Change password"
+                  >
+                    <EyeOff size={11} />
+                  </button>
                   <button onClick={() => handleDelete(u._id)} className="tc-btn ghost" style={{ height: 24, width: 24, padding: 0, justifyContent: 'center' }} title="Delete user">
                     <Trash2 size={12} style={{ color: 'var(--err)' }} />
                   </button>
@@ -214,6 +238,28 @@ export const UsersPanel: React.FC = () => {
                     <input value={keyLabel} onChange={e => setKeyLabel(e.target.value)} placeholder="e.g. worker-prod" className="flex-1 px-2 py-1 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} onKeyDown={e => e.key === 'Enter' && handleCreateKey(u._id)} />
                     <button onClick={() => handleCreateKey(u._id)} className="tc-btn primary" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>Create</button>
                     <button onClick={() => setKeyUserId(null)} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', fontSize: 11 }}>Cancel</button>
+                  </div>
+                )}
+
+                {pwdUserId === u._id && (
+                  <div className="px-4 pb-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--border)' }}>
+                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>New password:</span>
+                    <div className="relative flex-1">
+                      <input
+                        type={showNewPwd ? 'text' : 'password'}
+                        value={newPwd}
+                        onChange={e => setNewPwd(e.target.value)}
+                        placeholder="Enter new password"
+                        className="w-full px-2 py-1 rounded text-xs"
+                        style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                        onKeyDown={e => e.key === 'Enter' && handleChangePassword(u._id)}
+                      />
+                      <button onClick={() => setShowNewPwd(!showNewPwd)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
+                        {showNewPwd ? <EyeOff size={11} /> : <Eye size={11} />}
+                      </button>
+                    </div>
+                    <button onClick={() => handleChangePassword(u._id)} className="tc-btn primary" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>Save</button>
+                    <button onClick={() => setPwdUserId(null)} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', fontSize: 11 }}>Cancel</button>
                   </div>
                 )}
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { setJwt } from '../utils/apiClient';
@@ -42,6 +42,32 @@ const LoginPage: React.FC = () => {
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Proxy auth: on mount, check if proxy auth is enabled and URL has a ticket
+  useEffect(() => {
+    (async () => {
+      try {
+        const cfgRes = await fetch('/api/v1/authProxy/config');
+        if (!cfgRes.ok) return;
+        const cfg = await cfgRes.json();
+        if (!cfg.enabled) return;
+        const params = new URLSearchParams(window.location.search || window.location.hash.split('?')[1] || '');
+        const ticket = params.get(cfg.paramName);
+        if (!ticket) return;
+        setLoading(true);
+        const res = await fetch(`/api/v1/authProxy?${cfg.paramName}=${encodeURIComponent(ticket)}`);
+        if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error?.message || 'Proxy auth failed'); }
+        const data = await res.json();
+        setJwt(data.accessToken);
+        localStorage.setItem('orchestrator_refresh', data.refreshToken || '');
+        localStorage.setItem('orchestrator_user', JSON.stringify(data.user || {}));
+        navigate('/flows', { replace: true });
+      } catch (e: any) {
+        setError(e?.message ?? 'Proxy authentication failed');
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

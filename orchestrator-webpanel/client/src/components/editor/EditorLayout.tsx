@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSessionStore } from '../../store/sessionStore';
 import NodeFileTree from './NodeFileTree';
 import NodeCodePanel from './NodeCodePanel';
@@ -14,12 +14,46 @@ export const EditorLayout: React.FC<EditorLayoutProps> = ({ graphPanel }) => {
   const flowState = sessionStore.getActiveFlowState();
   const activeCard = flowState?.activeCard ?? 'graph';
   const editingNodeId = flowState?.editingNodeId ?? null;
+  const [treeWidth, setTreeWidth] = useState(200);
+  const drag = useRef<{ x: number; w: number } | null>(null);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drag.current) return;
+      setTreeWidth(Math.min(Math.max(drag.current.w + (e.clientX - drag.current.x), 100), 420));
+    };
+    const onUp = () => {
+      if (!drag.current) return;
+      drag.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      {/* Node file tree sidebar — always visible */}
-      <div style={{ width: 200, flexShrink: 0 }}>
+      {/* Node file tree sidebar — resizable */}
+      <div style={{ width: treeWidth, flexShrink: 0, overflow: 'hidden' }}>
         <NodeFileTree />
+      </div>
+
+      {/* Drag handle */}
+      <div
+        onMouseDown={e => {
+          drag.current = { x: e.clientX, w: treeWidth };
+          document.body.style.cursor = 'ew-resize';
+          document.body.style.userSelect = 'none';
+        }}
+        style={{
+          width: 9, cursor: 'ew-resize', flexShrink: 0,
+          background: 'var(--surface)', borderRight: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <div style={{ width: 3, height: 24, borderLeft: '1px solid var(--border)', borderRight: '1px solid var(--border)' }} />
       </div>
 
       {/* Main panel — switches between graph and code editor */}

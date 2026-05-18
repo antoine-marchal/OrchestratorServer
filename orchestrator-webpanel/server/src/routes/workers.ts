@@ -16,7 +16,7 @@ function isOnline(lastSeenAt: string): boolean {
 // Workers call this on startup to register. Open endpoint — no API key required.
 // Optional: set WORKER_REGISTRATION_SECRET env var to restrict who can register.
 router.post('/register', async (req: Request, res: Response) => {
-  const { name, platform = 'unknown', secret } = req.body;
+  const { name, platform = 'unknown', secret, group } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' }) as any;
 
   const expectedSecret = process.env.WORKER_REGISTRATION_SECRET;
@@ -30,13 +30,15 @@ router.post('/register', async (req: Request, res: Response) => {
   // Reuse record if worker re-registers with same name
   const existing = await col.findOne({ name });
   if (existing) {
-    await col.update({ _id: existing._id }, { $set: { platform, status: 'online', lastSeenAt: now } });
+    const updateFields: any = { platform, status: 'online', lastSeenAt: now };
+    if (group !== undefined) updateFields.group = group;
+    await col.update({ _id: existing._id }, { $set: updateFields });
     return res.json({ workerId: existing._id, status: 'online' });
   }
 
   const workerId = uuidv4();
   await col.insert({
-    _id: workerId, name, platform,
+    _id: workerId, name, platform, group: group || undefined,
     status: 'online', lastSeenAt: now, registeredAt: now,
   });
   res.json({ workerId, status: 'online' });
@@ -154,6 +156,22 @@ router.get('/', authMiddleware, async (_req: Request, res: Response) => {
   res.json(result);
 });
 
+// UI — update worker group (JWT auth required)
+router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('workers');
+    const updates: any = {};
+    if (req.body.group !== undefined) updates.group = req.body.group;
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' }) as any;
+    await col.update({ _id: req.params.id }, { $set: updates });
+    const w = await col.findOne({ _id: req.params.id });
+    if (!w) return res.status(404).json({ error: 'Worker not found' }) as any;
+    res.json({ ...w, status: isOnline(w.lastSeenAt) ? 'online' : 'offline' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // UI — get single worker (JWT auth required)
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   const col = getCollection('workers');
@@ -176,11 +194,13 @@ export const pendingWorkerJobs = new Map<string, { resolve: (v: WorkerJobResult)
 // Called by flowExecutor to dispatch a node to a specific worker.
 // `executionId` is the parent flow's job/execution id (used for log routing).
 // `nodeId` is the original node id in the flow graph (attached to log entries).
-export async function dispatchToWorker(workerId: string, node: any, executionId: string, nodeId: string): Promise<WorkerJobResult> {
+// `artifacts` optionally carries flow-level file attachments to extract on the worker.
+export async function dispatchToWorker(workerId: string, node: any, executionId: string, nodeId: string, artifacts?: Array<{name: string; data: string}>): Promise<WorkerJobResult> {
   const col = getCollection('worker_jobs');
   const jobId = uuidv4();
   await col.insert({
     _id: jobId, workerId, executionId, nodeId, node,
+    artifacts: artifacts && artifacts.length ? artifacts : undefined,
     status: 'pending', createdAt: new Date().toISOString(),
   });
 

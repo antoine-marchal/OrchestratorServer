@@ -9,6 +9,7 @@ export interface ServerWorker {
   lastSeenAt: string;
   registeredAt: string;
   assignedUserId?: string;
+  group?: string;
 }
 
 export function useServerWorkers(pollMs = 10_000) {

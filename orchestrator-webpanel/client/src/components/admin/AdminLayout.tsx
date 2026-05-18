@@ -107,6 +107,9 @@ export const AdminLayout: React.FC = () => {
   const [keyUserId, setKeyUserId] = useState<string | null>(null);
   const [keyLabel, setKeyLabel] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [pwdUserId, setPwdUserId] = useState<string | null>(null);
+  const [newPwd, setNewPwd] = useState('');
+  const [showNewPwd, setShowNewPwd] = useState(false);
 
   /* ── Secrets state ── */
   const [secrets, setSecrets] = useState<Secret[]>([]);
@@ -181,6 +184,14 @@ export const AdminLayout: React.FC = () => {
       await apiClient.delete(`/api/v1/users/${userId}/apikeys/${keyId}`);
       await loadUsers();
     } catch (e: any) { setUsersError(e?.message ?? 'Failed to revoke key'); }
+  };
+
+  const handleChangePassword = async (userId: string) => {
+    if (!newPwd.trim()) return;
+    try {
+      await apiClient.patch(`/api/v1/users/${userId}/password`, { password: newPwd });
+      setPwdUserId(null); setNewPwd('');
+    } catch (e: any) { setUsersError(e?.message ?? 'Failed to change password'); }
   };
 
   /* ── Secret actions ── */
@@ -332,6 +343,7 @@ export const AdminLayout: React.FC = () => {
                     value={newLogin}
                     onChange={e => setNewLogin(e.target.value)}
                     placeholder="Login"
+                    autoComplete="off"
                     className="px-3 py-1.5 rounded text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
@@ -341,6 +353,7 @@ export const AdminLayout: React.FC = () => {
                       value={newPassword}
                       onChange={e => setNewPassword(e.target.value)}
                       placeholder="Password"
+                      autoComplete="new-password"
                       className="w-full px-3 py-1.5 rounded text-xs"
                       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                     />
@@ -382,6 +395,8 @@ export const AdminLayout: React.FC = () => {
               value={userSearch}
               onChange={e => setUserSearch(e.target.value)}
               placeholder="Search by login or role…"
+              autoComplete="off"
+              name="user-search"
             />
           </div>
 
@@ -443,6 +458,13 @@ export const AdminLayout: React.FC = () => {
                               <Key size={13} />
                             </button>
                             <button
+                              className={`tc-icon-btn${pwdUserId === u._id ? ' active' : ''}`}
+                              title="Change password"
+                              onClick={() => { setPwdUserId(pwdUserId === u._id ? null : u._id); setNewPwd(''); }}
+                            >
+                              <Lock size={13} />
+                            </button>
+                            <button
                               className="tc-icon-btn danger"
                               title="Delete user"
                               onClick={() => handleDeleteUser(u._id)}
@@ -452,6 +474,35 @@ export const AdminLayout: React.FC = () => {
                           </div>
                         </td>
                       </tr>
+
+                      {/* Change password inline row */}
+                      {pwdUserId === u._id && (
+                        <tr style={{ background: 'var(--surface-2)' }}>
+                          <td colSpan={6} style={{ padding: '10px 16px' }} onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              <Lock size={11} style={{ color: 'var(--text-3)', flexShrink: 0 }} />
+                              <span className="text-xs" style={{ color: 'var(--text-3)', whiteSpace: 'nowrap' }}>New password:</span>
+                              <div className="relative flex-1" style={{ maxWidth: 280 }}>
+                                <input
+                                  type={showNewPwd ? 'text' : 'password'}
+                                  value={newPwd}
+                                  onChange={e => setNewPwd(e.target.value)}
+                                  placeholder="Enter new password"
+                                  autoComplete="new-password"
+                                  className="w-full px-2 py-1 rounded text-xs"
+                                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-mono)', paddingRight: 28 }}
+                                  onKeyDown={e => e.key === 'Enter' && handleChangePassword(u._id)}
+                                />
+                                <button onClick={() => setShowNewPwd(!showNewPwd)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
+                                  {showNewPwd ? <EyeOff size={11} /> : <Eye size={11} />}
+                                </button>
+                              </div>
+                              <button onClick={() => handleChangePassword(u._id)} className="tc-btn primary" style={{ height: 26, padding: '0 10px', fontSize: 11 }}>Save</button>
+                              <button onClick={() => setPwdUserId(null)} className="tc-btn ghost" style={{ height: 26, padding: '0 8px', fontSize: 11 }}>Cancel</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
 
                       {/* Add key inline row */}
                       {keyUserId === u._id && (

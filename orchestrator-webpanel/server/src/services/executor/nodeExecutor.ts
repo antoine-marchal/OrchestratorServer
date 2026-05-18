@@ -9,6 +9,7 @@ import kill from 'tree-kill';
    ============================ */
 
 const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
+const EXECUTION_DIR = process.env.ORCHESTRATOR_EXECUTION_DIR || WORK_DIR;
 const INBOX = path.join(WORK_DIR, 'inbox');
 const OUTBOX = path.join(WORK_DIR, 'outbox');
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 200);
@@ -130,6 +131,32 @@ function shouldStopJob(nodeId: string, jobId: string | null): boolean {
 
 function cleanupStopSignal(id: string): void {
   safeUnlinkSync(path.join(INBOX, `${id}.stop`));
+}
+
+export function extractArtifacts(artifacts: Array<{name: string; data: string}>, targetDir: string): string[] {
+  const extracted: string[] = [];
+  if (!artifacts || !artifacts.length) return extracted;
+  if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  for (const artifact of artifacts) {
+    const destPath = path.join(targetDir, artifact.name);
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    const newData = Buffer.from(artifact.data, 'base64');
+    if (fs.existsSync(destPath)) {
+      const existing = fs.readFileSync(destPath);
+      if (existing.equals(newData)) continue;
+    }
+    fs.writeFileSync(destPath, newData);
+    extracted.push(destPath);
+  }
+  return extracted;
+}
+
+export function cleanupArtifacts(artifacts: Array<{name: string; data: string}>, targetDir: string): void {
+  if (!artifacts || !artifacts.length) return;
+  for (const artifact of artifacts) {
+    try { safeUnlinkSync(path.join(targetDir, artifact.name)); } catch { }
+  }
 }
 
 function getNodeExecutablePath(): string {
@@ -521,11 +548,12 @@ export function processJob(job: any): void {
   job.input = normalizeInput(input);
   job.status = 'running';
 
-  let execCwd = process.cwd();
+  let execCwd = EXECUTION_DIR;
   try {
     if (job.basePath && fs.existsSync(job.basePath)) execCwd = job.basePath;
     else if (codeFilePath && fs.existsSync(path.dirname(codeFilePath))) execCwd = path.dirname(codeFilePath);
   } catch { }
+  if (!fs.existsSync(execCwd)) { try { fs.mkdirSync(execCwd, { recursive: true }); } catch { execCwd = WORK_DIR; } }
 
   if (codeFilePath) {
     try {
@@ -594,7 +622,7 @@ export function processJob(job: any): void {
         // (set in flowExecutor.executeRegularNode); use it for SSE/log routing so
         // events reach the listener. Top-level flows use the flow job id directly.
         const ssePath = job.execId || jobId;
-        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || process.cwd(), effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null);
+        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || process.cwd(), effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts);
         restore();
         const logMessages = logs.map(l => l.type === 'error' ? `ERROR: ${l.message}` : l.message).join('\n');
         finish({ output: result, log: logMessages || 'Successfully executed flow', error: null });

@@ -6,4 +6,5 @@ export interface Worker {
   lastSeenAt: string;
   registeredAt: string;
   assignedUserId?: string;
+  group?: string;
 }

@@ -11,6 +11,8 @@ const WORKER_SECRET    = process.env.WORKER_REGISTRATION_SECRET || '';
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '2000');
 const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000');
 const WORK_DIR         = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
+const EXECUTION_DIR    = process.env.ORCHESTRATOR_EXECUTION_DIR || WORK_DIR;
+const KEEP_ARTIFACTS   = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
 
 // How the worker picks up jobs:
 //   'parallel'   (default) — take jobs as they arrive, even while a node from
@@ -129,14 +131,48 @@ async function resolveSecrets(
   return code.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
 }
 
+function extractArtifacts(artifacts: Array<{name: string; data: string}>): void {
+  if (!artifacts || !artifacts.length) return;
+  if (!fs.existsSync(EXECUTION_DIR)) fs.mkdirSync(EXECUTION_DIR, { recursive: true });
+  for (const artifact of artifacts) {
+    const destPath = path.join(EXECUTION_DIR, artifact.name);
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    const newData = Buffer.from(artifact.data, 'base64');
+    if (fs.existsSync(destPath)) {
+      const existing = fs.readFileSync(destPath);
+      if (existing.equals(newData)) continue;
+    }
+    fs.writeFileSync(destPath, newData);
+    console.log(`[worker] artifact extracted: ${artifact.name}`);
+  }
+}
+
+function cleanupArtifacts(artifacts: Array<{name: string; data: string}>): void {
+  if (!artifacts || !artifacts.length) return;
+  for (const artifact of artifacts) {
+    try {
+      const p = path.join(EXECUTION_DIR, artifact.name);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch { }
+  }
+}
+
 async function executeJob(workerId: string, job: any): Promise<void> {
   const jobId = job._id;
+  const artifacts: Array<{name: string; data: string}> = job.artifacts || [];
   const onLog = (type: 'log' | 'error', message: string) => {
     http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/log`, { type, message }).catch(() => {});
   };
   try {
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/status`, { status: 'running' });
-    onLog('log', `[worker] running ${job.node?.type ?? 'node'} on "${WORKER_NAME}" (${process.platform}, cwd=${WORK_DIR})`);
+    onLog('log', `[worker] running ${job.node?.type ?? 'node'} on "${WORKER_NAME}" (${process.platform}, cwd=${EXECUTION_DIR})`);
+
+    if (artifacts.length) {
+      extractArtifacts(artifacts);
+      onLog('log', `[worker] ${artifacts.length} artifact(s) extracted to ${EXECUTION_DIR}`);
+    }
+
     if (job.node?.data) {
       job.node.data.code = await resolveSecrets(workerId, jobId, job.node.data.code || '', onLog);
     }
@@ -145,12 +181,20 @@ async function executeJob(workerId: string, job: any): Promise<void> {
       output: result.output, variables: result.variables, status: 'success',
     });
     console.log(`[worker] Job ${jobId} completed`);
+
+    if (artifacts.length && !KEEP_ARTIFACTS) {
+      cleanupArtifacts(artifacts);
+    }
   } catch (err: any) {
     onLog('error', `[worker] ${err.message}`);
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/complete`, {
       status: 'failed', error: err.message,
     }).catch(() => {});
     console.error(`[worker] Job ${jobId} failed:`, err.message);
+
+    if (artifacts.length && !KEEP_ARTIFACTS) {
+      cleanupArtifacts(artifacts);
+    }
   }
 }
 

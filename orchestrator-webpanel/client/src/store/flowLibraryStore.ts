@@ -42,6 +42,7 @@ function mapServerFlow(f: any): OrchestratorFlow {
     workerId: f.workerId || '',
     nodes: f.nodes || [],
     edges: f.edges || [],
+    artifacts: f.artifacts || [],
     schedule: f.schedule || null,
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
@@ -61,6 +62,7 @@ function mapServerExec(e: any): FlowExecution {
     jobId: e.jobId || '',
     status: e.status as ExecutionStatus,
     triggeredBy: e.triggeredBy || 'manual',
+    triggeredUser: e.triggeredUser || undefined,
     startTime: e.startTime,
     endTime: e.endTime ?? null,
     duration: e.duration ?? null,
@@ -218,6 +220,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         name: updated.name, namespace: updated.namespace,
         description: updated.description, nodes: updated.nodes, edges: updated.edges,
         workerId: updated.workerId || '',
+        artifacts: updated.artifacts || [],
       }).catch(console.error);
     },
 
@@ -239,6 +242,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       const data: any = await apiClient.post(`/api/v1/flows/${flowId}/execute`, { triggeredBy });
       const executionId: string = data.executionId;
 
+      const storedUser = (() => { try { return JSON.parse(localStorage.getItem('orchestrator_user') || '{}'); } catch { return {}; } })();
       const exec: FlowExecution = {
         id: executionId,
         flowId,
@@ -249,6 +253,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         jobId: '',
         status: 'RUNNING',
         triggeredBy,
+        triggeredUser: storedUser?.login || undefined,
         startTime: new Date().toISOString(),
         endTime: null,
         duration: null,

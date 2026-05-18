@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FlowNodeCreationModal from './FlowNodeCreationModal';
 import FlowEditorToolbar from './FlowEditorToolbar';
 import NodeCreationMenu from './NodeCreationMenu';
@@ -29,6 +30,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
   handleFlowNodeFromSession as flowNodeFromSessionHandler,
   handleFlowNodeFromFile as flowNodeFromFileHandler,
+  handleFlowNodeFromLibrary as flowNodeFromLibraryHandler,
 } from '../utils/flowNodeHandlers';
 
 import CommentNode from './node/CommentNode';
@@ -45,6 +47,7 @@ interface FlowEditorProps {
 }
 
 function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const edgeLabelStyles = useMemo(() => {
     const isDark = theme === 'dark';
@@ -492,6 +495,12 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
     // The code is already stored in the node data, so we just open the editor
 
     if (node.data.type === 'flow') {
+      // flowRef node: navigate to the referenced flow in the library
+      if (node.data.flowRef) {
+        navigate(`/flows/${node.data.flowRef}?tab=edit`);
+        return;
+      }
+
       // For flow nodes, open or switch to linked session
       try {
         const sessionStore = useSessionStore.getState();
@@ -591,6 +600,19 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
     [flowNodeModal.position, setNodes, flowId]
   );
 
+  // Handle flow node creation referencing a library flow by ID
+  const handleFlowNodeFromLibrary = useCallback(
+    (refFlowId: string, refFlowName: string) => {
+      flowNodeFromLibraryHandler({
+        flowId: refFlowId,
+        flowName: refFlowName,
+        position: flowNodeModal.position || { x: 100, y: 100 },
+        setNodes,
+      });
+    },
+    [flowNodeModal.position, setNodes]
+  );
+
   return (
     <div ref={wrapperRef} className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
       <ReactFlow
@@ -668,6 +690,7 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
         onClose={() => setFlowNodeModal({ isOpen: false })}
         onSelectSession={handleFlowNodeFromSession}
         onUploadFile={handleFlowNodeFromFile}
+        onSelectLibraryFlow={handleFlowNodeFromLibrary}
         flowId={flowId}
       />}
     </div>
