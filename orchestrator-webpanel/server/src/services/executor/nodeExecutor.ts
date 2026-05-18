@@ -2,7 +2,136 @@ import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { createRequire } from 'module';
 import kill from 'tree-kill';
+
+// Resolve a bare ESM specifier (e.g. `playwright`) to an absolute file URL
+// using every node_modules anchor we know about. Node's ESM resolver walks
+// up only from the script directory, so scripts written to <WORK_DIR>/inbox
+// can't find packages installed in the server's own node_modules tree.
+// Rewriting `import x from 'name'` to `import x from 'file:///abs/path'`
+// sidesteps the walk; nested dependencies still resolve normally because
+// the resolved file is itself inside a real node_modules tree.
+// Only resolve user-script bare imports against ORCHESTRATOR_WORK_DIR first,
+// then ORCHESTRATOR_EXECUTION_DIR. Nothing else — pkg's `__dirname` is
+// virtual (C:\snapshot\...) and process.cwd() is unpredictable when the
+// binary runs as a service.
+const bareResolver: (spec: string) => string | null = (() => {
+  const anchors = [
+    process.env.ORCHESTRATOR_WORK_DIR,
+    process.env.ORCHESTRATOR_EXECUTION_DIR,
+  ].filter((s): s is string => !!s);
+  const requires: NodeRequire[] = [];
+  for (const a of anchors) {
+    try { requires.push(createRequire(path.join(a, 'noop.js'))); } catch { /* skip */ }
+  }
+  return (spec: string): string | null => {
+    for (const r of requires) {
+      try {
+        const resolved = r.resolve(spec);
+        if (resolved && fs.existsSync(resolved)) return resolved;
+      } catch { /* try next anchor */ }
+    }
+    return null;
+  };
+})();
+
+// Bare-specifier helpers shared by both rewriters.
+function specToFileUrl(spec: string): string | null {
+  if (!spec || /^(\.|\/|file:|node:|https?:|data:)/.test(spec)) return null;
+  const resolved = bareResolver(spec);
+  if (!resolved) return null;
+  return 'file:///' + resolved.replace(/\\/g, '/');
+}
+
+// Rewrite static ESM imports of bare specifiers into dynamic `await import()`
+// statements.
+//
+// Why not just rewrite the *string* in the import? Static `import { x } from
+// 'file://.../index.js'` fails when the target is CJS — Node's CJS-named-export
+// detector misses many real-world packages (Playwright among them), giving
+// "Named export 'chromium' not found". Dynamic `await import()` of a CJS file
+// always works: you get `{ default: module.exports }`. We then destructure
+// against `default ?? namespace` so both CJS and true-ESM packages behave the
+// same to the user.
+//
+// Supported user-source forms (top-level only; matches start of a line):
+//   import 'X';
+//   import D from 'X';
+//   import * as N from 'X';
+//   import { a, b as c } from 'X';
+//   import D, { a } from 'X';
+//   import D, * as N from 'X';
+//   const M = await import('X');     // bare specifier inside dynamic import
+//   export { x } from 'X';
+function rewriteBareEsmImports(code: string): string {
+  let n = 0;
+  const tmp = () => `__esm_${++n}`;
+
+  const renderNamed = (clause: string, src: string): string => {
+    // `{ a, b as c }` → `{ a, b: c }`
+    const m = clause.match(/^\{\s*([^}]*)\s*\}$/);
+    if (!m) return '';
+    const items = m[1].split(',').map(s => s.trim()).filter(Boolean);
+    const props = items.map(it => {
+      const asM = it.match(/^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/);
+      return asM ? `${asM[1]}: ${asM[2]}` : it;
+    }).join(', ');
+    return `const { ${props} } = (${src}.default && typeof ${src}.default === 'object') ? ${src}.default : ${src};`;
+  };
+
+  // Side-effect: `import 'X';`
+  code = code.replace(/^[ \t]*import\s+['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm, (m, spec) => {
+    const url = specToFileUrl(spec);
+    return url ? `await import(${JSON.stringify(url)});` : m;
+  });
+
+  // `import ... from 'X';`
+  code = code.replace(/^[ \t]*import\s+([^'";]+?)\s+from\s+['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm,
+    (m, clauseRaw: string, spec: string) => {
+      const url = specToFileUrl(spec);
+      if (!url) return m;
+      const v = tmp();
+      const out: string[] = [`const ${v} = await import(${JSON.stringify(url)});`];
+
+      let rest = clauseRaw.trim();
+      let defaultName: string | null = null;
+
+      if (!rest.startsWith('{') && !rest.startsWith('*')) {
+        const commaIdx = rest.indexOf(',');
+        if (commaIdx === -1) { defaultName = rest; rest = ''; }
+        else { defaultName = rest.slice(0, commaIdx).trim(); rest = rest.slice(commaIdx + 1).trim(); }
+      }
+      if (defaultName) out.push(`const ${defaultName} = ${v}.default ?? ${v};`);
+      if (rest.startsWith('*')) {
+        const nsName = rest.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)/)?.[1];
+        if (nsName) out.push(`const ${nsName} = ${v};`);
+      } else if (rest.startsWith('{')) {
+        const namedSrc = renderNamed(rest, v);
+        if (namedSrc) out.push(namedSrc);
+      }
+      return out.join('\n');
+    });
+
+  // `export ... from 'X';` — flatten to a const re-bind (rare in node-runner scripts).
+  code = code.replace(/^[ \t]*export\s+(\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm,
+    (m, clause: string, spec: string) => {
+      const url = specToFileUrl(spec);
+      if (!url) return m;
+      const v = tmp();
+      // We can't `export` at non-top-level after rewrite. Just bind locally;
+      // user scripts don't actually re-export from the runner wrapper.
+      return `const ${v} = await import(${JSON.stringify(url)});`;
+    });
+
+  // Bare specifier inside dynamic `import('X')`.
+  code = code.replace(/(\bimport\s*\(\s*)['"]([^'"]+)['"](\s*\))/g, (m, pre, spec, post) => {
+    const url = specToFileUrl(spec);
+    return url ? `${pre}${JSON.stringify(url)}${post}` : m;
+  });
+
+  return code;
+}
 
 /* ============================
    Config & Globals
@@ -184,10 +313,50 @@ export function cleanupArtifacts(artifacts: Array<{name: string; data: string}>,
 
 function getNodeExecutablePath(): string {
   if (process.env.NODE_EXECUTABLE_PATH) return process.env.NODE_EXECUTABLE_PATH;
-  // When packaged with pkg, process.execPath is the bundle itself — not a Node
-  // runtime. Spawning it with a .mjs script would fail with ERR_REQUIRE_ESM.
-  // Fall back to 'node' from PATH so external scripts run correctly.
-  if ((process as any).pkg) return 'node';
+  // When packaged with pkg, process.execPath is the bundle itself, not a Node
+  // runtime. Pkg's bundled Node 18 also can't `require()` ESM .mjs, and pkg
+  // intercepts `spawn('node', ...)` to re-launch the bundle as Node — so a
+  // bare 'node' string still routes back to the orchestrator binary.
+  // Resolve to an absolute path of a real system Node so pkg's interceptor
+  // can't touch it.
+  if ((process as any).pkg) {
+    const isWin = process.platform === 'win32';
+    const exe = isWin ? 'node.exe' : 'node';
+    const sep = isWin ? ';' : ':';
+
+    // Walk every PATH entry (Windows env can be either PATH or Path).
+    const pathStr = process.env.PATH || (process.env as any).Path || '';
+    for (const dir of pathStr.split(sep)) {
+      if (!dir) continue;
+      const candidate = path.join(dir.replace(/^"|"$/g, ''), exe);
+      try { if (fs.existsSync(candidate)) return candidate; } catch { /* skip */ }
+    }
+
+    // Fall back to `where node` / `which node` — the OS resolver knows about
+    // installer-registered locations PATH might miss in our process env.
+    try {
+      const { execSync } = require('child_process');
+      const cmd = isWin ? 'where node' : 'command -v node';
+      const out = execSync(cmd, { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }) as string;
+      const first = out.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0];
+      if (first && fs.existsSync(first)) return first;
+    } catch { /* not on PATH */ }
+
+    // Common install locations on Windows as a last resort.
+    if (isWin) {
+      const candidates = [
+        'C:\\Program Files\\nodejs\\node.exe',
+        'C:\\Program Files (x86)\\nodejs\\node.exe',
+        process.env.APPDATA && path.join(process.env.APPDATA, 'npm', 'node.exe'),
+      ].filter(Boolean) as string[];
+      for (const c of candidates) {
+        try { if (fs.existsSync(c)) return c; } catch { /* skip */ }
+      }
+    }
+
+    console.warn('[node-exec] No system Node found. Pkg-bundled server will fail to run .mjs scripts. Set NODE_EXECUTABLE_PATH to override.');
+    return 'node';
+  }
   return process.execPath;
 }
 
@@ -292,23 +461,24 @@ export function finalizeJob(id: string, result: any): void {
 
 type FinishFn = (result: { output: any; log: string | null; error: string | null; variables?: Record<string, any> }) => void;
 
-function processJsNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, _execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processJsNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, _execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const logs: string[] = [];
   const customConsole = {
     log: (...args: any[]) => {
       const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'log', msg, id);
+      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId);
     },
     warn: (...args: any[]) => {
       const msg = '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'log', msg, id);
+      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId);
     },
     error: (...args: any[]) => {
       const msg = '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'error', msg, id);
+      if (jobId) emitJobLog(jobId, 'error', msg, emitNodeId);
     },
   };
 
@@ -354,7 +524,8 @@ function processJsNode(id: string, code: string, input: any, finish: FinishFn, _
   }
 }
 
-function processGroovyNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processGroovyNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempGroovyPath = path.join(INBOX, `node_groovy_${uid}.groovy`);
   const tempInputPath = path.join(INBOX, `node_groovy_${uid}.input`);
@@ -390,8 +561,8 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
 
   const child = spawn('java', ['-jar', resolveGroovyJar(), tempGroovyPath, 'lib'], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id);
     safeUnlinkSync(tempGroovyPath);
@@ -413,7 +584,8 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
   child.on('exit', () => clearInterval(si));
 }
 
-function processBatchNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processBatchNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempBatchPath = path.join(INBOX, `node_batch_${uid}.bat`);
   const tempOutputPath = path.join(INBOX, `node_batch_${uid}.output`);
@@ -424,8 +596,8 @@ function processBatchNode(id: string, code: string, input: any, finish: FinishFn
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('cmd', ['/C', tempBatchPath], { cwd: execCwd, shell: false });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempBatchPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempBatchPath);
@@ -442,7 +614,8 @@ function processBatchNode(id: string, code: string, input: any, finish: FinishFn
   child.on('exit', () => clearInterval(si));
 }
 
-function processJsBackendNode(id: string, code: string, input: any, finish: FinishFn, codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processJsBackendNode(id: string, code: string, input: any, finish: FinishFn, codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempId = `node_jsbackend_${uid}`;
   const tempScriptPath = path.join(INBOX, `${tempId}.mjs`);
@@ -463,13 +636,31 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
   const varNames = Object.keys(variables);
   const variableDeclarations = varNames.map(n => `let ${n} = __variables["${n}"];`).join('\n');
   const variableCapture = varNames.length > 0 ? `const __capturedVariables = { ${varNames.join(', ')} };\nfs.writeFileSync(${JSON.stringify(tempVariablesPath)}, JSON.stringify(__capturedVariables), 'utf8');` : '';
-  const codeWithInput = `let output = "";\nconst input = ${JSON.stringify(input)};\nconst __variables = ${JSON.stringify(variables)};\nimport fs from 'fs';\n${variableDeclarations}\n${code}\n${variableCapture}\nfs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf8');\n`;
+  // Rewrite bare ESM imports → absolute file URLs so the script resolves
+  // packages even though it lives outside the server's node_modules tree.
+  const userCode = rewriteBareEsmImports(code);
+  const codeWithInput = `let output = "";\nconst input = ${JSON.stringify(input)};\nconst __variables = ${JSON.stringify(variables)};\nimport fs from 'fs';\n${variableDeclarations}\n${userCode}\n${variableCapture}\nfs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf8');\n`;
   fs.writeFileSync(tempScriptPath, codeWithInput, 'utf8');
 
-  const child = spawn(`"${nodeExecutablePath}"`, [tempScriptPath], { cwd: execCwd, shell: true, timeout: JS_BACKEND_TIMEOUT_MS || undefined });
+  // Spawn the user script's Node process WITHOUT `shell: true`. Going through
+  // cmd.exe makes the script process a grandchild of the shell and corrupts
+  // the file-descriptor table the child needs — in particular, Playwright's
+  // `--remote-debugging-pipe` mode opens fds 3/4 between the script process
+  // and the browser; once those are non-inheritable the pipe closes the
+  // instant Edge connects back, surfacing as
+  //   "browserType.launch: Target page, context or browser has been closed".
+  // Node's spawn handles `.exe`/PATHEXT resolution itself since Node 18, so
+  // a bare `node` command still works on Windows without the shell.
+  const child = spawn(nodeExecutablePath, [tempScriptPath], {
+    cwd: execCwd,
+    shell: false,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: JS_BACKEND_TIMEOUT_MS || undefined,
+  });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempScriptPath);
     let outputValue: any = null;
@@ -487,7 +678,8 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
   child.on('exit', () => clearInterval(si));
 }
 
-function processPowershellNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processPowershellNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempPs1Path = path.join(INBOX, `node_ps_${uid}.ps1`);
   const tempOutputPath = path.join(INBOX, `node_ps_${uid}.output`);
@@ -506,8 +698,8 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', tempPs1Path], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempPs1Path);
     let outputValue: any = null;
@@ -526,7 +718,8 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
   child.on('exit', () => clearInterval(si));
 }
 
-function processPythonNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null): void {
+function processPythonNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempPyPath = path.join(INBOX, `node_python_${uid}.py`);
   const tempInputPath = path.join(INBOX, `node_python_${uid}.input`);
@@ -543,8 +736,8 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('python', [tempPyPath], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, id); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, id); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempPyPath); safeUnlinkSync(tempInputPath);
     let outputValue: any = null;
@@ -619,9 +812,11 @@ export function processJob(job: any): void {
           type,
           data: { code, input: job.input, variables: vars, timeout: effectiveTimeout ? Math.ceil(effectiveTimeout / 1000) : 0 },
         };
-        emitJobLog(jobId, 'log', `[remote] dispatching ${type} node to worker ${job.workerId}`, jobId);
-        const { output, variables: workerVars } = await dispatchToWorker(job.workerId, remoteNode, jobId, jobId);
-        emitJobLog(jobId, 'log', `[remote] node ${jobId} completed on worker`, jobId);
+        const emitChan = job.execId || jobId;
+        const emitNode = job.nodeId || jobId;
+        emitJobLog(emitChan, 'log', `[remote] dispatching ${type} node to worker ${job.workerId}`, emitNode);
+        const { output, variables: workerVars } = await dispatchToWorker(job.workerId, remoteNode, emitChan, emitNode);
+        emitJobLog(emitChan, 'log', `[remote] node ${emitNode} completed on worker`, emitNode);
         finish({ output, log: null, error: null, variables: workerVars || {} });
       } catch (err: any) {
         finish({ output: null, log: null, error: `Worker dispatch failed: ${err.message}` });
@@ -652,17 +847,17 @@ export function processJob(job: any): void {
       } catch (err: any) { restore(); finish({ output: null, log: null, error: `Error executing flow: ${err.message}` }); }
     })();
   } else if (type === 'groovy') {
-    processGroovyNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processGroovyNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   } else if (type === 'batch') {
-    processBatchNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processBatchNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   } else if (type === 'jsbackend' || type === 'playwright') {
-    processJsBackendNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processJsBackendNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   } else if (type === 'powershell') {
-    processPowershellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processPowershellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   } else if (type === 'python') {
-    processPythonNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processPythonNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   } else {
-    processJsNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, jobId);
+    processJsNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
   }
 }
 

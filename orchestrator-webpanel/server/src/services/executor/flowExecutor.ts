@@ -139,6 +139,11 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // the current node id so the SSE stream's parentNodeId field lets the UI
       // render an expandable group.
       parentNodeId: isFlowNode ? nodeId : parentNodeId,
+      // The real flow-graph node id (e.g. `node-1779129478624`). process*Node
+      // tags every emitted log entry with this so the UI shows the node's
+      // label (`Groovy`) instead of the throwaway transient job id, and so the
+      // log line is routed to the correct execution stream.
+      nodeId,
       // Forward to the parent execution's SSE listeners.
       execId: jobId,
       status: 'queued',

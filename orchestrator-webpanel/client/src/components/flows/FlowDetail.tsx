@@ -443,8 +443,26 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
             {(() => {
               const hasNodes = execNodes.length > 0;
+              // When the selection is a flow node, also surface logs from every
+              // descendant in its subgraph — walk the child→parent map upward
+              // and accept the log if `selectedNodeId` shows up anywhere in
+              // the chain.
+              const matchSelected = (logNodeId: string | null | undefined): boolean => {
+                if (!selectedNodeId) return true;
+                if (!logNodeId) return false;
+                if (logNodeId === selectedNodeId) return true;
+                let cur: string | undefined = logNodeId;
+                const seen = new Set<string>();
+                while (cur && parentMap.has(cur) && !seen.has(cur)) {
+                  seen.add(cur);
+                  const p = parentMap.get(cur)!;
+                  if (p === selectedNodeId) return true;
+                  cur = p;
+                }
+                return false;
+              };
               const nodeFilteredLogs = selectedNodeId
-                ? selectedExec.logs.filter(l => l.nodeId === selectedNodeId)
+                ? selectedExec.logs.filter(l => matchSelected(l.nodeId))
                 : selectedExec.logs;
               const typedLogs = hiddenTypes.size > 0
                 ? nodeFilteredLogs.filter(l => !hiddenTypes.has(l.type))

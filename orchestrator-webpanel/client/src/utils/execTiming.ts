@@ -11,6 +11,7 @@ export function computeNodeTimings(logs: LogEntry[]): Map<string, NodeTiming> {
   const m = new Map<string, NodeTiming>();
   for (const l of logs) {
     if (!l.nodeId) continue;
+    if (l.type === 'flow') continue; // marker — not part of node timing
     const cur = m.get(l.nodeId);
     if (!cur) {
       m.set(l.nodeId, { start: l.timestamp, end: l.timestamp, hasError: l.type === 'error' });
@@ -51,6 +52,10 @@ export function computeNodeRuns(logs: LogEntry[]): Map<string, NodeRun[]> {
   for (const l of sorted) {
     const id = l.nodeId;
     if (!id) continue;
+    // Skip `flow` marker entries entirely: they're emitted *before* the
+    // `input` log for flow-type nodes and would otherwise count as a phantom
+    // run-opening event, making every executed flow node show up as ×2.
+    if (l.type === 'flow') continue;
     if (l.type === 'input') {
       closeRun(id);
       open.set(id, { start: l.timestamp, end: l.timestamp, hasError: false });
