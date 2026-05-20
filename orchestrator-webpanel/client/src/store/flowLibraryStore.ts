@@ -131,6 +131,28 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
   function persistExecs(executions: FlowExecution[]) {
     const trimmed = executions.slice(0, MAX_EXECUTIONS);
     saveJSON(EXECS_KEY, trimmed);
+    // Same reference-stability trick as persistFlows: skip the set when the
+    // payload is structurally identical, otherwise reuse existing exec
+    // objects element-by-element to prevent the executions list from
+    // flashing on every poll.
+    const current = get().executions;
+    if (current.length === trimmed.length) {
+      let allSame = true;
+      const merged: FlowExecution[] = [];
+      for (let i = 0; i < trimmed.length; i++) {
+        const next = trimmed[i];
+        const prev = current[i];
+        if (prev && prev.id === next.id && JSON.stringify(prev) === JSON.stringify(next)) {
+          merged.push(prev);
+        } else {
+          merged.push(next);
+          allSame = false;
+        }
+      }
+      if (allSame) return;
+      set({ executions: merged });
+      return;
+    }
     set({ executions: trimmed });
   }
 
@@ -201,7 +223,20 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       (async () => {
         try {
           const data: any = await apiClient.get('/api/v1/flows');
-          persistFlows((data.flows || []).map(mapServerFlow));
+          const serverFlows: OrchestratorFlow[] = (data.flows || []).map(mapServerFlow);
+          // Preserve in-flight optimistic edits. When the local copy's
+          // updatedAt is newer than the server's, the PUT just hasn't landed
+          // yet — keep the local copy to avoid flashing owner/namespace
+          // back to the server's stale value for a poll tick.
+          const localById = new Map(get().flows.map(f => [f.id, f]));
+          const merged = serverFlows.map(sf => {
+            const local = localById.get(sf.id);
+            if (local && local.updatedAt && sf.updatedAt && new Date(local.updatedAt).getTime() > new Date(sf.updatedAt).getTime()) {
+              return local;
+            }
+            return sf;
+          });
+          persistFlows(merged);
         } catch { /* server may not be ready yet */ }
       })();
     },
