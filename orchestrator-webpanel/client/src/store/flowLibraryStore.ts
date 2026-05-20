@@ -215,10 +215,16 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
     schedulerActive: false,
 
     loadAll: () => {
-      // Show cached data immediately while server request is in flight
-      const flows = loadJSON<OrchestratorFlow[]>(FLOWS_KEY, []);
-      const executions = loadJSON<FlowExecution[]>(EXECS_KEY, []);
-      set({ flows, executions });
+      // First call only: hydrate from localStorage so the UI has something to
+      // render before the network request comes back. Subsequent calls (the
+      // FlowsList polls this every 5s) skip the hydrate — replaying it on
+      // every tick was clobbering the live in-memory refs with fresh ones
+      // from JSON.parse and flashing the table.
+      if (get().flows.length === 0 && get().executions.length === 0) {
+        const flows = loadJSON<OrchestratorFlow[]>(FLOWS_KEY, []);
+        const executions = loadJSON<FlowExecution[]>(EXECS_KEY, []);
+        if (flows.length || executions.length) set({ flows, executions });
+      }
 
       (async () => {
         try {
