@@ -842,6 +842,16 @@ export function processJob(job: any): void {
   } catch { }
   if (!fs.existsSync(execCwd)) { try { fs.mkdirSync(execCwd, { recursive: true }); } catch { execCwd = WORK_DIR; } }
 
+  // Deploy artifacts before running locally. Worker-bound jobs forward the
+  // artifacts through dispatchToWorker (below) so they land on the worker
+  // instead. 'flow' type jobs are handled by executeInlineFlow which
+  // performs its own artifact extraction inside executeOrchestratorFlow.
+  if (Array.isArray(job.artifacts) && job.artifacts.length && !job.workerId && type !== 'flow') {
+    try { extractArtifacts(job.artifacts, EXECUTION_DIR); } catch (e: any) {
+      console.warn('[job] artifact extraction warning:', e.message);
+    }
+  }
+
   if (codeFilePath) {
     try {
       const resolved = path.isAbsolute(codeFilePath) ? codeFilePath : path.resolve(job.basePath || process.cwd(), codeFilePath);
@@ -886,7 +896,7 @@ export function processJob(job: any): void {
         const emitChan = job.execId || jobId;
         const emitNode = job.nodeId || jobId;
         emitJobLog(emitChan, 'log', `[remote] dispatching ${type} node to worker ${job.workerId}`, emitNode);
-        const { output, variables: workerVars } = await dispatchToWorker(job.workerId, remoteNode, emitChan, emitNode);
+        const { output, variables: workerVars } = await dispatchToWorker(job.workerId, remoteNode, emitChan, emitNode, job.artifacts);
         emitJobLog(emitChan, 'log', `[remote] node ${emitNode} completed on worker`, emitNode);
         finish({ output, log: null, error: null, variables: workerVars || {} });
       } catch (err: any) {

@@ -20,6 +20,19 @@ function resolveWorkerIdForActiveSession(): string | null {
   } catch { return null; }
 }
 
+// Bundle the active session's linked flow's artifacts so edit-mode "Run Flow"
+// deploys them the same way a top-level execution does. Empty array when no
+// flow is linked or the flow declares none.
+function resolveArtifactsForActiveSession(): Array<{name: string; data: string}> {
+  try {
+    const active = useSessionStore.getState().getActiveSession();
+    const linkedFlowId = active?.linkedFlowId;
+    if (!linkedFlowId) return [];
+    const flow = useFlowLibraryStore.getState().flows.find(f => f.id === linkedFlowId);
+    return flow?.artifacts || [];
+  } catch { return []; }
+}
+
 /**
  * Node execution logic
  * Handles execution of individual nodes based on their type
@@ -270,12 +283,14 @@ async function executeFlowNode(
     addLog('log', `Executing flow: ${node.data.label || 'Flow'}`);
 
     // Submit job via HTTP API - flow content is always JSON
+    const jobArtifacts = resolveArtifactsForActiveSession();
     const jobRequest: any = {
       type: 'flow',
       code: flowContent,
       input: processedInputs,
       timeout: activeFlowState.nodeExecutionTimeout,
       workerId: resolveWorkerIdForActiveSession(),
+      ...(jobArtifacts.length ? { artifacts: jobArtifacts } : {}),
     };
 
     try {
@@ -482,6 +497,7 @@ async function executeRegularNode(
       const variables = collectVariables(activeFlowState.nodes);
 
       // Submit job via HTTP API
+      const jobArtifacts = resolveArtifactsForActiveSession();
       const jobRequest: any = {
         type: node.data.type,
         code: node.data.code,
@@ -491,6 +507,7 @@ async function executeRegularNode(
         basePath: basePath,
         variables: variables,
         workerId: resolveWorkerIdForActiveSession(),
+        ...(jobArtifacts.length ? { artifacts: jobArtifacts } : {}),
       };
 
       const { jobId } = await apiClient.submitJob(jobRequest);

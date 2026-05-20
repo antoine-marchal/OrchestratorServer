@@ -5,7 +5,7 @@ import { resolveSecretsDetailed } from './secrets';
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
-  const { type, code, codeFilePath, input, timeout, basePath, sessionId, runnerId, variables, workerId } = req.body;
+  const { type, code, codeFilePath, input, timeout, basePath, sessionId, runnerId, variables, workerId, artifacts } = req.body;
   if (!type) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job type is required' } }) as any;
 
   // Resolve ${{ secrets.NAME }} placeholders only for jobs that run locally —
@@ -24,6 +24,7 @@ router.post('/', async (req: Request, res: Response) => {
   const job: any = {
     jobId, type, code: resolvedCode, codeFilePath, input, timeout, basePath, sessionId, runnerId,
     variables: variables || {}, workerId: workerId || null,
+    artifacts: Array.isArray(artifacts) && artifacts.length ? artifacts : undefined,
     status: 'queued', startTime: new Date().toISOString(), stopRequested: false,
   };
   jobs.set(jobId, job);
