@@ -11,6 +11,12 @@ export function useAuth() {
     isViewer: role === 'viewer',
     canEdit: role === 'admin' || role === 'operator',
     canDeleteWorker: role === 'admin',
-    canAccessAdmin: role === 'admin',
+    // Admin section is visible to operators too — but they only see the
+    // Secrets tab (no Users management) and can't reveal/delete secrets.
+    canAccessAdmin: role === 'admin' || role === 'operator',
+    canManageUsers: role === 'admin',
+    canRevealSecret: role === 'admin',
+    canDeleteSecret: role === 'admin',
+    canCreateSecret: role === 'admin' || role === 'operator',
   };
 }

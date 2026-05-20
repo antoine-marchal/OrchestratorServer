@@ -5,6 +5,7 @@ import {
   AlertCircle, Search, ShieldCheck, RefreshCw,
 } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
+import { useAuth } from '../../hooks/useAuth';
 
 /* ─── Types ─────────────────────────────────────────── */
 
@@ -91,7 +92,8 @@ function RoleBadge({ role }: { role: string }) {
 /* ─── Main component ─────────────────────────────────── */
 
 export const AdminLayout: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AdminTab>('users');
+  const { canManageUsers, canRevealSecret, canDeleteSecret, canCreateSecret } = useAuth();
+  const [activeTab, setActiveTab] = useState<AdminTab>(canManageUsers ? 'users' : 'secrets');
 
   /* ── Users state ── */
   const [users, setUsers] = useState<User[]>([]);
@@ -150,7 +152,10 @@ export const AdminLayout: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { loadUsers(); loadSecrets(); }, [loadUsers, loadSecrets]);
+  useEffect(() => {
+    if (canManageUsers) loadUsers();
+    loadSecrets();
+  }, [loadUsers, loadSecrets, canManageUsers]);
 
   /* ── User actions ── */
   const handleCreateUser = async () => {
@@ -264,7 +269,7 @@ export const AdminLayout: React.FC = () => {
             <span className="slash"> /&gt;</span>
           </h1>
           <span className="subtitle">
-            {activeTab === 'users'
+            {activeTab === 'users' && canManageUsers
               ? <><span className="num">{users.length}</span> user{users.length !== 1 ? 's' : ''}</>
               : <><span className="num">{secrets.length}</span> secret{secrets.length !== 1 ? 's' : ''}</>
             }
@@ -273,22 +278,24 @@ export const AdminLayout: React.FC = () => {
 
         <div className="tc-toolbar">
           {/* Tab switcher */}
-          <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 3 }}>
-            <button
-              className={activeTab === 'users' ? 'tc-btn primary' : 'tc-btn ghost'}
-              style={{ height: 26, padding: '0 12px', fontSize: 12, borderRadius: 6 }}
-              onClick={() => setActiveTab('users')}
-            >
-              <Users size={12} /> Users
-            </button>
-            <button
-              className={activeTab === 'secrets' ? 'tc-btn primary' : 'tc-btn ghost'}
-              style={{ height: 26, padding: '0 12px', fontSize: 12, borderRadius: 6 }}
-              onClick={() => setActiveTab('secrets')}
-            >
-              <Lock size={12} /> Secrets
-            </button>
-          </div>
+          {canManageUsers && (
+            <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: 3 }}>
+              <button
+                className={activeTab === 'users' ? 'tc-btn primary' : 'tc-btn ghost'}
+                style={{ height: 26, padding: '0 12px', fontSize: 12, borderRadius: 6 }}
+                onClick={() => setActiveTab('users')}
+              >
+                <Users size={12} /> Users
+              </button>
+              <button
+                className={activeTab === 'secrets' ? 'tc-btn primary' : 'tc-btn ghost'}
+                style={{ height: 26, padding: '0 12px', fontSize: 12, borderRadius: 6 }}
+                onClick={() => setActiveTab('secrets')}
+              >
+                <Lock size={12} /> Secrets
+              </button>
+            </div>
+          )}
 
           <button
             className="tc-btn ghost"
@@ -299,19 +306,23 @@ export const AdminLayout: React.FC = () => {
           </button>
 
           {activeTab === 'users' ? (
-            <button className="tc-btn primary" onClick={() => setShowCreateUser(v => !v)}>
-              <Plus size={13} /> Add User
-            </button>
+            canManageUsers && (
+              <button className="tc-btn primary" onClick={() => setShowCreateUser(v => !v)}>
+                <Plus size={13} /> Add User
+              </button>
+            )
           ) : (
-            <button className="tc-btn primary" onClick={() => setShowCreateSecret(v => !v)}>
-              <Plus size={13} /> Add Secret
-            </button>
+            canCreateSecret && (
+              <button className="tc-btn primary" onClick={() => setShowCreateSecret(v => !v)}>
+                <Plus size={13} /> Add Secret
+              </button>
+            )
           )}
         </div>
       </div>
 
       {/* ── USERS TAB ─────────────────────────────────── */}
-      {activeTab === 'users' && (
+      {activeTab === 'users' && canManageUsers && (
         <>
           {/* Stats */}
           <div className="tc-stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
@@ -727,20 +738,24 @@ export const AdminLayout: React.FC = () => {
                       </td>
                       <td>
                         <div className="tc-row-actions">
-                          <button
-                            className="tc-icon-btn"
-                            title={revealedValues[s._id] !== undefined ? 'Hide value' : 'Reveal value (admin)'}
-                            onClick={() => handleReveal(s._id)}
-                          >
-                            {revealedValues[s._id] !== undefined ? <EyeOff size={13} /> : <Eye size={13} />}
-                          </button>
-                          <button
-                            className="tc-icon-btn danger"
-                            title="Delete secret"
-                            onClick={() => handleDeleteSecret(s._id)}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {canRevealSecret && (
+                            <button
+                              className="tc-icon-btn"
+                              title={revealedValues[s._id] !== undefined ? 'Hide value' : 'Reveal value (admin)'}
+                              onClick={() => handleReveal(s._id)}
+                            >
+                              {revealedValues[s._id] !== undefined ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                          )}
+                          {canDeleteSecret && (
+                            <button
+                              className="tc-icon-btn danger"
+                              title="Delete secret"
+                              onClick={() => handleDeleteSecret(s._id)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

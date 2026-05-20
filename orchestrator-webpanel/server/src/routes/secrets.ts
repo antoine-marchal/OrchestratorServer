@@ -20,7 +20,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireRole('admin', 'operator'), async (req: Request, res: Response) => {
   const { name, value, scope = 'global', flowId } = req.body;
   if (!name || !value) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name and value required' } }) as any;
 
@@ -41,7 +41,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const col = getCollection('secrets');
     const removed = await col.remove({ _id: req.params.id });

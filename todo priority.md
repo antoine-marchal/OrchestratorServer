@@ -14,7 +14,7 @@
 
 [x] Add a env var for server to enable / disabler execution by Server
 
-[] Add the ability for operator role to list secrets and add a new secret but not to decode nor delete a secret
+[x] Add the ability for operator role to list secrets and add a new secret but not to decode nor delete a secret
 
 [] Group the flows by namespace with the same UX as the groups for workers
 
