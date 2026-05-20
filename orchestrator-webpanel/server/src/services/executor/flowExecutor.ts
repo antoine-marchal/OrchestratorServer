@@ -33,6 +33,10 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   // the referenced flow's own artifacts. A flowRef pointing at flow2 needs
   // flow2's artifacts deployed before any of its inner nodes run.
   let effectiveArtifacts: Array<{name: string; data: string}> | undefined = artifacts;
+  // When this node is a flowRef invocation, we also create a dedicated
+  // execution record for the referenced flow so it appears in its own
+  // executions list and the global one — with triggeredBy = "triggered - <flow1>".
+  let nestedExec: { execId: string; flowId: string; startTime: string; nodeIds: Set<string> } | null = null;
 
   // flowRef: node references another flow by ID — load it from DB and execute inline.
   if (nodeType === 'flow' && node?.data?.flowRef) {
@@ -55,6 +59,45 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
             console.warn(`[flow] flowRef artifact extraction warning: ${e.message}`);
           }
         }
+      }
+      // Create the flow2 execution record. triggeredBy carries the parent
+      // flow's name so the executions list shows "triggered - <flow1>".
+      try {
+        const execsCol = getCollection('executions');
+        let parentFlowName: string | null = null;
+        if (jobId) {
+          const parentExec = await execsCol.findOne({ jobId });
+          parentFlowName = parentExec?.flowName || null;
+        }
+        const execId = nowUid();
+        const startTime = new Date().toISOString();
+        const nestedNodeIds = new Set<string>((referencedFlow.nodes || []).map((n: any) => n.id));
+        await execsCol.insert({
+          _id: execId,
+          flowId: referencedFlow._id,
+          flowName: referencedFlow.name,
+          namespace: referencedFlow.namespace || 'default',
+          status: 'RUNNING',
+          triggeredBy: parentFlowName ? `triggered - ${parentFlowName}` : 'triggered',
+          triggeredUser: null,
+          startTime,
+          endTime: null,
+          duration: null,
+          jobId: null,
+          workerId: workerId || null,
+          workerName: null,
+          logs: [],
+          output: null,
+          error: null,
+          nodeStatuses: {},
+          nodes: referencedFlow.nodes || [],
+          edges: referencedFlow.edges || [],
+          parentExecutionId: jobId || null,
+          parentNodeId: nodeId,
+        });
+        nestedExec = { execId, flowId: referencedFlow._id, startTime, nodeIds: nestedNodeIds };
+      } catch (e: any) {
+        console.warn(`[flow] failed to create nested execution record: ${e.message}`);
       }
     } catch (err: any) {
       throw new Error(`Failed to load referenced flow: ${err.message}`);
@@ -194,12 +237,38 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
 
       // Drain transient sub-job logs into the parent flow's log buffer so
       // flowExecutor's completion monitor can persist them on the execution record.
-      if (jobId) {
-        const subLogs = jobLogBuffers.get(transientJobId) || [];
-        if (subLogs.length) {
-          if (!jobLogBuffers.has(jobId)) jobLogBuffers.set(jobId, []);
-          jobLogBuffers.get(jobId)!.push(...subLogs);
-        }
+      const subLogs = jobLogBuffers.get(transientJobId) || [];
+      if (jobId && subLogs.length) {
+        if (!jobLogBuffers.has(jobId)) jobLogBuffers.set(jobId, []);
+        jobLogBuffers.get(jobId)!.push(...subLogs);
+      }
+
+      // If this transient job was a flowRef, finalize the dedicated flow2
+      // execution record we created earlier. Copy over the slice of logs
+      // tagged with flow2's node ids so the new execution row is complete.
+      if (nestedExec) {
+        const ne = nestedExec;
+        (async () => {
+          try {
+            const execsCol = getCollection('executions');
+            const flowsCol = getCollection('flows');
+            const endTime = new Date().toISOString();
+            const duration = new Date(endTime).getTime() - new Date(ne.startTime).getTime();
+            const nestedLogs = subLogs.filter((l: any) => !l.nodeId || ne.nodeIds.has(l.nodeId));
+            const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
+            await execsCol.update({ _id: ne.execId }, { $set: {
+              status, endTime, duration,
+              output: j.output ?? null,
+              error: j.error ?? null,
+              logs: nestedLogs,
+            } });
+            await flowsCol.update({ _id: ne.flowId }, { $set: {
+              lastExecution: { id: ne.execId, status, startTime: ne.startTime, endTime, duration },
+            } });
+          } catch (e: any) {
+            console.warn(`[flow] failed to finalize nested execution: ${e.message}`);
+          }
+        })();
       }
 
       if (j.status === 'failed') reject(new Error(j.error || 'Job failed'));

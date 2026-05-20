@@ -695,6 +695,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const initializedRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
   const [showArtifacts, setShowArtifacts] = useState(false);
+  const [showVersions, setShowVersions] = useState(false);
   const artifacts = flow.artifacts || [];
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
@@ -810,7 +811,19 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       )}
 
       <div className="flex-1 min-h-0">
-        <EditorLayout graphPanel={<FlowEditor embedded flowId={flow.id} />} flowId={flow.id} />
+        <EditorLayout
+          graphPanel={
+            <FlowEditor
+              embedded
+              flowId={flow.id}
+              versionsVisible={showVersions}
+              onToggleVersions={() => setShowVersions(v => !v)}
+            />
+          }
+          flowId={flow.id}
+          showVersions={showVersions}
+          onToggleVersions={() => setShowVersions(v => !v)}
+        />
       </div>
     </div>
   );
@@ -822,7 +835,7 @@ const FlowDetail: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { flows, deleteFlow, executeFlow, updateFlow } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
-  const { canEdit, isViewer } = useAuth();
+  const { canEdit, isViewer, isAdmin, canManageSchedules } = useAuth();
 
   const rawTabParam = searchParams.get('tab');
   const tabParam: TabId = !isViewer && rawTabParam === 'edit' ? 'edit' : 'executions';
@@ -834,6 +847,8 @@ const FlowDetail: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [renamingName, setRenamingName] = useState(false);
   const [nameValue, setNameValue] = useState('');
+  const [renamingNs, setRenamingNs] = useState(false);
+  const [nsValue, setNsValue] = useState('');
 
   const flow = flows.find(f => f.id === id);
   const assignedWorker = flow?.workerId ? serverWorkers.find(w => w._id === flow.workerId) : undefined;
@@ -923,7 +938,31 @@ const FlowDetail: React.FC = () => {
           </button>
 
           <span style={{ color: 'var(--text-mute)', fontFamily: 'var(--font-mono)' }}>/</span>
-          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-3)', fontSize: 12 }}>{flow.namespace}</span>
+          {renamingNs ? (
+            <input
+              autoFocus
+              value={nsValue}
+              onChange={e => setNsValue(e.target.value)}
+              onBlur={() => {
+                const t = nsValue.trim();
+                if (t && t !== (flow.namespace || 'default')) updateFlow(flow.id, { namespace: t });
+                setRenamingNs(false);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { const t = nsValue.trim(); if (t && t !== (flow.namespace || 'default')) updateFlow(flow.id, { namespace: t }); setRenamingNs(false); }
+                if (e.key === 'Escape') setRenamingNs(false);
+              }}
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 3, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '1px 5px', width: 140 }}
+            />
+          ) : (
+            <span
+              style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-3)', fontSize: 12, cursor: canEdit ? 'text' : 'default' }}
+              onDoubleClick={canEdit ? () => { setNsValue(flow.namespace || 'default'); setRenamingNs(true); } : undefined}
+              title={canEdit ? 'Double-click to rename namespace' : undefined}
+            >
+              {flow.namespace}
+            </span>
+          )}
           <span style={{ color: 'var(--text-mute)', fontFamily: 'var(--font-mono)' }}>/</span>
 
           <div className="flex-1 min-w-0">
@@ -969,7 +1008,7 @@ const FlowDetail: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            {canEdit && (
+            {canManageSchedules && (
               <button
                 onClick={() => setShowSchedule(true)}
                 className="tc-btn ghost"

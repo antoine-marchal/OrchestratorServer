@@ -307,22 +307,30 @@ export function safeArtifactPath(name: string, targetDir: string): string | null
 // the file is unpacked into the same execution dir and (optionally) removed.
 // Detection is purely by extension so users can rely on `.zip` / `.tar.gz`
 // without an explicit flag on the artifact record.
-const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz'];
+const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz', '.7z'];
 
 function isArchiveName(name: string): boolean {
   const lower = name.toLowerCase();
   return ARCHIVE_EXTS.some(ext => lower.endsWith(ext));
 }
 
-// Use the platform `tar` to unpack — built-in on Windows 10+ (libarchive) and
-// every modern Linux. Best-effort: a missing `tar` just leaves the archive on
-// disk and emits a warning so the user can debug.
+// Unpack via the platform `tar` (libarchive on Win10+ / GNU tar on Linux).
+// Falls back to `7z`/`7za` for .7z archives when tar can't handle them, so
+// users with p7zip installed still get a clean unpack.
 function unpackArchive(archivePath: string, targetDir: string): boolean {
+  const { execFileSync } = require('child_process');
   try {
-    const { execFileSync } = require('child_process');
     execFileSync('tar', ['-xf', archivePath, '-C', targetDir], { stdio: 'pipe' });
     return true;
   } catch (e: any) {
+    if (archivePath.toLowerCase().endsWith('.7z')) {
+      for (const bin of ['7z', '7za']) {
+        try {
+          execFileSync(bin, ['x', '-y', `-o${targetDir}`, archivePath], { stdio: 'pipe' });
+          return true;
+        } catch { /* try next */ }
+      }
+    }
     console.warn(`[artifact] failed to unpack ${path.basename(archivePath)}: ${e.message}`);
     return false;
   }

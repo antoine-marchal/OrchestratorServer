@@ -44,9 +44,11 @@ interface FlowEditorProps {
   embedded?: boolean;
   readOnly?: boolean;
   flowId?: string;
+  versionsVisible?: boolean;
+  onToggleVersions?: () => void;
 }
 
-function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
+function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onToggleVersions }: FlowEditorProps) {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const edgeLabelStyles = useMemo(() => {
@@ -672,6 +674,8 @@ function Flow({ embedded = false, readOnly = false, flowId }: FlowEditorProps) {
           handleAddNodeClick={handleAddNodeClick}
           dropdownMenu={dropdownMenu}
           addNewNode={addNewNode}
+          versionsVisible={versionsVisible}
+          onToggleVersions={onToggleVersions}
         />
         {contextMenu && !readOnly && (
           <NodeCreationMenu

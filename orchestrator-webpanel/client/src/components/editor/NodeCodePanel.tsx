@@ -96,25 +96,43 @@ export const NodeCodePanel: React.FC<NodeCodePanelProps> = ({ nodeId }) => {
     reg('python', pythonSnippets);
   };
 
+  // Stable refs so the global keydown listener can be registered once and still
+  // see the latest handler closures. Previously the effect depended on `value`
+  // and re-registered on every keystroke — the capture-phase add/remove cycle
+  // was racing with the first keystroke being delivered to Monaco, causing the
+  // initial character to be dropped.
+  const handleSaveRef = useRef(handleSave);
+  const handleCloseRef = useRef(handleClose);
+  handleSaveRef.current = handleSave;
+  handleCloseRef.current = handleClose;
+
   const handleMount: OnMount = (ed, monaco) => {
     editorRef.current = ed;
-    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSave);
-    ed.addCommand(monaco.KeyCode.Escape, handleClose);
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => handleSaveRef.current());
+    ed.addCommand(monaco.KeyCode.Escape, () => handleCloseRef.current());
     if (FORMATTABLE.has(language)) {
       ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => formatWithPrettier());
     }
-    ed.focus();
+    // Defer focus past the current paint so React's parent re-render (which
+    // re-mounts the wrapping panel when activeCard flips to 'code') has
+    // finished and won't steal focus back. Otherwise the first key after
+    // opening the panel was being swallowed.
+    requestAnimationFrame(() => {
+      ed.focus();
+      const model = ed.getModel();
+      if (model) ed.setPosition({ lineNumber: model.getLineCount(), column: model.getLineMaxColumn(model.getLineCount()) });
+    });
   };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); handleClose(); }
+      if (e.key === 'Escape') { e.preventDefault(); handleCloseRef.current(); }
       const isSave = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's';
-      if (isSave) { e.preventDefault(); handleSave(); }
+      if (isSave) { e.preventDefault(); handleSaveRef.current(); }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [value]);
+  }, []);
 
   if (!node) return (
     <div className="flex items-center justify-center h-full text-sm" style={{ color: 'var(--text-3)' }}>Node not found</div>

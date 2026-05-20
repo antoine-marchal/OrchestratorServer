@@ -40,6 +40,7 @@ function mapServerFlow(f: any): OrchestratorFlow {
     namespace: f.namespace || 'default',
     description: f.description || '',
     workerId: f.workerId || '',
+    owner: f.owner || undefined,
     nodes: f.nodes || [],
     edges: f.edges || [],
     artifacts: f.artifacts || [],
@@ -221,6 +222,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         description: updated.description, nodes: updated.nodes, edges: updated.edges,
         workerId: updated.workerId || '',
         artifacts: updated.artifacts || [],
+        owner: updated.owner,
       }).catch(console.error);
     },
 

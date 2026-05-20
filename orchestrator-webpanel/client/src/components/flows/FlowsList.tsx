@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, Play, Pencil, Trash2, Clock, Search,
@@ -12,6 +12,7 @@ import CreateFlowModal from './CreateFlowModal';
 import ScheduleModal from './ScheduleModal';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
+import { apiClient } from '../../utils/apiClient';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -61,7 +62,26 @@ const FlowsList: React.FC = () => {
   const navigate = useNavigate();
   const { flows, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
-  const { canEdit, isViewer } = useAuth();
+  const { canEdit, isViewer, role, isAdmin } = useAuth();
+  const [users, setUsers] = useState<Array<{ _id: string; login: string; role: string }>>([]);
+  useEffect(() => {
+    if (!canEdit) return;
+    apiClient.get('/api/v1/users').then((data: any) => {
+      setUsers(Array.isArray(data) ? data : []);
+    }).catch(() => { /* operator may still get users; ignore errors */ });
+  }, [canEdit]);
+  const adminLogins = useMemo(
+    () => new Set(users.filter(u => u.role === 'admin').map(u => u.login)),
+    [users],
+  );
+  const canEditFlow = useCallback((flow: OrchestratorFlow): boolean => {
+    if (!canEdit) return false;
+    if (isAdmin) return true;
+    // operator: cannot edit a flow owned by an admin
+    if (flow.owner && adminLogins.has(flow.owner)) return false;
+    return true;
+  }, [canEdit, isAdmin, adminLogins]);
+  void role;
 
   // Live-tail backend so cron/API-trigger executions update the row badges
   // (lastExecution status / time) without a manual refresh. Polls every 5s
@@ -85,6 +105,9 @@ const FlowsList: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renamingNsId, setRenamingNsId] = useState<string | null>(null);
+  const [renameNsValue, setRenameNsValue] = useState('');
+  const [renamingOwnerId, setRenamingOwnerId] = useState<string | null>(null);
   const [collapsedNamespaces, setCollapsedNamespaces] = useState<Set<string>>(new Set());
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,6 +133,20 @@ const FlowsList: React.FC = () => {
     }
     setRenamingId(null);
   }, [renameValue, flows, updateFlow]);
+
+  const startRenameNs = useCallback((flow: OrchestratorFlow, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingNsId(flow.id);
+    setRenameNsValue(flow.namespace || 'default');
+  }, []);
+
+  const commitRenameNs = useCallback((flowId: string) => {
+    const trimmed = renameNsValue.trim();
+    if (trimmed && trimmed !== (flows.find(f => f.id === flowId)?.namespace || 'default')) {
+      updateFlow(flowId, { namespace: trimmed });
+    }
+    setRenamingNsId(null);
+  }, [renameNsValue, flows, updateFlow]);
 
   const filtered = flows.filter(f => {
     if (!search) return true;
@@ -346,7 +383,60 @@ const FlowsList: React.FC = () => {
                               title={canEdit ? 'Double-click to rename' : undefined}
                             >{flow.name}</div>
                           )}
-                          <div className="tc-flow-ns">{flow.namespace}{flow.description ? ` · ${flow.description}` : ''}</div>
+                          <div className="tc-flow-ns">
+                            {renamingNsId === flow.id ? (
+                              <input
+                                autoFocus
+                                value={renameNsValue}
+                                onChange={e => setRenameNsValue(e.target.value)}
+                                onBlur={() => commitRenameNs(flow.id)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') commitRenameNs(flow.id);
+                                  if (e.key === 'Escape') setRenamingNsId(null);
+                                }}
+                                onClick={e => e.stopPropagation()}
+                                style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 3, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '1px 4px', width: 140 }}
+                              />
+                            ) : (
+                              <span
+                                onClick={e => e.stopPropagation()}
+                                onDoubleClick={canEdit ? e => startRenameNs(flow, e) : undefined}
+                                title={canEdit ? 'Double-click to rename namespace' : undefined}
+                                style={{ cursor: canEdit ? 'text' : undefined }}
+                              >
+                                {flow.namespace}
+                              </span>
+                            )}
+                            {' · '}
+                            {renamingOwnerId === flow.id ? (
+                              <select
+                                autoFocus
+                                value={flow.owner || ''}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => {
+                                  const newOwner = e.target.value;
+                                  if (newOwner && newOwner !== flow.owner) updateFlow(flow.id, { owner: newOwner });
+                                  setRenamingOwnerId(null);
+                                }}
+                                onBlur={() => setRenamingOwnerId(null)}
+                                style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 3, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '1px 4px' }}
+                              >
+                                {users.map(u => (
+                                  <option key={u._id} value={u.login}>{u.login} ({u.role})</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span
+                                onClick={e => e.stopPropagation()}
+                                onDoubleClick={isAdmin ? e => { e.stopPropagation(); setRenamingOwnerId(flow.id); } : undefined}
+                                title={isAdmin ? 'Double-click to change owner' : undefined}
+                                style={{ cursor: isAdmin ? 'pointer' : undefined, color: 'var(--text-3)' }}
+                              >
+                                by {flow.owner || '—'}
+                              </span>
+                            )}
+                            {flow.description ? ` · ${flow.description}` : ''}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -426,7 +516,7 @@ const FlowsList: React.FC = () => {
 
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
-                        {canEdit && (
+                        {canEditFlow(flow) && (
                           <button
                             className="tc-icon-btn"
                             onClick={e => handleExecute(flow.id, e)}
@@ -436,7 +526,7 @@ const FlowsList: React.FC = () => {
                             {runningIds.has(flow.id) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           </button>
                         )}
-                        {canEdit && (
+                        {canEditFlow(flow) && (
                           <button
                             className="tc-icon-btn"
                             onClick={e => { e.stopPropagation(); navigate(`/flows/${flow.id}?tab=edit`); }}
@@ -445,7 +535,7 @@ const FlowsList: React.FC = () => {
                             <Pencil size={14} />
                           </button>
                         )}
-                        {canEdit && (
+                        {canEditFlow(flow) && isAdmin && (
                           <button
                             className="tc-icon-btn"
                             onClick={e => { e.stopPropagation(); setScheduleFlow(flow); }}
@@ -470,7 +560,7 @@ const FlowsList: React.FC = () => {
                             <Copy size={14} />
                           </button>
                         )}
-                        {canEdit && (
+                        {canEditFlow(flow) && (
                           <button
                             className={`tc-icon-btn${deleteConfirm === flow.id ? ' danger' : ''}`}
                             onClick={e => handleDelete(flow.id, e)}

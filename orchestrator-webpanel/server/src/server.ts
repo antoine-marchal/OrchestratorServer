@@ -173,6 +173,23 @@ async function seedDefaultData(): Promise<void> {
 // collection (which is what the cron service watches), so those schedules
 // silently never fired. Mirror them into the schedules collection on
 // startup so they start firing without requiring the user to re-save.
+async function backfillFlowOwners(): Promise<void> {
+  try {
+    const flowsCol = getCollection('flows');
+    const flows: any[] = await flowsCol.find({});
+    let n = 0;
+    for (const f of flows) {
+      if (!f.owner) {
+        await flowsCol.update({ _id: f._id }, { $set: { owner: 'admin' } });
+        n++;
+      }
+    }
+    if (n > 0) console.log(`[Startup] Backfilled owner=admin on ${n} legacy flow(s)`);
+  } catch (err) {
+    console.warn('[Startup] flow owner backfill failed:', (err as Error).message);
+  }
+}
+
 async function migrateLegacyFlowSchedules(): Promise<void> {
   try {
     const flowsCol = getCollection('flows');
@@ -234,6 +251,7 @@ async function start(): Promise<void> {
   await connectDB();
   await seedDefaultData();
   await migrateLegacyFlowSchedules();
+  await backfillFlowOwners();
   await reconcileStrandedExecutions();
 
   // Set executor function for cron scheduler

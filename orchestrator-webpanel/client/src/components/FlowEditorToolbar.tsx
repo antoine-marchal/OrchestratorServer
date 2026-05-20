@@ -15,6 +15,7 @@ import {
   Redo,
   Copy,
   Clipboard,
+  History,
 } from 'lucide-react';
 
 interface FlowEditorToolbarProps {
@@ -50,6 +51,10 @@ interface FlowEditorToolbarProps {
   handleAddNodeClick: () => void;
   dropdownMenu: boolean;
   addNewNode: (type: string, position?: { x: number; y: number }) => void;
+
+  // Versions panel toggle
+  versionsVisible?: boolean;
+  onToggleVersions?: () => void;
 }
 
 const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
@@ -73,6 +78,8 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
   handleAddNodeClick,
   dropdownMenu,
   addNewNode,
+  versionsVisible,
+  onToggleVersions,
 }) => {
   if (readOnly) return null;
 
@@ -148,6 +155,15 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
           color={canRedo() ? 'bg-gray-500 hover:bg-gray-600' : 'bg-gray-400'}
           title="Redo (Ctrl+Y)"
         />
+        {onToggleVersions && (
+          <ToolbarButton
+            onClick={onToggleVersions}
+            icon={History}
+            label="Versions"
+            color={versionsVisible ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-cyan-500 hover:bg-cyan-600'}
+            title="Toggle version history"
+          />
+        )}
       </div>
 
       {/* Clipboard Operations Group */}

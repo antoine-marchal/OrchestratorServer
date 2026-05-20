@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getCollection } from '../services/db/index';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
+import { authMiddleware } from '../middleware/auth';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
 
@@ -10,7 +12,7 @@ function hashToken(raw: string): string {
 }
 
 // Revoke a trigger token
-router.post('/trigger-tokens/:id/revoke', async (req: Request, res: Response) => {
+router.post('/trigger-tokens/:id/revoke', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const col = getCollection('trigger_tokens');
     const token = await col.findOne({ _id: req.params.id });

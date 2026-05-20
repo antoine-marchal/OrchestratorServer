@@ -13,6 +13,7 @@ export interface OrchestratorFlow {
   namespace: string;
   description: string;
   workerId: string;
+  owner?: string;
   nodes: any[];
   edges: any[];
   artifacts?: FlowArtifact[];

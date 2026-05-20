@@ -159,17 +159,25 @@ function safeArtifactPath(name: string): string | null {
 }
 
 // Extensions auto-unpacked at the start of a job — mirrors the server side.
-const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz'];
+const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz', '.7z'];
 function isArchiveName(name: string): boolean {
   const lower = name.toLowerCase();
   return ARCHIVE_EXTS.some(ext => lower.endsWith(ext));
 }
 function unpackArchive(archivePath: string, targetDir: string): boolean {
+  const { execFileSync } = require('child_process');
   try {
-    const { execFileSync } = require('child_process');
     execFileSync('tar', ['-xf', archivePath, '-C', targetDir], { stdio: 'pipe' });
     return true;
   } catch (e: any) {
+    if (archivePath.toLowerCase().endsWith('.7z')) {
+      for (const bin of ['7z', '7za']) {
+        try {
+          execFileSync(bin, ['x', '-y', `-o${targetDir}`, archivePath], { stdio: 'pipe' });
+          return true;
+        } catch { /* try next */ }
+      }
+    }
     console.warn(`[worker] failed to unpack ${path.basename(archivePath)}: ${e.message}`);
     return false;
   }

@@ -4,8 +4,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
+
+// All schedule + API-trigger management is admin-only — operators can edit
+// flows but must not be able to wire automated triggers around them.
+router.use(requireRole('admin'));
 
 function hashToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');

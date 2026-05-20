@@ -1,9 +1,41 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
 
 const router = Router();
+
+// Operators can edit any flow whose owner is either themselves or another
+// operator. They cannot edit admin-owned flows. Admins can edit anything.
+async function canUserEditFlow(user: any, flow: any): Promise<boolean> {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role !== 'operator') return false;
+  const ownerLogin = flow?.owner;
+  if (!ownerLogin) return true; // legacy unowned: treat as operator-editable
+  if (ownerLogin === user.login) return true;
+  const usersCol = getCollection('users');
+  const owner = await usersCol.findOne({ login: ownerLogin });
+  // Owner missing/deleted → treat as operator (don't trap edits to nobody).
+  if (!owner) return true;
+  return owner.role !== 'admin';
+}
+
+async function requireFlowEditAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const user = (req as any).user;
+  if (!user) { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } }); return; }
+  if (user.role !== 'admin' && user.role !== 'operator') {
+    res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins and operators can edit flows' } });
+    return;
+  }
+  const flow = await getCollection('flows').findOne({ _id: req.params.id });
+  // Missing flow on PUT means upsert (create) — admins and operators may
+  // create. On DELETE the caller will hit a 404 inside the handler itself.
+  if (!flow) { next(); return; }
+  const ok = await canUserEditFlow(user, flow);
+  if (!ok) { res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cannot edit a flow owned by an admin' } }); return; }
+  next();
+}
 
 router.get('/', async (_req: Request, res: Response) => {
   try {
@@ -20,7 +52,8 @@ router.post('/', async (req: Request, res: Response) => {
   const { name, namespace = 'default', description = '', nodes = [], edges = [], workerId = '' } = req.body;
   if (!name) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } }) as any;
   const now = new Date().toISOString();
-  const flow = { _id: nowUid(), name, namespace, description, nodes, edges, workerId, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+  const owner = (req as any).user?.login || 'unknown';
+  const flow = { _id: nowUid(), name, namespace, description, nodes, edges, workerId, owner, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
   try {
     const col = getCollection('flows');
     await col.insert(flow);
@@ -41,7 +74,15 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id', async (req: Request, res: Response) => {
+// Minimum interval between two snapshots of the same flow. Rapid autosaves
+// inside this window collapse into a single "editing session" — the first
+// PUT in the window snapshots the prior state, every later PUT in the
+// same window skips snapshotting so the history doesn't fill with noise.
+// Defaults to 10 min, override via ORCHESTRATOR_VERSION_MIN_INTERVAL_MS.
+const VERSION_MIN_INTERVAL_MS =
+  Number(process.env.ORCHESTRATOR_VERSION_MIN_INTERVAL_MS ?? 10 * 60 * 1000);
+
+router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   try {
     const col = getCollection('flows');
@@ -49,35 +90,44 @@ router.put('/:id', async (req: Request, res: Response) => {
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
       const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '', artifacts = [] } = req.body;
-      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+      const owner = (req as any).user?.login || 'unknown';
+      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, owner, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
       await col.insert(flow);
     } else {
-      // Snapshot the previous version into flow_versions before applying the
-      // update — only when the graph itself changed (nodes/edges), so plain
-      // metadata edits don't pollute history.
+      // Snapshot the previous version into flow_versions when the graph or
+      // artifacts changed. A 10-minute window collapses bursts of autosaves
+      // into a single snapshot per editing session.
       const graphChanged =
         (Array.isArray(req.body.nodes) && JSON.stringify(req.body.nodes) !== JSON.stringify(flow.nodes || []))
-        || (Array.isArray(req.body.edges) && JSON.stringify(req.body.edges) !== JSON.stringify(flow.edges || []));
+        || (Array.isArray(req.body.edges) && JSON.stringify(req.body.edges) !== JSON.stringify(flow.edges || []))
+        || (Array.isArray(req.body.artifacts) && JSON.stringify(req.body.artifacts) !== JSON.stringify(flow.artifacts || []));
       if (graphChanged) {
         try {
-          await versionsCol.insert({
-            _id: nowUid(),
-            flowId: req.params.id,
-            nodes: flow.nodes || [],
-            edges: flow.edges || [],
-            artifacts: flow.artifacts || [],
-            name: flow.name,
-            namespace: flow.namespace,
-            description: flow.description,
-            savedAt: flow.updatedAt || now,
-            author: (req as any).user?.login || 'unknown',
-          });
+          // Find the most recent snapshot for this flow. Skip writing a new
+          // one if the last is younger than the configured min interval.
+          const recent = await versionsCol.find({ flowId: req.params.id }, { sort: { savedAt: -1 }, limit: 1 });
+          const last = recent && recent.length ? recent[0] : null;
+          const lastAgeMs = last ? Date.now() - new Date(last.savedAt).getTime() : Infinity;
+          if (lastAgeMs >= VERSION_MIN_INTERVAL_MS) {
+            await versionsCol.insert({
+              _id: nowUid(),
+              flowId: req.params.id,
+              nodes: flow.nodes || [],
+              edges: flow.edges || [],
+              artifacts: flow.artifacts || [],
+              name: flow.name,
+              namespace: flow.namespace,
+              description: flow.description,
+              savedAt: flow.updatedAt || now,
+              author: (req as any).user?.login || 'unknown',
+            });
+          }
         } catch (e: any) {
           console.warn('[flows] failed to snapshot version:', e.message);
         }
       }
       const updates: any = { updatedAt: now };
-      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts']) {
+      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts', 'owner']) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
       }
       await col.update({ _id: req.params.id }, { $set: updates });
@@ -149,7 +199,7 @@ router.post('/:id/versions/:vid/restore', async (req: Request, res: Response) =>
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
     const col = getCollection('flows');
     const n = await col.remove({ _id: req.params.id });

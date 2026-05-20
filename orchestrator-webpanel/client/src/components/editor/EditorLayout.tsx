@@ -8,16 +8,18 @@ interface EditorLayoutProps {
   graphPanel: React.ReactNode;
   embedded?: boolean;
   flowId?: string;
+  showVersions?: boolean;
+  onToggleVersions?: () => void;
 }
 
-export const EditorLayout: React.FC<EditorLayoutProps> = ({ graphPanel, flowId }) => {
+export const EditorLayout: React.FC<EditorLayoutProps> = ({ graphPanel, flowId, showVersions, onToggleVersions: _onToggleVersions }) => {
+  void _onToggleVersions; // visibility controlled by parent; nothing to do here.
   const sessionStore = useSessionStore();
   const flowState = sessionStore.getActiveFlowState();
   const activeCard = flowState?.activeCard ?? 'graph';
   const editingNodeId = flowState?.editingNodeId ?? null;
   const [treeWidth, setTreeWidth] = useState(200);
   const [versionsWidth, setVersionsWidth] = useState(280);
-  const [showVersions, setShowVersions] = useState(false);
   const drag = useRef<{ x: number; w: number; side: 'left' | 'right' } | null>(null);
 
   useEffect(() => {
@@ -66,27 +68,12 @@ export const EditorLayout: React.FC<EditorLayoutProps> = ({ graphPanel, flowId }
       </div>
 
       {/* Main panel — switches between graph and code editor */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-hidden">
         {activeCard === 'code' && editingNodeId ? (
           <NodeCodePanel nodeId={editingNodeId} />
         ) : (
           graphPanel
         )}
-        {/* Toggle for the version history rail — fixed at the right edge of
-            the canvas, never overlaps the resizable panel itself. */}
-        <button
-          onClick={() => setShowVersions(v => !v)}
-          title={showVersions ? 'Hide version history' : 'Show version history'}
-          style={{
-            position: 'absolute', top: 8, right: 8, zIndex: 5,
-            height: 26, padding: '0 10px', borderRadius: 6,
-            background: showVersions ? 'var(--accent-soft)' : 'var(--surface)',
-            border: '1px solid var(--border)', color: 'var(--text-2)',
-            fontSize: 11, fontFamily: 'var(--font-mono)', cursor: 'pointer',
-          }}
-        >
-          versions
-        </button>
       </div>
 
       {showVersions && (

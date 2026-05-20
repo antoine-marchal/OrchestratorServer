@@ -279,7 +279,7 @@ export const AdminLayout: React.FC = () => {
   const secretStats = {
     total: secrets.length,
     global: secrets.filter(s => s.scope === 'global').length,
-    flowScoped: secrets.filter(s => s.scope === 'flow').length,
+    workerScoped: secrets.filter(s => s.scope === 'worker').length,
   };
 
   /* ── Render ── */
@@ -627,8 +627,8 @@ export const AdminLayout: React.FC = () => {
               <span className="tc-stat-value">{secretStats.global}</span>
             </div>
             <div className="tc-stat">
-              <span className="tc-stat-label">flow-scoped</span>
-              <span className="tc-stat-value warn">{secretStats.flowScoped}</span>
+              <span className="tc-stat-label">worker-scoped</span>
+              <span className="tc-stat-value warn">{secretStats.workerScoped}</span>
             </div>
           </div>
 
@@ -666,19 +666,9 @@ export const AdminLayout: React.FC = () => {
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   >
                     <option value="global">Global</option>
-                    <option value="flow">Flow-scoped</option>
                     <option value="worker">Worker-scoped</option>
                   </select>
                 </div>
-                {secScope === 'flow' && (
-                  <input
-                    value={secFlowId}
-                    onChange={e => setSecFlowId(e.target.value)}
-                    placeholder="Flow ID"
-                    className="px-3 py-1.5 rounded text-xs font-mono"
-                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', maxWidth: 320 }}
-                  />
-                )}
                 {secScope === 'worker' && (
                   <select
                     value={secWorkerId}
