@@ -401,20 +401,29 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
     syncBackendExecutions: async (flowId) => {
       const localExecs = getExecs();
-      const knownIds = new Set(localExecs.map(e => e.id));
+      const knownById = new Map(localExecs.map(e => [e.id, e]));
       const knownFlowIds = new Set(getFlows().map(f => f.id));
 
       try {
         const query = flowId ? `?flowId=${encodeURIComponent(flowId)}&limit=100` : '?limit=100';
         const data: any = await apiClient.get(`/api/v1/executions${query}`);
         const backendExecs: any[] = data.executions || [];
+
+        // Build the next executions array in one pass and persist it ONCE.
+        // The previous implementation called updateExec per backend row,
+        // which fired N persistExecs/set() calls per poll — even when the
+        // dedupe inside persistExecs reused most refs, the cascade of N
+        // store updates re-rendered the list N times and made it flash.
         const newExecs: FlowExecution[] = [];
+        const patchedExecs = new Map<string, FlowExecution>();
+        const stoppedRunningIds: string[] = [];
 
         for (const bExec of backendExecs) {
           const id = bExec._id || bExec.id;
           if (!id || !knownFlowIds.has(bExec.flowId)) continue;
 
-          if (knownIds.has(id)) {
+          if (knownById.has(id)) {
+            const prev = knownById.get(id)!;
             const patch: Partial<FlowExecution> = {
               displayName: bExec.displayName,
               status: bExec.status,
@@ -427,33 +436,33 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
               nodes: Array.isArray(bExec.nodes) ? bExec.nodes : undefined,
               edges: Array.isArray(bExec.edges) ? bExec.edges : undefined,
             };
-            // Only write logs when the remote has them. The list endpoint
-            // returns the persisted DB record, whose `logs` field stays `[]`
-            // until the run completes — so blindly copying it would erase
-            // the live logs that startPoll has already streamed in.
             if (Array.isArray(bExec.logs) && bExec.logs.length > 0) {
               patch.logs = bExec.logs;
             }
-            updateExec(id, patch);
-            if (bExec.status !== 'RUNNING') stopPoll(id);
+            patchedExecs.set(id, { ...prev, ...patch });
+            if (bExec.status !== 'RUNNING') stoppedRunningIds.push(id);
           } else {
             newExecs.push(mapServerExec(bExec));
           }
         }
 
-        if (newExecs.length > 0) {
-          const merged = [...newExecs, ...getExecs()];
-          persistExecs(merged);
-          for (const exec of newExecs) {
-            const flow = getFlows().find(f => f.id === exec.flowId);
-            if (flow && (!flow.lastExecution || new Date(exec.startTime) > new Date(flow.lastExecution.startTime))) {
-              updateFlowLastExec(exec.flowId, exec);
-            }
-            // Newly-discovered execution still in flight (e.g., cron/API
-            // trigger fired) — start the log poller so its logs and status
-            // stream live into the UI without a refresh.
-            if (exec.status === 'RUNNING') startPoll(exec.id);
+        // Compose the merged list: newly discovered execs prepended, then
+        // every existing exec (patched in place when the server returned
+        // an update, otherwise left as-is).
+        const merged = [
+          ...newExecs,
+          ...localExecs.map(e => patchedExecs.get(e.id) ?? e),
+        ];
+        persistExecs(merged);
+
+        for (const id of stoppedRunningIds) stopPoll(id);
+
+        for (const exec of newExecs) {
+          const flow = getFlows().find(f => f.id === exec.flowId);
+          if (flow && (!flow.lastExecution || new Date(exec.startTime) > new Date(flow.lastExecution.startTime))) {
+            updateFlowLastExec(exec.flowId, exec);
           }
+          if (exec.status === 'RUNNING') startPoll(exec.id);
         }
       } catch (err) {
         console.error('[flowLibraryStore] syncBackendExecutions failed:', err);
