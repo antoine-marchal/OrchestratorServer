@@ -152,6 +152,21 @@ export const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_M
 export const SERVER_EXECUTION_ENABLED =
   String(process.env.ORCHESTRATOR_SERVER_EXECUTION_ENABLED ?? 'true').toLowerCase() !== 'false';
 
+// When true, scan a job's log output for ERROR / FAILED tokens. If matched on
+// an otherwise-successful run, flip the result to a failure so the flow stops.
+// Pattern: word-boundary, case-sensitive ERROR or FAILED (commonly seen in
+// language stack traces and CI conventions).
+export const FAIL_ON_LOG_ERROR =
+  String(process.env.ORCHESTRATOR_FAIL_ON_LOG_ERROR ?? 'false').toLowerCase() === 'true';
+
+const LOG_ERROR_PATTERN = /\b(ERROR|FAILED)\b/;
+
+export function detectLogErrorTrigger(text: string | null | undefined): string | null {
+  if (!FAIL_ON_LOG_ERROR || !text) return null;
+  const m = text.match(LOG_ERROR_PATTERN);
+  return m ? `Log error trigger: matched '${m[0]}' in output (ORCHESTRATOR_FAIL_ON_LOG_ERROR=true)` : null;
+}
+
 [INBOX, OUTBOX].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
 export const runningProcesses = new Map<string, ChildProcess>();
@@ -443,6 +458,12 @@ export function collectFlowVariables(nodes: any[]): Record<string, any> {
 export function finalizeJob(id: string, result: any): void {
   try {
     runningProcesses.delete(id);
+    // Promote ERROR/FAILED tokens in successful logs to a hard failure when the
+    // operator has opted in via ORCHESTRATOR_FAIL_ON_LOG_ERROR.
+    if (!result.error) {
+      const trigger = detectLogErrorTrigger(result.log);
+      if (trigger) result.error = trigger;
+    }
     const job = jobs.get(id);
     if (job) {
       job.status = result.error ? 'failed' : 'completed';

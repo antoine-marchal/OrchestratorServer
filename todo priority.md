@@ -30,7 +30,7 @@
     [] flow2 execution must be traced as well with a status : name of the flow2
     [] in execution graph, timeline graph and logs i must have nodes of flow2 as well and ability to filter just like if the flow2 was embedded in flow1
 
-[] add a env var to enable ERROR or FAILED parsing in logs to trigger a error in execution of a node (Server AND Worker)
+[x] add a env var to enable ERROR or FAILED parsing in logs to trigger a error in execution of a node (Server AND Worker)
 
 [] add in edit tab a right panel (resizable) following the modifications of the flow (versions management in fact)
         [] a version management based on diff ? a little bit like GIT ? should be a nice to have !!!

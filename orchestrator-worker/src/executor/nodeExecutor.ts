@@ -161,6 +161,13 @@ function nowUid(): string {
 
 function safeUnlink(f: string) { try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch { } }
 
+// When ORCHESTRATOR_FAIL_ON_LOG_ERROR=true, scan combined stdout+stderr for an
+// ERROR/FAILED token after the process exits cleanly. If matched, synthesise a
+// non-zero exit code so downstream runX throws and the node is reported failed.
+const FAIL_ON_LOG_ERROR =
+  String(process.env.ORCHESTRATOR_FAIL_ON_LOG_ERROR ?? 'false').toLowerCase() === 'true';
+const LOG_ERROR_PATTERN = /\b(ERROR|FAILED)\b/;
+
 function normalizeOutput(v: any): any {
   if (v === undefined || v === null || v === '') return null;
   if (typeof v === 'string') {
@@ -200,7 +207,19 @@ function runProcess(cmd: string, args: string[], opts: RunOpts): Promise<{ stdou
       }, opts.timeoutMs);
     }
 
-    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0 }); });
+    child.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      let exitCode = code ?? 0;
+      let finalStderr = stderr;
+      if (FAIL_ON_LOG_ERROR && exitCode === 0) {
+        const m = (stdout + '\n' + stderr).match(LOG_ERROR_PATTERN);
+        if (m) {
+          exitCode = 1;
+          finalStderr = (stderr ? stderr + '\n' : '') + `[log-error-trigger] matched '${m[0]}' (ORCHESTRATOR_FAIL_ON_LOG_ERROR=true)`;
+        }
+      }
+      resolve({ stdout, stderr: finalStderr, exitCode });
+    });
 
     if (opts.stdinData !== undefined) { child.stdin?.write(opts.stdinData); child.stdin?.end(); }
   });
