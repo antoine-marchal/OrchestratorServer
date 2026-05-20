@@ -37,6 +37,11 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   // execution record for the referenced flow so it appears in its own
   // executions list and the global one — with triggeredBy = "triggered - <flow1>".
   let nestedExec: { execId: string; flowId: string; startTime: string; nodeIds: Set<string> } | null = null;
+  // flowRef sub-flows run under their OWN assigned worker, not the parent
+  // flow's. flow1 (workerA) calling flow2 (workerB) → flow2 dispatched to
+  // workerB. Falls back to the parent's workerId only when the sub-flow has
+  // no worker assigned.
+  let effectiveWorkerId: string | null = workerId;
 
   // flowRef: node references another flow by ID — load it from DB and execute inline.
   if (nodeType === 'flow' && node?.data?.flowRef) {
@@ -45,6 +50,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       const referencedFlow = await flowsCol.findOne({ _id: node.data.flowRef });
       if (!referencedFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
       rawCode = JSON.stringify({ nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] });
+      // Honour flow2's own worker assignment, otherwise inherit flow1's.
+      effectiveWorkerId = referencedFlow.workerId || workerId || null;
       const refArtifacts: Array<{name: string; data: string}> = referencedFlow.artifacts || [];
       if (refArtifacts.length) {
         // De-dupe by name — parent wins so a flow1 artifact still shadows a
@@ -54,7 +61,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         for (const a of refArtifacts) byName.set(a.name, a);
         for (const a of artifacts || []) byName.set(a.name, a);
         effectiveArtifacts = Array.from(byName.values());
-        if (!workerId) {
+        if (!effectiveWorkerId) {
           try { extractArtifacts(refArtifacts, EXECUTION_DIR); } catch (e: any) {
             console.warn(`[flow] flowRef artifact extraction warning: ${e.message}`);
           }
@@ -64,10 +71,16 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // flow's name so the executions list shows "triggered - <flow1>".
       try {
         const execsCol = getCollection('executions');
+        const workersCol = getCollection('workers');
         let parentFlowName: string | null = null;
         if (jobId) {
           const parentExec = await execsCol.findOne({ jobId });
           parentFlowName = parentExec?.flowName || null;
+        }
+        let workerName: string | null = null;
+        if (effectiveWorkerId) {
+          const w = await workersCol.findOne({ _id: effectiveWorkerId });
+          workerName = w?.name || null;
         }
         const execId = nowUid();
         const startTime = new Date().toISOString();
@@ -84,8 +97,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
           endTime: null,
           duration: null,
           jobId: null,
-          workerId: workerId || null,
-          workerName: null,
+          workerId: effectiveWorkerId,
+          workerName,
           logs: [],
           output: null,
           error: null,
@@ -208,9 +221,11 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // Carry artifacts through so nested flows (flowRef) see the merged set
       // — parent flow's plus the referenced flow's own artifacts.
       artifacts: effectiveArtifacts && effectiveArtifacts.length ? effectiveArtifacts : undefined,
-      // Carry workerId so nested flow nodes still dispatch their inner script-type
-      // children to the same worker.
-      workerId,
+      // For flowRef sub-flows, use the sub-flow's own assigned worker so
+      // flow1 (workerA) → flow2 (workerB) actually runs flow2 on workerB.
+      // Non-flowRef nodes inherit the parent's workerId (effectiveWorkerId
+      // equals workerId when this isn't a flowRef).
+      workerId: effectiveWorkerId,
       // For flow nodes, the inner sub-graph's emit_status should be tagged with
       // the current node id so the SSE stream's parentNodeId field lets the UI
       // render an expandable group.

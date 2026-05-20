@@ -421,7 +421,7 @@ const FlowsList: React.FC = () => {
                                 onBlur={() => setRenamingOwnerId(null)}
                                 style={{ background: 'var(--bg-3)', border: '1px solid var(--accent)', borderRadius: 3, color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 11, padding: '1px 4px' }}
                               >
-                                {users.map(u => (
+                                {users.filter(u => u.role !== 'viewer').map(u => (
                                   <option key={u._id} value={u.login}>{u.login} ({u.role})</option>
                                 ))}
                               </select>

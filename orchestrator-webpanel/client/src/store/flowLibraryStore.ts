@@ -103,6 +103,28 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
   function persistFlows(flows: OrchestratorFlow[]) {
     saveJSON(FLOWS_KEY, flows);
+    // Avoid pushing a new array reference downstream when nothing actually
+    // changed — the FlowsList polls every 5s and a fresh reference every
+    // tick used to make the entire table flash. Reuse existing flow objects
+    // by identity when their serialized shape is unchanged.
+    const current = get().flows;
+    if (current.length === flows.length) {
+      let allSame = true;
+      const merged: OrchestratorFlow[] = [];
+      for (let i = 0; i < flows.length; i++) {
+        const next = flows[i];
+        const prev = current[i];
+        if (prev && prev.id === next.id && JSON.stringify(prev) === JSON.stringify(next)) {
+          merged.push(prev);
+        } else {
+          merged.push(next);
+          allSame = false;
+        }
+      }
+      if (allSame) return;
+      set({ flows: merged });
+      return;
+    }
     set({ flows });
   }
 

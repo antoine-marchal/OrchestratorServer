@@ -21,6 +21,16 @@ async function canUserEditFlow(user: any, flow: any): Promise<boolean> {
   return owner.role !== 'admin';
 }
 
+// Reject owner assignments that target a viewer (or a missing user). Returns
+// the error string when invalid, null when OK.
+async function validateOwnerLogin(login: string | undefined): Promise<string | null> {
+  if (!login) return null; // no change requested
+  const owner = await getCollection('users').findOne({ login });
+  if (!owner) return `Owner '${login}' is not a known user`;
+  if (owner.role === 'viewer') return `Owner '${login}' is a viewer — viewers cannot own flows`;
+  return null;
+}
+
 async function requireFlowEditAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   const user = (req as any).user;
   if (!user) { res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } }); return; }
@@ -85,6 +95,8 @@ const VERSION_MIN_INTERVAL_MS =
 router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   try {
+    const ownerError = await validateOwnerLogin(req.body?.owner);
+    if (ownerError) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: ownerError } }) as any;
     const col = getCollection('flows');
     const versionsCol = getCollection('flow_versions');
     let flow = await col.findOne({ _id: req.params.id });
