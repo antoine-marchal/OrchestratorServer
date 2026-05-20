@@ -24,7 +24,7 @@
 
 [x] artifacts deployment must work as well in yellow button run flow in edit mode
 
-[] artifacts deployment must work as well if artifacts are linked to flow2 and I m executing flow1 that contains a flownode pointing at flow2
+[x] artifacts deployment must work as well if artifacts are linked to flow2 and I m executing flow1 that contains a flownode pointing at flow2
 
 [] if I m executing flow1 that contains a flownode pointing at flow2 :
     [] flow2 execution must be traced as well with a status : name of the flow2

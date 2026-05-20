@@ -29,6 +29,10 @@ export function parseFlowContent(flowContent: string): any {
 async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>): Promise<any> {
   let rawCode: string = node?.data?.code || '';
   let nodeType = node?.data?.type;
+  // Effective artifacts for this node = parent artifacts + (for flowRef nodes)
+  // the referenced flow's own artifacts. A flowRef pointing at flow2 needs
+  // flow2's artifacts deployed before any of its inner nodes run.
+  let effectiveArtifacts: Array<{name: string; data: string}> | undefined = artifacts;
 
   // flowRef: node references another flow by ID — load it from DB and execute inline.
   if (nodeType === 'flow' && node?.data?.flowRef) {
@@ -37,6 +41,21 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       const referencedFlow = await flowsCol.findOne({ _id: node.data.flowRef });
       if (!referencedFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
       rawCode = JSON.stringify({ nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] });
+      const refArtifacts: Array<{name: string; data: string}> = referencedFlow.artifacts || [];
+      if (refArtifacts.length) {
+        // De-dupe by name — parent wins so a flow1 artifact still shadows a
+        // flow2 artifact when both ship the same filename. Then extract the
+        // merged set locally so server-side leaf nodes inside flow2 find them.
+        const byName = new Map<string, {name: string; data: string}>();
+        for (const a of refArtifacts) byName.set(a.name, a);
+        for (const a of artifacts || []) byName.set(a.name, a);
+        effectiveArtifacts = Array.from(byName.values());
+        if (!workerId) {
+          try { extractArtifacts(refArtifacts, EXECUTION_DIR); } catch (e: any) {
+            console.warn(`[flow] flowRef artifact extraction warning: ${e.message}`);
+          }
+        }
+      }
     } catch (err: any) {
       throw new Error(`Failed to load referenced flow: ${err.message}`);
     }
@@ -60,7 +79,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         },
       };
       emitJobLog(jobId, 'log', `[remote] dispatching ${nodeType} node to worker ${workerId}`, nodeId);
-      const { output, variables: workerVars } = await dispatchToWorker(workerId, remoteNode, jobId, nodeId, artifacts);
+      const { output, variables: workerVars } = await dispatchToWorker(workerId, remoteNode, jobId, nodeId, effectiveArtifacts);
       emitJobLog(jobId, 'log', `[remote] node ${nodeId} completed on worker`, nodeId);
       // Merge variable mutations from the remote node back into the flow's shared dict.
       if (workerVars && typeof workerVars === 'object') Object.assign(flowVariables, workerVars);
@@ -143,6 +162,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       timeout,
       basePath,
       variables: flowVariables,
+      // Carry artifacts through so nested flows (flowRef) see the merged set
+      // — parent flow's plus the referenced flow's own artifacts.
+      artifacts: effectiveArtifacts && effectiveArtifacts.length ? effectiveArtifacts : undefined,
       // Carry workerId so nested flow nodes still dispatch their inner script-type
       // children to the same worker.
       workerId,
