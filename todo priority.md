@@ -16,7 +16,7 @@
 
 [x] Add the ability for operator role to list secrets and add a new secret but not to decode nor delete a secret
 
-[] Group the flows by namespace with the same UX as the groups for workers
+[x] Group the flows by namespace with the same UX as the groups for workers
 
 [x] Remove the how to connect worker
 

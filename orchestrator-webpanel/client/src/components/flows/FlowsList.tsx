@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, Play, Pencil, Trash2, Clock, Search,
   GitBranch, Loader2, AlertTriangle,
-  Download, Upload, Copy,
+  Download, Upload, Copy, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
@@ -85,7 +85,17 @@ const FlowsList: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [collapsedNamespaces, setCollapsedNamespaces] = useState<Set<string>>(new Set());
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleNamespace = useCallback((ns: string) => {
+    setCollapsedNamespaces(prev => {
+      const next = new Set(prev);
+      if (next.has(ns)) next.delete(ns);
+      else next.add(ns);
+      return next;
+    });
+  }, []);
 
   const startRename = useCallback((flow: OrchestratorFlow, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -110,6 +120,15 @@ const FlowsList: React.FC = () => {
       (f.description?.toLowerCase().includes(q) ?? false)
     );
   });
+
+  // Group flows by namespace (mirrors WorkersPanel's group UX). Empty namespace
+  // falls under the literal 'default' bucket so it still gets a header row.
+  const groupedFlows: Record<string, OrchestratorFlow[]> = {};
+  for (const f of filtered) {
+    const key = f.namespace || 'default';
+    (groupedFlows[key] = groupedFlows[key] || []).push(f);
+  }
+  const namespaceKeys = Object.keys(groupedFlows).sort((a, b) => a.localeCompare(b));
 
   const stats = {
     total: flows.length,
@@ -278,7 +297,27 @@ const FlowsList: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(flow => {
+              {namespaceKeys.flatMap(ns => {
+                const isCollapsed = collapsedNamespaces.has(ns);
+                const nsFlows = groupedFlows[ns];
+                const header = (
+                  <tr
+                    key={`__ns_${ns}`}
+                    className="tc-ns-header"
+                    onClick={() => toggleNamespace(ns)}
+                    style={{ cursor: 'pointer', background: 'var(--surface-2)' }}
+                  >
+                    <td colSpan={6} style={{ padding: '8px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                        {isCollapsed ? <ChevronRight size={13} style={{ color: 'var(--text-3)' }} /> : <ChevronDown size={13} style={{ color: 'var(--text-3)' }} />}
+                        <span style={{ color: 'var(--accent)' }}>[{ns}]</span>
+                        <span style={{ color: 'var(--text-3)' }}>{nsFlows.length} flow{nsFlows.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+                if (isCollapsed) return [header];
+                const rows = nsFlows.map(flow => {
                 const canRun = true;
                 return (
                   <tr key={flow.id} onClick={() => navigate(`/flows/${flow.id}?tab=executions`)}>
@@ -444,6 +483,8 @@ const FlowsList: React.FC = () => {
                     </td>
                   </tr>
                 );
+                });
+                return [header, ...rows];
               })}
             </tbody>
           </table>
