@@ -45,12 +45,37 @@ router.put('/:id', async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   try {
     const col = getCollection('flows');
+    const versionsCol = getCollection('flow_versions');
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
       const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '', artifacts = [] } = req.body;
       flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
       await col.insert(flow);
     } else {
+      // Snapshot the previous version into flow_versions before applying the
+      // update — only when the graph itself changed (nodes/edges), so plain
+      // metadata edits don't pollute history.
+      const graphChanged =
+        (Array.isArray(req.body.nodes) && JSON.stringify(req.body.nodes) !== JSON.stringify(flow.nodes || []))
+        || (Array.isArray(req.body.edges) && JSON.stringify(req.body.edges) !== JSON.stringify(flow.edges || []));
+      if (graphChanged) {
+        try {
+          await versionsCol.insert({
+            _id: nowUid(),
+            flowId: req.params.id,
+            nodes: flow.nodes || [],
+            edges: flow.edges || [],
+            artifacts: flow.artifacts || [],
+            name: flow.name,
+            namespace: flow.namespace,
+            description: flow.description,
+            savedAt: flow.updatedAt || now,
+            author: (req as any).user?.login || 'unknown',
+          });
+        } catch (e: any) {
+          console.warn('[flows] failed to snapshot version:', e.message);
+        }
+      }
       const updates: any = { updatedAt: now };
       for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts']) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -59,6 +84,66 @@ router.put('/:id', async (req: Request, res: Response) => {
       flow = await col.findOne({ _id: req.params.id });
     }
     res.json(flow);
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+router.get('/:id/versions', async (req: Request, res: Response) => {
+  try {
+    const versionsCol = getCollection('flow_versions');
+    const versions = await versionsCol.find({ flowId: req.params.id });
+    versions.sort((a: any, b: any) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+    // Trim the payload — clients ask for the full body via /:vid when they
+    // want to diff or restore. Keep a node count so the list is informative.
+    res.json(versions.map((v: any) => ({
+      _id: v._id, flowId: v.flowId, savedAt: v.savedAt, author: v.author,
+      name: v.name, nodeCount: (v.nodes || []).length, edgeCount: (v.edges || []).length,
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+router.get('/:id/versions/:vid', async (req: Request, res: Response) => {
+  try {
+    const versionsCol = getCollection('flow_versions');
+    const v = await versionsCol.findOne({ _id: req.params.vid, flowId: req.params.id });
+    if (!v) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } }) as any;
+    res.json(v);
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+router.post('/:id/versions/:vid/restore', async (req: Request, res: Response) => {
+  const now = new Date().toISOString();
+  try {
+    const col = getCollection('flows');
+    const versionsCol = getCollection('flow_versions');
+    const v = await versionsCol.findOne({ _id: req.params.vid, flowId: req.params.id });
+    if (!v) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } }) as any;
+    const flow = await col.findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    // Snapshot the current state first so restore is itself reversible.
+    try {
+      await versionsCol.insert({
+        _id: nowUid(),
+        flowId: req.params.id,
+        nodes: flow.nodes || [],
+        edges: flow.edges || [],
+        artifacts: flow.artifacts || [],
+        name: flow.name,
+        namespace: flow.namespace,
+        description: flow.description,
+        savedAt: flow.updatedAt || now,
+        author: (req as any).user?.login || 'unknown',
+      });
+    } catch { /* best effort */ }
+    await col.update({ _id: req.params.id }, { $set: {
+      nodes: v.nodes || [], edges: v.edges || [], artifacts: v.artifacts || [], updatedAt: now,
+    } });
+    res.json(await col.findOne({ _id: req.params.id }));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }

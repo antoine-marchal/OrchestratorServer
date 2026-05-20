@@ -810,7 +810,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       )}
 
       <div className="flex-1 min-h-0">
-        <EditorLayout graphPanel={<FlowEditor embedded flowId={flow.id} />} />
+        <EditorLayout graphPanel={<FlowEditor embedded flowId={flow.id} />} flowId={flow.id} />
       </div>
     </div>
   );

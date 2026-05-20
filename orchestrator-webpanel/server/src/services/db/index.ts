@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 
 const COLLECTION_NAMES = [
-  'users', 'roles', 'secrets', 'flows', 'executions',
+  'users', 'roles', 'secrets', 'flows', 'flow_versions', 'executions',
   'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'sessions',
 ] as const;
 
@@ -180,6 +180,8 @@ export async function connectDB(): Promise<void> {
     await _db['executions'].ensureIndex({ fieldName: 'startTime' });
     await _db['schedules'].ensureIndex({ fieldName: 'flowId' });
     await _db['secrets'].ensureIndex({ fieldName: 'name' });
+    await _db['flow_versions'].ensureIndex({ fieldName: 'flowId' });
+    await _db['flow_versions'].ensureIndex({ fieldName: 'savedAt' });
   } catch (err: any) {
     console.warn('[DB] ensureIndex failed:', err.message);
   }

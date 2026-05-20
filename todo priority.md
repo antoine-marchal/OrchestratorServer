@@ -32,7 +32,7 @@
 
 [x] add a env var to enable ERROR or FAILED parsing in logs to trigger a error in execution of a node (Server AND Worker)
 
-[] add in edit tab a right panel (resizable) following the modifications of the flow (versions management in fact)
-        [] a version management based on diff ? a little bit like GIT ? should be a nice to have !!!
+[x] add in edit tab a right panel (resizable) following the modifications of the flow (versions management in fact)
+        [x] a version management based on diff ? a little bit like GIT ? should be a nice to have !!!
 
 
