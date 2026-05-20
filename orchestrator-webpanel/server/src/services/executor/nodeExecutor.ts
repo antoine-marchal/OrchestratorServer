@@ -303,10 +303,36 @@ export function safeArtifactPath(name: string, targetDir: string): string | null
   return resolved;
 }
 
+// Extensions recognised as archives — when an artifact's name ends with one,
+// the file is unpacked into the same execution dir and (optionally) removed.
+// Detection is purely by extension so users can rely on `.zip` / `.tar.gz`
+// without an explicit flag on the artifact record.
+const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz'];
+
+function isArchiveName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return ARCHIVE_EXTS.some(ext => lower.endsWith(ext));
+}
+
+// Use the platform `tar` to unpack — built-in on Windows 10+ (libarchive) and
+// every modern Linux. Best-effort: a missing `tar` just leaves the archive on
+// disk and emits a warning so the user can debug.
+function unpackArchive(archivePath: string, targetDir: string): boolean {
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('tar', ['-xf', archivePath, '-C', targetDir], { stdio: 'pipe' });
+    return true;
+  } catch (e: any) {
+    console.warn(`[artifact] failed to unpack ${path.basename(archivePath)}: ${e.message}`);
+    return false;
+  }
+}
+
 export function extractArtifacts(artifacts: Array<{name: string; data: string}>, targetDir: string): string[] {
   const extracted: string[] = [];
   if (!artifacts || !artifacts.length) return extracted;
   if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+  const keepArtifacts = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
   for (const artifact of artifacts) {
     const destPath = safeArtifactPath(artifact.name, targetDir);
     if (!destPath) { console.warn(`[artifact] rejected unsafe name: ${artifact.name}`); continue; }
@@ -315,10 +341,22 @@ export function extractArtifacts(artifacts: Array<{name: string; data: string}>,
     const newData = Buffer.from(artifact.data, 'base64');
     if (fs.existsSync(destPath)) {
       const existing = fs.readFileSync(destPath);
-      if (existing.equals(newData)) continue;
+      if (existing.equals(newData)) {
+        if (isArchiveName(artifact.name)) unpackArchive(destPath, targetDir);
+        continue;
+      }
     }
     fs.writeFileSync(destPath, newData);
     extracted.push(destPath);
+    // Auto-unpack archives at the start of the flow. The archive file itself
+    // is removed after a successful unpack unless ORCHESTRATOR_KEEP_ARTIFACTS
+    // is on, so flow code only sees the unpacked tree.
+    if (isArchiveName(artifact.name)) {
+      const ok = unpackArchive(destPath, targetDir);
+      if (ok && !keepArtifacts) {
+        try { fs.unlinkSync(destPath); } catch { /* non-fatal */ }
+      }
+    }
   }
   return extracted;
 }

@@ -20,7 +20,7 @@
 
 [x] Remove the how to connect worker
 
-[] add the ability to add a .zip or .tar or (other archive extension) as artifact and at the beginning of the flow, the archive artifact is unzipped to the execution folder
+[x] add the ability to add a .zip or .tar or (other archive extension) as artifact and at the beginning of the flow, the archive artifact is unzipped to the execution folder
 
 [] artifacts deployment must work as well in yellow button run flow in edit mode
 

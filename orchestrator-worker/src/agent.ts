@@ -158,6 +158,23 @@ function safeArtifactPath(name: string): string | null {
   return resolved;
 }
 
+// Extensions auto-unpacked at the start of a job — mirrors the server side.
+const ARCHIVE_EXTS = ['.zip', '.tar', '.tar.gz', '.tgz', '.gz'];
+function isArchiveName(name: string): boolean {
+  const lower = name.toLowerCase();
+  return ARCHIVE_EXTS.some(ext => lower.endsWith(ext));
+}
+function unpackArchive(archivePath: string, targetDir: string): boolean {
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('tar', ['-xf', archivePath, '-C', targetDir], { stdio: 'pipe' });
+    return true;
+  } catch (e: any) {
+    console.warn(`[worker] failed to unpack ${path.basename(archivePath)}: ${e.message}`);
+    return false;
+  }
+}
+
 function extractArtifacts(artifacts: Array<{name: string; data: string}>): void {
   if (!artifacts || !artifacts.length) return;
   if (!fs.existsSync(EXECUTION_DIR)) fs.mkdirSync(EXECUTION_DIR, { recursive: true });
@@ -167,12 +184,21 @@ function extractArtifacts(artifacts: Array<{name: string; data: string}>): void 
     const destDir = path.dirname(destPath);
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
     const newData = Buffer.from(artifact.data, 'base64');
+    let wrote = true;
     if (fs.existsSync(destPath)) {
       const existing = fs.readFileSync(destPath);
-      if (existing.equals(newData)) continue;
+      if (existing.equals(newData)) { wrote = false; }
     }
-    fs.writeFileSync(destPath, newData);
-    console.log(`[worker] artifact extracted: ${artifact.name}`);
+    if (wrote) {
+      fs.writeFileSync(destPath, newData);
+      console.log(`[worker] artifact extracted: ${artifact.name}`);
+    }
+    if (isArchiveName(artifact.name)) {
+      const ok = unpackArchive(destPath, EXECUTION_DIR);
+      if (ok && !KEEP_ARTIFACTS) {
+        try { fs.unlinkSync(destPath); } catch { /* non-fatal */ }
+      }
+    }
   }
 }
 
