@@ -146,6 +146,12 @@ const STOP_CHECK_INTERVAL_MS = Number(process.env.STOP_CHECK_INTERVAL_MS ?? 500)
 export const JS_BACKEND_TIMEOUT_MS = Number(process.env.JS_BACKEND_TIMEOUT_MS ?? 0);
 export const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_MS ?? 0);
 
+// When false, the server refuses to execute any node locally — every job must
+// be dispatched to a remote worker. Top-level orchestration (flow parsing,
+// nested-flow nodes) still runs in-process; only script-type nodes are gated.
+export const SERVER_EXECUTION_ENABLED =
+  String(process.env.ORCHESTRATOR_SERVER_EXECUTION_ENABLED ?? 'true').toLowerCase() !== 'false';
+
 [INBOX, OUTBOX].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
 export const runningProcesses = new Map<string, ChildProcess>();
@@ -758,6 +764,17 @@ export function processJob(job: any): void {
   const { jobId, type, codeFilePath, input, timeout } = job;
   job.input = normalizeInput(input);
   job.status = 'running';
+
+  // Refuse local execution when the operator has disabled server-side runs.
+  // 'flow' jobs are pure orchestration and remain allowed.
+  if (!SERVER_EXECUTION_ENABLED && !job.workerId && type !== 'flow') {
+    finalizeJob(jobId, {
+      output: null,
+      log: null,
+      error: `Server execution disabled (ORCHESTRATOR_SERVER_EXECUTION_ENABLED=false). Job ${jobId} (${type}) requires an assigned worker.`,
+    });
+    return;
+  }
 
   let execCwd = EXECUTION_DIR;
   try {

@@ -12,7 +12,7 @@
                     by worker2  : {{secrets.PASSWORD}} gives 3,
                     else  :  {{secrets.PASSWORD}} gives 1,
 
-[] Add a env var for server to enable / disabler execution by Server
+[x] Add a env var for server to enable / disabler execution by Server
 
 [] Add the ability for operator role to list secrets and add a new secret but not to decode nor delete a secret
 

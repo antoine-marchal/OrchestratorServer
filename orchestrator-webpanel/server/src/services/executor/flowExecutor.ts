@@ -1,4 +1,4 @@
-import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts } from './nodeExecutor';
+import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED } from './nodeExecutor';
 import { getCollection } from '../db/index';
 import { dispatchToWorker } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
@@ -68,6 +68,15 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
     } catch (err: any) {
       throw new Error(`Worker dispatch failed for node ${nodeId}: ${err.message}`);
     }
+  }
+
+  // Gate: server-side execution disabled via ORCHESTRATOR_SERVER_EXECUTION_ENABLED=false.
+  // Only orchestration ('flow' nodes) keeps running in-process — every leaf node
+  // must be bound to a worker.
+  if (!SERVER_EXECUTION_ENABLED && !workerId && nodeType !== 'flow') {
+    throw new Error(
+      `Server execution disabled (ORCHESTRATOR_SERVER_EXECUTION_ENABLED=false). Node ${nodeId} (${nodeType}) requires an assigned worker.`,
+    );
   }
 
   // Local execution path: resolve `${{ secrets.NAME }}` now — i.e. at the moment
