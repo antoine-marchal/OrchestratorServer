@@ -2,7 +2,7 @@
 
 --
 
-[] Secrets scope not to a flow but to a worker
+[x] Secrets scope not to a flow but to a worker
     That means if there is three secrets named exactly the same : PASSWORD
     PASSWORD - global - value {1}
     PASSWORD - worker1 - value {2}

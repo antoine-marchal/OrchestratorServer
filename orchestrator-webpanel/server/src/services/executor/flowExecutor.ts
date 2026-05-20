@@ -84,7 +84,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   // they exist as references until execution time. The original node is untouched.
   let resolvedCode = rawCode;
   if (rawCode.includes('${{')) {
-    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode);
+    // Worker-scoped secrets shadow globals: when no worker is bound the node
+    // runs on the server and only global / flow-scoped secrets apply.
+    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode, { workerId });
     resolvedCode = text;
     if (jobId && resolved.length > 0) {
       emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId);

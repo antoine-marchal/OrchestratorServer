@@ -201,7 +201,9 @@ router.post('/:id/jobs/:jobId/secrets', workerAuth, async (req: Request, res: Re
     if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
     // Only resolve names that actually appear in this job's code — defence in depth.
     const names = extractSecretNames(job?.node?.data?.code || '');
-    const { values, missing } = names.length ? await resolveSecretValues(names) : { values: {}, missing: [] };
+    const { values, missing } = names.length
+      ? await resolveSecretValues(names, { workerId: req.params.id, flowId: job.flowId || null })
+      : { values: {}, missing: [] };
     res.json({ values, missing });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

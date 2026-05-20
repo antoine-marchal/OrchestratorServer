@@ -28,11 +28,17 @@ interface User {
 interface Secret {
   _id: string;
   name: string;
-  scope: 'global' | 'flow';
+  scope: 'global' | 'flow' | 'worker';
   flowId?: string;
+  workerId?: string;
   ownerId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface WorkerOption {
+  _id: string;
+  name: string;
 }
 
 type AdminTab = 'users' | 'secrets';
@@ -121,9 +127,11 @@ export const AdminLayout: React.FC = () => {
   const [showCreateSecret, setShowCreateSecret] = useState(false);
   const [secName, setSecName] = useState('');
   const [secValue, setSecValue] = useState('');
-  const [secScope, setSecScope] = useState<'global' | 'flow'>('global');
+  const [secScope, setSecScope] = useState<'global' | 'flow' | 'worker'>('global');
   const [secFlowId, setSecFlowId] = useState('');
+  const [secWorkerId, setSecWorkerId] = useState('');
   const [secretSearch, setSecretSearch] = useState('');
+  const [workerOptions, setWorkerOptions] = useState<WorkerOption[]>([]);
 
   /* ── Loaders ── */
   const loadUsers = useCallback(async () => {
@@ -155,6 +163,13 @@ export const AdminLayout: React.FC = () => {
   useEffect(() => {
     if (canManageUsers) loadUsers();
     loadSecrets();
+    // Worker list is only needed for the "worker" secret-scope picker — best
+    // effort, ignore failures so an unavailable workers endpoint doesn't
+    // block the panel rendering.
+    apiClient.get('/api/v1/workers').then((data: any) => {
+      const list = Array.isArray(data) ? data : [];
+      setWorkerOptions(list.map((w: any) => ({ _id: w._id, name: w.name })));
+    }).catch(() => { /* non-fatal */ });
   }, [loadUsers, loadSecrets, canManageUsers]);
 
   /* ── User actions ── */
@@ -202,12 +217,17 @@ export const AdminLayout: React.FC = () => {
   /* ── Secret actions ── */
   const handleCreateSecret = async () => {
     if (!secName.trim() || !secValue.trim()) return;
+    if (secScope === 'worker' && !secWorkerId) {
+      setSecretsError('Pick a worker for worker-scoped secret');
+      return;
+    }
     try {
       const body: any = { name: secName.trim(), value: secValue.trim(), scope: secScope };
       if (secScope === 'flow' && secFlowId.trim()) body.flowId = secFlowId.trim();
+      if (secScope === 'worker') body.workerId = secWorkerId;
       await apiClient.post('/api/v1/secrets', body);
       setShowCreateSecret(false);
-      setSecName(''); setSecValue(''); setSecScope('global'); setSecFlowId('');
+      setSecName(''); setSecValue(''); setSecScope('global'); setSecFlowId(''); setSecWorkerId('');
       await loadSecrets();
     } catch (e: any) { setSecretsError(e?.message ?? 'Failed to create secret'); }
   };
@@ -240,7 +260,12 @@ export const AdminLayout: React.FC = () => {
   const filteredSecrets = secrets.filter(s => {
     if (!secretSearch) return true;
     const q = secretSearch.toLowerCase();
-    return s.name.toLowerCase().includes(q) || s.scope.toLowerCase().includes(q) || (s.flowId ?? '').toLowerCase().includes(q);
+    return (
+      s.name.toLowerCase().includes(q) ||
+      s.scope.toLowerCase().includes(q) ||
+      (s.flowId ?? '').toLowerCase().includes(q) ||
+      (s.workerId ?? '').toLowerCase().includes(q)
+    );
   });
 
   /* ── Stats ── */
@@ -642,6 +667,7 @@ export const AdminLayout: React.FC = () => {
                   >
                     <option value="global">Global</option>
                     <option value="flow">Flow-scoped</option>
+                    <option value="worker">Worker-scoped</option>
                   </select>
                 </div>
                 {secScope === 'flow' && (
@@ -652,6 +678,19 @@ export const AdminLayout: React.FC = () => {
                     className="px-3 py-1.5 rounded text-xs font-mono"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', maxWidth: 320 }}
                   />
+                )}
+                {secScope === 'worker' && (
+                  <select
+                    value={secWorkerId}
+                    onChange={e => setSecWorkerId(e.target.value)}
+                    className="px-3 py-1.5 rounded text-xs font-mono"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', maxWidth: 320 }}
+                  >
+                    <option value="">— pick worker —</option>
+                    {workerOptions.map(w => (
+                      <option key={w._id} value={w._id}>{w.name}</option>
+                    ))}
+                  </select>
                 )}
                 <div className="flex gap-2 justify-end">
                   <button onClick={() => setShowCreateSecret(false)} className="tc-btn ghost" style={{ height: 28, padding: '0 12px', fontSize: 12 }}>Cancel</button>
@@ -719,9 +758,11 @@ export const AdminLayout: React.FC = () => {
                           padding: '2px 8px', borderRadius: 4,
                           background: 'var(--surface-hi)', border: '1px solid var(--border)',
                           fontFamily: 'var(--font-mono)', fontSize: 11,
-                          color: s.scope === 'global' ? 'var(--ok)' : 'var(--warn)',
+                          color: s.scope === 'global' ? 'var(--ok)' : s.scope === 'worker' ? 'var(--accent)' : 'var(--warn)',
                         }}>
-                          {s.scope}{s.scope === 'flow' && s.flowId ? ` · ${s.flowId.slice(0, 8)}` : ''}
+                          {s.scope}
+                          {s.scope === 'flow' && s.flowId ? ` · ${s.flowId.slice(0, 8)}` : ''}
+                          {s.scope === 'worker' && s.workerId ? ` · ${workerOptions.find(w => w._id === s.workerId)?.name ?? s.workerId.slice(0, 8)}` : ''}
                         </span>
                       </td>
                       <td>

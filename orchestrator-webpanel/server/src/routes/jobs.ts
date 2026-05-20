@@ -14,6 +14,8 @@ router.post('/', async (req: Request, res: Response) => {
   // time (see /workers/:id/jobs/:jobId/secrets) so plaintext is never queued.
   let resolvedCode = code || '';
   if (!workerId && resolvedCode.includes('${{')) {
+    // No workerId here means the job runs locally on the server — only the
+    // global (and flow-scoped, when applicable) secrets apply.
     const { text } = await resolveSecretsDetailed(resolvedCode);
     resolvedCode = text;
   }

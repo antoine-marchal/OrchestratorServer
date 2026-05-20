@@ -11,31 +11,37 @@ router.get('/', async (req: Request, res: Response) => {
     const col = getCollection('secrets');
     const query: any = {};
     if (req.query.flowId) query.flowId = req.query.flowId;
+    if (req.query.workerId) query.workerId = req.query.workerId;
     if (req.query.scope) query.scope = req.query.scope;
     const secrets = await col.find(query);
     // Never return encrypted values
-    res.json(secrets.map((s: any) => ({ _id: s._id, name: s.name, scope: s.scope, flowId: s.flowId, ownerId: s.ownerId, createdAt: s.createdAt, updatedAt: s.updatedAt })));
+    res.json(secrets.map((s: any) => ({ _id: s._id, name: s.name, scope: s.scope, flowId: s.flowId, workerId: s.workerId, ownerId: s.ownerId, createdAt: s.createdAt, updatedAt: s.updatedAt })));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
 });
 
 router.post('/', requireRole('admin', 'operator'), async (req: Request, res: Response) => {
-  const { name, value, scope = 'global', flowId } = req.body;
+  const { name, value, scope = 'global', flowId, workerId } = req.body;
   if (!name || !value) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name and value required' } }) as any;
+  if (scope === 'worker' && !workerId) {
+    return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'workerId required for worker-scoped secret' } }) as any;
+  }
 
   try {
     const col = getCollection('secrets');
     const masterKey = getMasterKey();
     const { ciphertext, iv, tag } = encrypt(value, masterKey);
     const now = new Date().toISOString();
-    const secret = {
+    const secret: any = {
       _id: uuidv4(), name, value_enc: ciphertext, iv, tag,
-      scope, flowId: flowId || undefined, ownerId: (req as any).user?._id || 'system',
+      scope, ownerId: (req as any).user?._id || 'system',
       createdAt: now, updatedAt: now,
     };
+    if (scope === 'flow' && flowId) secret.flowId = flowId;
+    if (scope === 'worker' && workerId) secret.workerId = workerId;
     await col.insert(secret);
-    res.status(201).json({ _id: secret._id, name, scope, flowId: secret.flowId, createdAt: now });
+    res.status(201).json({ _id: secret._id, name, scope, flowId: secret.flowId, workerId: secret.workerId, createdAt: now });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
@@ -80,13 +86,37 @@ export function extractSecretNames(text: string): string[] {
 // that exist plus the list of names that don't. Used by the worker callback
 // endpoint so secret plaintext is only ever produced at node-execution time —
 // never baked into a queued/persisted job record.
-export async function resolveSecretValues(names: string[]): Promise<{ values: Record<string, string>; missing: string[] }> {
+//
+// Resolution precedence per name:
+//   1. worker-scoped secret matching ctx.workerId (most specific)
+//   2. flow-scoped secret matching ctx.flowId
+//   3. global secret
+// The most specific match wins so a worker can shadow a global value with the
+// same name. See `feedback_url_handling` / project docs for the user-facing
+// semantics of `{{ secrets.NAME }}`.
+export interface ResolveCtx { workerId?: string | null; flowId?: string | null }
+export async function resolveSecretValues(names: string[], ctx: ResolveCtx = {}): Promise<{ values: Record<string, string>; missing: string[] }> {
   const col = getCollection('secrets');
   const masterKey = getMasterKey();
   const values: Record<string, string> = {};
   const missing: string[] = [];
   for (const name of new Set(names)) {
-    const secret = await col.findOne({ name });
+    let secret: any = null;
+    if (ctx.workerId) {
+      secret = await col.findOne({ name, scope: 'worker', workerId: ctx.workerId });
+    }
+    if (!secret && ctx.flowId) {
+      secret = await col.findOne({ name, scope: 'flow', flowId: ctx.flowId });
+    }
+    if (!secret) {
+      secret = await col.findOne({ name, scope: 'global' });
+    }
+    if (!secret) {
+      // Backwards-compat: legacy rows without a `scope` field — treat any
+      // bare-name match as global so existing secrets still resolve after the
+      // schema gained scope filtering.
+      secret = await col.findOne({ name });
+    }
     if (secret) values[name] = decrypt(secret.value_enc, secret.iv, masterKey, secret.tag);
     else missing.push(name);
   }
@@ -110,16 +140,16 @@ export interface ResolvedSecrets {
   resolved: string[];
 }
 
-export async function resolveSecretsDetailed(text: string): Promise<ResolvedSecrets> {
+export async function resolveSecretsDetailed(text: string, ctx: ResolveCtx = {}): Promise<ResolvedSecrets> {
   const names = extractSecretNames(text);
   if (!names.length) return { text, missing: [], resolved: [] };
-  const { values, missing } = await resolveSecretValues(names);
+  const { values, missing } = await resolveSecretValues(names, ctx);
   return { text: substituteSecrets(text, values), missing, resolved: names.filter(n => n in values) };
 }
 
 // Backwards-compatible string-only API.
-export async function resolveSecrets(text: string): Promise<string> {
-  const { text: out } = await resolveSecretsDetailed(text);
+export async function resolveSecrets(text: string, ctx: ResolveCtx = {}): Promise<string> {
+  const { text: out } = await resolveSecretsDetailed(text, ctx);
   return out;
 }
 
