@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Server, RefreshCw, Trash2, Wifi, WifiOff, Terminal, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X } from 'lucide-react';
+import { Server, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -128,7 +128,6 @@ const WorkersPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [showConnect, setShowConnect] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { canDeleteWorker } = useAuth();
 
@@ -194,7 +193,6 @@ const WorkersPanel: React.FC = () => {
   });
 
   const onlineCount = workers.filter(w => w.status === 'online').length;
-  const serverUrl = window.location.origin;
 
   return (
     <div className="tc-page">
@@ -215,35 +213,8 @@ const WorkersPanel: React.FC = () => {
           <button className="tc-btn ghost" onClick={load} title="Refresh">
             <RefreshCw size={13} /> Refresh
           </button>
-          <button className="tc-btn primary" onClick={() => setShowConnect(v => !v)}>
-            <Terminal size={13} /> How to connect
-          </button>
         </div>
       </div>
-
-      {showConnect && (
-        <div className="tc-card" style={{ marginBottom: 16, padding: 16 }}>
-          <div className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
-            Connect a remote worker
-          </div>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-2)' }}>
-            Workers self-register. Run the agent on any machine and point it at this orchestrator.
-          </p>
-          <pre className="text-xs p-3 rounded" style={{ background: 'var(--bg-3)', color: 'var(--accent)', fontFamily: 'var(--font-mono)', overflowX: 'auto' }}>
-{`# Set env vars and start the worker agent
-ORCHESTRATOR_URL=${serverUrl}
-WORKER_NAME=my-worker-1
-# optional: WORKER_REGISTRATION_SECRET=<same as server env>
-# optional: ORCHESTRATOR_EXECUTION_DIR=/path/to/workdir
-
-npm start   # in orchestrator-worker/`}
-          </pre>
-          <p className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>
-            The worker appears here automatically within a few seconds of starting.
-            Assign it to a flow in the flow's settings tab.
-          </p>
-        </div>
-      )}
 
       {error && (
         <div className="flex items-center gap-2 p-3 rounded text-xs mb-4"
@@ -267,12 +238,9 @@ npm start   # in orchestrator-worker/`}
             <div style={{ color: 'var(--text-2)', fontSize: 14, fontFamily: 'var(--font-sans)', fontWeight: 600, marginBottom: 6 }}>
               No workers connected
             </div>
-            <div style={{ color: 'var(--text-3)', fontFamily: 'var(--font-sans)', marginBottom: 20 }}>
+            <div style={{ color: 'var(--text-3)', fontFamily: 'var(--font-sans)' }}>
               The orchestrator runs flows locally by default. Connect remote workers to delegate execution.
             </div>
-            <button className="tc-btn primary" onClick={() => setShowConnect(true)}>
-              <Terminal size={13} /> How to connect
-            </button>
           </div>
         </div>
       ) : (
