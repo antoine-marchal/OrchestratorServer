@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
+import { useSessionStore } from '../../store/sessionStore';
 
 interface VersionRow {
   _id: string;
@@ -114,7 +115,24 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     if (!flowId) return;
     if (!confirm('Restore this version? The current state is snapshotted first so this is reversible.')) return;
     try {
-      await apiClient.post(`/api/v1/flows/${flowId}/versions/${vid}/restore`, {});
+      // Restore on the server, then push the restored payload into both
+      // the flow library AND the active editor session. Without the session
+      // update the canvas would keep showing the pre-restore graph (the
+      // editor reads from the session, not from flowLibraryStore) and the
+      // autosave loop would PUT it right back, undoing the restore.
+      const restored: any = await apiClient.post(`/api/v1/flows/${flowId}/versions/${vid}/restore`, {});
+      const restoredNodes = Array.isArray(restored?.nodes) ? restored.nodes : [];
+      const restoredEdges = Array.isArray(restored?.edges) ? restored.edges : [];
+      const sessionStore = useSessionStore.getState();
+      const activeSession = sessionStore.getActiveSession?.();
+      if (activeSession?.linkedFlowId === flowId) {
+        sessionStore.updateActiveFlowState({
+          nodes: restoredNodes,
+          edges: restoredEdges,
+          history: [],
+          historyIndex: -1,
+        });
+      }
       await loadAll();
       await load();
     } catch (e: any) {
