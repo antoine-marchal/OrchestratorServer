@@ -13,6 +13,7 @@ import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, Chev
 import { apiClient, getJwt } from '../../utils/apiClient';
 import { NODE_TYPES } from '../../constants/nodeTypes';
 import { formatDurationShort } from '../../utils/execTiming';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
 const HIDDEN_HANDLE: React.CSSProperties = {
   background: 'transparent',
@@ -313,17 +314,26 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
     return () => cancelAnimationFrame(id);
   }, [nodeIdKey]);
 
+  // Track every flow library entry so a flowRef-style flow node (whose `code`
+  // is empty and `flowRef` points at another flow by id) can still expand to
+  // show its child nodes in this graph view.
+  const libraryFlows = useFlowLibraryStore(s => s.flows);
   const innerByParent = useMemo(() => {
     const map: Record<string, any[]> = {};
     if (!flowDefinition?.nodes) return map;
     for (const n of flowDefinition.nodes) {
-      if (n?.data?.type === 'flow') {
-        const inner = parseInnerFlow(n);
-        if (inner) map[n.id] = inner.nodes;
+      if (n?.data?.type !== 'flow') continue;
+      const inner = parseInnerFlow(n);
+      if (inner) { map[n.id] = inner.nodes; continue; }
+      // flowRef path: resolve referenced flow from the library.
+      const ref = n?.data?.flowRef;
+      if (ref) {
+        const linked = libraryFlows.find(f => f.id === ref);
+        if (linked) map[n.id] = linked.nodes || [];
       }
     }
     return map;
-  }, [flowDefinition]);
+  }, [flowDefinition, libraryFlows]);
 
   const HIDDEN_TYPES = useMemo(() => new Set(['comment', 'variable']), []);
   const visibleNodes = useMemo(

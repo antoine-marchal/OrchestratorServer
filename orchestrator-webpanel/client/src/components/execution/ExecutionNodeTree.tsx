@@ -6,6 +6,7 @@ import {
   Loader2, CheckCircle2, AlertCircle, RefreshCw, SkipForward, Clock,
 } from 'lucide-react';
 import { Node, Edge } from 'reactflow';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
 const HIDDEN_TYPES = new Set(['comment', 'variable']);
 export const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || '');
@@ -127,6 +128,7 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
   const isFlow = type === 'flow';
   const isSelected = selectedId === node.id;
   const status = statuses[node.id];
+  const libraryFlows = useFlowLibraryStore(s => s.flows);
 
   // Parse children + edges from flow node so sub-tree shows the right local
   // relations rather than the parent flow's edge map.
@@ -138,6 +140,14 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
       if (Array.isArray(parsed.nodes)) childNodes = parsed.nodes;
       if (Array.isArray(parsed.edges)) childEdges = parsed.edges;
     } catch { /* ignore */ }
+  }
+  // flowRef fallback — pull the referenced flow's nodes/edges from the library.
+  if (isFlow && childNodes.length === 0 && node.data?.flowRef) {
+    const linked = libraryFlows.find(f => f.id === node.data.flowRef);
+    if (linked) {
+      childNodes = (linked.nodes || []) as Node[];
+      childEdges = (linked.edges || []) as Edge[];
+    }
   }
   const childRelations = useMemo(
     () => isFlow && childNodes.length > 0 ? buildRelations(childNodes, childEdges) : {},

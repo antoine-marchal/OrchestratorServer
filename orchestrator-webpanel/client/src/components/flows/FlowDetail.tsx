@@ -163,7 +163,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   onSelectExec,
 }) => {
   const flowId = flow.id;
-  const { executions, killExecution, clearExecutions, renameExecution, syncBackendExecutions } = useFlowLibraryStore();
+  const { executions, killExecution, clearExecutions, renameExecution, syncBackendExecutions, flows } = useFlowLibraryStore();
   const { canEdit } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
   const [showGraph, setShowGraph] = useState(true);
@@ -245,38 +245,54 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     [selectedExec?.id, selectedExec?.logs],
   );
 
+  // Resolve a flow node's inner nodes — embedded JSON `code` first, then a
+  // `flowRef` lookup in the library so a flownode pointing at another flow
+  // still contributes its children to the parent/name maps.
+  const resolveInnerNodes = (n: any): any[] => {
+    if (n?.data?.code) {
+      try {
+        const inner = JSON.parse(n.data.code);
+        if (Array.isArray(inner?.nodes)) return inner.nodes;
+      } catch { /* fall through */ }
+    }
+    if (n?.data?.flowRef) {
+      const linked = flows.find(f => f.id === n.data.flowRef);
+      if (linked) return linked.nodes || [];
+    }
+    return [];
+  };
+
   // Map child-node-id → parent-flow-node-id (for depth + collapse filtering).
   const parentMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const n of execNodes) {
-      if (n?.data?.type === 'flow' && n.data?.code) {
-        try {
-          const inner = JSON.parse(n.data.code);
-          if (Array.isArray(inner?.nodes)) {
-            for (const child of inner.nodes) map.set(child.id, n.id);
-          }
-        } catch { /* skip */ }
+    const walk = (nodes: any[], parentId: string | null) => {
+      for (const n of nodes) {
+        if (parentId) map.set(n.id, parentId);
+        if (n?.data?.type === 'flow') {
+          const inner = resolveInnerNodes(n);
+          if (inner.length) walk(inner, n.id);
+        }
       }
-    }
+    };
+    walk(execNodes, null);
     return map;
-  }, [execNodes]);
+  }, [execNodes, flows]);
 
   // Map node-id → human label (including inner nodes of flow nodes).
   const nodeNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const n of execNodes) {
-      map.set(n.id, n.data?.label || n.id);
-      if (n?.data?.type === 'flow' && n.data?.code) {
-        try {
-          const inner = JSON.parse(n.data.code);
-          if (Array.isArray(inner?.nodes)) {
-            for (const child of inner.nodes) map.set(child.id, child.data?.label || child.id);
-          }
-        } catch { /* skip */ }
+    const walk = (nodes: any[]) => {
+      for (const n of nodes) {
+        map.set(n.id, n.data?.label || n.id);
+        if (n?.data?.type === 'flow') {
+          const inner = resolveInnerNodes(n);
+          if (inner.length) walk(inner);
+        }
       }
-    }
+    };
+    walk(execNodes);
     return map;
-  }, [execNodes]);
+  }, [execNodes, flows]);
 
   const handleSelect = (id: string) => {
     setSelectedId(id);

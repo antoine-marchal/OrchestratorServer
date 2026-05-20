@@ -26,9 +26,9 @@
 
 [x] artifacts deployment must work as well if artifacts are linked to flow2 and I m executing flow1 that contains a flownode pointing at flow2
 
-[] if I m executing flow1 that contains a flownode pointing at flow2 :
-    [] flow2 execution must be traced as well with a status : name of the flow2
-    [] in execution graph, timeline graph and logs i must have nodes of flow2 as well and ability to filter just like if the flow2 was embedded in flow1
+[x] if I m executing flow1 that contains a flownode pointing at flow2 :
+    [x] flow2 execution must be traced as well with a status : name of the flow2
+    [x] in execution graph, timeline graph and logs i must have nodes of flow2 as well and ability to filter just like if the flow2 was embedded in flow1
 
 [x] add a env var to enable ERROR or FAILED parsing in logs to trigger a error in execution of a node (Server AND Worker)
 

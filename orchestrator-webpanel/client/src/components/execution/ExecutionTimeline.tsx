@@ -6,6 +6,7 @@ import {
   NodeIcon, StatusIcon, RelationBadge, topologicalSort, buildRelations, isVisibleInTree,
   type NodeExecStatus,
 } from './ExecutionNodeTree';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
 interface ExecutionTimelineProps {
   exec: FlowExecution;
@@ -73,19 +74,30 @@ interface Row {
   hasChildren?: boolean;
 }
 
-function parseInner(node: any): { nodes: any[]; edges: any[] } {
+function parseInner(node: any, libraryFlows: Array<{ id: string; nodes?: any[]; edges?: any[] }>): { nodes: any[]; edges: any[] } {
   const code = node?.data?.code;
-  if (!code || typeof code !== 'string') return { nodes: [], edges: [] };
-  try {
-    const p = JSON.parse(code);
-    return { nodes: Array.isArray(p?.nodes) ? p.nodes : [], edges: Array.isArray(p?.edges) ? p.edges : [] };
-  } catch { return { nodes: [], edges: [] }; }
+  if (code && typeof code === 'string') {
+    try {
+      const p = JSON.parse(code);
+      if (Array.isArray(p?.nodes) || Array.isArray(p?.edges)) {
+        return { nodes: Array.isArray(p?.nodes) ? p.nodes : [], edges: Array.isArray(p?.edges) ? p.edges : [] };
+      }
+    } catch { /* fall through to flowRef */ }
+  }
+  // flowRef path: pull nodes/edges from the referenced flow in the library.
+  const ref = node?.data?.flowRef;
+  if (ref) {
+    const linked = libraryFlows.find(f => f.id === ref);
+    if (linked) return { nodes: linked.nodes || [], edges: linked.edges || [] };
+  }
+  return { nodes: [], edges: [] };
 }
 
 const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
   exec, nodes, edges, parentMap, nodeNameMap, statuses, selectedNodeId, onSelect,
 }) => {
   void parentMap; // depth derived from the node tree walk below
+  const libraryFlows = useFlowLibraryStore(s => s.flows);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleCollapse = (id: string) => setCollapsed(prev => {
     const next = new Set(prev);
@@ -137,7 +149,7 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
     const pushNode = (n: any, depth: number, rel: Record<string, { preds: RelItem[]; succs: RelItem[] }>) => {
       const type = n?.data?.type;
       const id: string = n.id;
-      const inner = type === 'flow' ? parseInner(n) : { nodes: [], edges: [] };
+      const inner = type === 'flow' ? parseInner(n, libraryFlows) : { nodes: [], edges: [] };
       const isFlow = inner.nodes.length > 0;
 
       let segs = segsFor(id);
@@ -180,7 +192,7 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
     }
 
     return { rows, flowStart, totalSpan };
-  }, [exec, nodes, edges, nodeNameMap, statuses]);
+  }, [exec, nodes, edges, nodeNameMap, statuses, libraryFlows]);
 
   const ticks = useMemo(() => {
     const out: { pct: number; label: string }[] = [];
