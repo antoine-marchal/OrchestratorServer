@@ -29,6 +29,8 @@ if "%1"=="win" (
 
 if errorlevel 1 goto fail
 
+copy /Y "%~dp0orchestrator-webpanel\server\.env.example" "%~dp0release\server.env.example" >nul
+
 echo.
 echo  Done. Binaries in release\
 echo.

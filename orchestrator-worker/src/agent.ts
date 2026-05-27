@@ -44,9 +44,24 @@ function extractGroovyJar(): void {
 
 /* ─── HTTP client ───────────────────────────────────────────────────────── */
 
+function parseByteSize(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const m = String(raw).trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb)?$/);
+  if (!m) return fallback;
+  const n = parseFloat(m[1]);
+  const unit = m[2] || 'b';
+  const mult: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 };
+  const bytes = Math.floor(n * mult[unit]);
+  return Number.isFinite(bytes) && bytes > 0 ? bytes : fallback;
+}
+
+const MAX_HTTP_BYTES = parseByteSize(process.env.WORKER_MAX_HTTP_SIZE, 100 * 1024 * 1024);
+
 const http: AxiosInstance = axios.create({
   baseURL: ORCHESTRATOR_URL,
   timeout: 15000,
+  maxContentLength: MAX_HTTP_BYTES,
+  maxBodyLength: MAX_HTTP_BYTES,
 });
 
 /* ─── Registration ──────────────────────────────────────────────────────── */

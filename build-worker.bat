@@ -28,6 +28,8 @@ if "%1"=="win" (
 
 if errorlevel 1 goto fail
 
+copy /Y "%~dp0orchestrator-worker\.env.example" "%~dp0release\worker.env.example" >nul
+
 echo.
 echo  Done. Binaries in release\
 echo.

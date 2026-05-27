@@ -99,7 +99,7 @@ if (process.env.NODE_ENV === 'production' && corsOrigins.length) {
 } else {
   app.use(cors());
 }
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '50mb' }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '100mb' }));
 
 // Serve webpanel static files (if built).
 // When packaged with pkg, prepare-pkg copies client/dist → dist/webpanel/
