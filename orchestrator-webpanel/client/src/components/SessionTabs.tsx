@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
-import { X, Plus, Edit2, Server, GripVertical, KeyRound } from 'lucide-react';
+import { useFlowLibraryStore } from '../store/flowLibraryStore';
+import { X, Plus, Edit2, Server, GripVertical, KeyRound, Star } from 'lucide-react';
 import { apiClient } from '../utils/apiClient';
 import {
   DndContext,
@@ -24,13 +25,16 @@ interface SortableTabProps {
   session: {
     id: string;
     name: string;
+    isMain?: boolean;
   };
   isActive: boolean;
+  isMain: boolean;
   isEditing: boolean;
   editingName: string;
   onSwitch: () => void;
   onClose: (e: React.MouseEvent) => void;
   onEdit: (e: React.MouseEvent) => void;
+  onSetMain: (e: React.MouseEvent) => void;
   onNameChange: (name: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -41,11 +45,13 @@ interface SortableTabProps {
 const SortableTab: React.FC<SortableTabProps> = ({
   session,
   isActive,
+  isMain,
   isEditing,
   editingName,
   onSwitch,
   onClose,
   onEdit,
+  onSetMain,
   onNameChange,
   onSaveEdit,
   onCancelEdit,
@@ -61,11 +67,18 @@ const SortableTab: React.FC<SortableTabProps> = ({
     isDragging,
   } = useSortable({ id: session.id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
     transition,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 100 : undefined,
+    ...(isMain
+      ? {
+          background: 'var(--accent-soft)',
+          borderColor: 'var(--accent)',
+          color: 'var(--accent)',
+        }
+      : {}),
   };
 
   const handleKeyPress = (event: React.KeyboardEvent) => {
@@ -123,6 +136,17 @@ const SortableTab: React.FC<SortableTabProps> = ({
           <Edit2 size={12} />
         </button>
 
+        <button
+          onClick={onSetMain}
+          className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-400 rounded transition-opacity ml-1 ${
+            isMain ? 'opacity-100' : 'opacity-60 hover:opacity-100'
+          }`}
+          title={isMain ? 'Unset main session' : 'Set as main session (loaded on Run Flow)'}
+          style={isMain ? { color: 'var(--accent)' } : undefined}
+        >
+          <Star size={12} fill={isMain ? 'currentColor' : 'none'} />
+        </button>
+
         {canClose && (
           <button
             onClick={onClose}
@@ -146,6 +170,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
     switchSession,
     closeSession,
     reorderSessions,
+    setMainSession,
     isLoading
   } = useSessionStore();
 
@@ -262,6 +287,24 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
     setEditingName(currentName);
   };
 
+  const handleSetMain = (sessionId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setMainSession(sessionId);
+    // After toggle, if this session is now the main one, push its flow content
+    // to the server flow definition so cron / API triggers / Execute run it.
+    const s = useSessionStore.getState().sessions.find(x => x.id === sessionId);
+    if (s?.isMain && s.linkedFlowId) {
+      const cleanNodes = (s.flowState.nodes || []).map(n => ({
+        ...n,
+        data: { ...n.data, executionStatus: undefined, executionAttempt: undefined },
+      }));
+      useFlowLibraryStore.getState().updateFlow(s.linkedFlowId, {
+        nodes: cleanNodes,
+        edges: s.flowState.edges || [],
+      });
+    }
+  };
+
   const handleSaveEdit = () => {
     if (editingSessionId && editingName.trim()) {
       // Update session name in store
@@ -367,11 +410,13 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
               key={session.id}
               session={session}
               isActive={activeSessionId === session.id}
+              isMain={!!(session as any).isMain}
               isEditing={editingSessionId === session.id}
               editingName={editingName}
               onSwitch={() => switchSession(session.id)}
               onClose={(e) => handleCloseSession(session.id, e)}
               onEdit={(e) => handleEditSession(session.id, session.name, e)}
+              onSetMain={(e) => handleSetMain(session.id, e)}
               onNameChange={setEditingName}
               onSaveEdit={handleSaveEdit}
               onCancelEdit={handleCancelEdit}

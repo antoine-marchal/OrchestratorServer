@@ -28,6 +28,7 @@ import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
+import { apiClient } from '../../utils/apiClient';
 import StatusBadge from './StatusBadge';
 import ScheduleModal from './ScheduleModal';
 import FlowEditor from '../FlowEditor';
@@ -713,18 +714,43 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
         hydratedRef.current = true;
       });
     } else {
-      if (!flowSessions.some(s => s.id === activeSessionId)) {
-        switchSession(flowSessions[0].id);
-      }
-      setTimeout(() => {
-        updateActiveFlowState({ nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 });
+      const mainSession = flowSessions.find(s => s.isMain);
+      if (mainSession) {
+        // Main session is the canonical source-of-truth for cron / API / Execute.
+        // Hydrate server flow def INTO the main session without forcing the user
+        // away from whichever session they were editing.
+        useSessionStore.setState(state => ({
+          sessions: state.sessions.map(s =>
+            s.id === mainSession.id
+              ? { ...s, flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } }
+              : s
+          ),
+        }));
+        if (!flowSessions.some(s => s.id === activeSessionId)) {
+          switchSession(mainSession.id);
+        }
         hydratedRef.current = true;
-      }, 0);
+      } else {
+        if (!flowSessions.some(s => s.id === activeSessionId)) {
+          switchSession(flowSessions[0].id);
+        }
+        setTimeout(() => {
+          updateActiveFlowState({ nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 });
+          hydratedRef.current = true;
+        }, 0);
+      }
     }
   }, [flow.id]);
 
   useEffect(() => {
     if (!isFlowSession || !hydratedRef.current) return;
+    // Only the main session's edits propagate to the server flow definition.
+    // If no main is set for this flow, fall back to autosaving the active session
+    // (preserves the original single-session behavior).
+    const flowSessions = sessions.filter(s => s.linkedFlowId === flow.id);
+    const mainSession = flowSessions.find(s => s.isMain);
+    if (mainSession && mainSession.id !== activeSessionId) return;
+
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
       // Don't persist transient run overlays (live status / attempt counters).
@@ -735,7 +761,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       saveTimer.current = setTimeout(() => setSaveState('idle'), 2000);
     }, 800);
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
-  }, [nodes, edges, isFlowSession]);
+  }, [nodes, edges, isFlowSession, sessions, activeSessionId]);
 
   const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -853,6 +879,21 @@ const FlowDetail: React.FC = () => {
   const flow = flows.find(f => f.id === id);
   const assignedWorker = flow?.workerId ? serverWorkers.find(w => w._id === flow.workerId) : undefined;
 
+  const [adminLogins, setAdminLogins] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!canEdit) return;
+    apiClient.get('/api/v1/users').then((data: any) => {
+      const list = Array.isArray(data) ? data : [];
+      setAdminLogins(new Set(list.filter((u: any) => u.role === 'admin').map((u: any) => u.login)));
+    }).catch(() => { /* ignore */ });
+  }, [canEdit]);
+  const canEditThisFlow = useMemo(() => {
+    if (!canEdit || !flow) return false;
+    if (isAdmin) return true;
+    if (flow.owner && adminLogins.has(flow.owner)) return false;
+    return true;
+  }, [canEdit, isAdmin, adminLogins, flow]);
+
   useEffect(() => {
     setActiveTab(tabParam);
     if (!rawTabParam || rawTabParam === 'overview') {
@@ -956,9 +997,9 @@ const FlowDetail: React.FC = () => {
             />
           ) : (
             <span
-              style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-3)', fontSize: 12, cursor: canEdit ? 'text' : 'default' }}
-              onDoubleClick={canEdit ? () => { setNsValue(flow.namespace || 'default'); setRenamingNs(true); } : undefined}
-              title={canEdit ? 'Double-click to rename namespace' : undefined}
+              style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-3)', fontSize: 12, cursor: canEditThisFlow ? 'text' : 'default' }}
+              onDoubleClick={canEditThisFlow ? () => { setNsValue(flow.namespace || 'default'); setRenamingNs(true); } : undefined}
+              title={canEditThisFlow ? 'Double-click to rename namespace' : undefined}
             >
               {flow.namespace}
             </span>
@@ -985,9 +1026,9 @@ const FlowDetail: React.FC = () => {
                 />
               ) : (
                 <h1
-                  style={{ margin: 0, fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 15, color: 'var(--text)', cursor: canEdit ? 'text' : 'default' }}
-                  onDoubleClick={canEdit ? () => { setNameValue(flow.name); setRenamingName(true); } : undefined}
-                  title={canEdit ? 'Double-click to rename' : undefined}
+                  style={{ margin: 0, fontFamily: 'var(--font-mono)', fontWeight: 500, fontSize: 15, color: 'var(--text)', cursor: canEditThisFlow ? 'text' : 'default' }}
+                  onDoubleClick={canEditThisFlow ? () => { setNameValue(flow.name); setRenamingName(true); } : undefined}
+                  title={canEditThisFlow ? 'Double-click to rename' : undefined}
                 >
                   {flow.name}
                 </h1>
@@ -1055,7 +1096,7 @@ const FlowDetail: React.FC = () => {
                 {deleteConfirm ? <AlertTriangle size={14} /> : <Trash2 size={14} />}
               </button>
             )}
-            {canEdit && (() => {
+            {canEditThisFlow && (() => {
               const grouped = serverWorkers.reduce((acc, w) => {
                 const g = w.group || '';
                 (acc[g] = acc[g] || []).push(w);

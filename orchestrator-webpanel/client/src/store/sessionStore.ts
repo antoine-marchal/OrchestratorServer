@@ -62,6 +62,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }
   },
 
+  setMainSession: (sessionId: string) => {
+    const target = get().sessions.find(s => s.id === sessionId);
+    if (!target) return;
+    const scopeFlowId = target.linkedFlowId;
+    set((state) => ({
+      sessions: state.sessions.map(s => {
+        const sameScope = (s.linkedFlowId ?? null) === (scopeFlowId ?? null);
+        if (!sameScope) return s;
+        const nextIsMain = s.id === sessionId ? !s.isMain : false;
+        if (!!s.isMain === nextIsMain) return s;
+        return { ...s, isMain: nextIsMain };
+      }),
+    }));
+    get().saveSessions();
+  },
+
   reorderSessions: (sourceIndex: number, destinationIndex: number) => {
     const sessions = [...get().sessions];
     const [movedSession] = sessions.splice(sourceIndex, 1);

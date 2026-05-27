@@ -379,8 +379,8 @@ const FlowsList: React.FC = () => {
                             <div
                               className="tc-flow-name"
                               onClick={e => e.stopPropagation()}
-                              onDoubleClick={canEdit ? e => startRename(flow, e) : undefined}
-                              title={canEdit ? 'Double-click to rename' : undefined}
+                              onDoubleClick={canEditFlow(flow) ? e => startRename(flow, e) : undefined}
+                              title={canEditFlow(flow) ? 'Double-click to rename' : undefined}
                             >{flow.name}</div>
                           )}
                           <div className="tc-flow-ns">
@@ -400,9 +400,9 @@ const FlowsList: React.FC = () => {
                             ) : (
                               <span
                                 onClick={e => e.stopPropagation()}
-                                onDoubleClick={canEdit ? e => startRenameNs(flow, e) : undefined}
-                                title={canEdit ? 'Double-click to rename namespace' : undefined}
-                                style={{ cursor: canEdit ? 'text' : undefined }}
+                                onDoubleClick={canEditFlow(flow) ? e => startRenameNs(flow, e) : undefined}
+                                title={canEditFlow(flow) ? 'Double-click to rename namespace' : undefined}
+                                style={{ cursor: canEditFlow(flow) ? 'text' : undefined }}
                               >
                                 {flow.namespace}
                               </span>
@@ -442,7 +442,7 @@ const FlowsList: React.FC = () => {
                     </td>
 
                     <td>
-                      {isViewer ? (
+                      {!canEditFlow(flow) ? (
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-3)' }}>
                           {serverWorkers.find(w => w._id === flow.workerId)?.name ?? 'Server (default)'}
                         </span>
@@ -516,7 +516,7 @@ const FlowsList: React.FC = () => {
 
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
-                        {canEditFlow(flow) && (
+                        {!isViewer && (
                           <button
                             className="tc-icon-btn"
                             onClick={e => handleExecute(flow.id, e)}

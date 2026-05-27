@@ -525,6 +525,16 @@ export const useFlowStore = (): FlowStoreInterface => {
       // preserves the legacy api-server.cjs log streaming behavior. The walker
       // submits each node through /api/v1/jobs with the linked flow's workerId,
       // so script-type nodes get dispatched to the assigned worker server-side.
+
+      // If a session in the current flow scope is marked as main, load it before running.
+      const ss = useSessionStore.getState();
+      const active = ss.getActiveSession();
+      const scopeFlowId = active?.linkedFlowId ?? null;
+      const main = ss.sessions.find(s => s.isMain && (s.linkedFlowId ?? null) === scopeFlowId);
+      if (main && main.id !== ss.activeSessionId) {
+        ss.switchSession(main.id);
+      }
+
       await executeFlowInternal(getSessionStore);
     },
 

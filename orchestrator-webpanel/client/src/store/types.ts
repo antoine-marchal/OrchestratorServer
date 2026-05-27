@@ -53,6 +53,7 @@ export interface Session {
   createdAt: number;
   lastActivity: number;
   linkedFlowId?: string;  // flow library flow this session belongs to
+  isMain?: boolean;  // when true, this session is the one loaded on flow execute
 }
 
 /**
@@ -144,6 +145,7 @@ export interface SessionStore {
   switchSession: (sessionId: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
   reorderSessions: (sourceIndex: number, destinationIndex: number) => void;
+  setMainSession: (sessionId: string) => void;
   getActiveSession: () => Session | null;
   getSession: (sessionId: string) => Session | null;
 
