@@ -21,6 +21,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
+import { openFlowNodeEditor } from '../store/flowNodeContent';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
 import { useTheme } from '../context/ThemeContext';
@@ -497,70 +498,11 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
     // The code is already stored in the node data, so we just open the editor
 
     if (node.data.type === 'flow') {
-      // flowRef node: navigate to the referenced flow in the library
-      if (node.data.flowRef) {
-        navigate(`/flows/${node.data.flowRef}?tab=edit`);
-        return;
-      }
-
-      // For flow nodes, open or switch to linked session
       try {
-        const sessionStore = useSessionStore.getState();
-
-        // Check if this flow node already has a linked session
-        if (node.data.linkedSessionId) {
-          const linkedSession = sessionStore.getSession(node.data.linkedSessionId);
-          if (linkedSession) {
-            // Switch to the existing linked session
-            sessionStore.switchSession(node.data.linkedSessionId);
-            return;
-          }
-          // If linked session doesn't exist anymore, clear the link and create new one
-          updateNodeData(node.id, { linkedSessionId: undefined }, false);
-        }
-
-        // Create a new linked session
-        const sessionName = `Flow: ${node.data.label || 'Untitled'}`;
-        const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
-        const newSessionId = await sessionStore.createSession(sessionName, parentFlowId);
-
-        // Parse the flow content from code field
-        let flowData: { nodes: Node[]; edges: Edge[] } | null = null;
-        if (node.data.code) {
-          try {
-            flowData = JSON.parse(node.data.code);
-          } catch (error) {
-            console.error('Error parsing flow content:', error);
-          }
-        }
-
-        // Load the flow data into the new session
-        if (flowData && Array.isArray(flowData.nodes) && Array.isArray(flowData.edges)) {
-          sessionStore.updateActiveFlowState({
-            nodes: flowData.nodes,
-            edges: flowData.edges,
-            flowPath: `${node.data.label}.or`,
-            history: [],
-            historyIndex: -1,
-          });
-        } else {
-          // Initialize with empty flow
-          sessionStore.updateActiveFlowState({
-            nodes: [],
-            edges: [],
-            flowPath: `${node.data.label}.or`,
-            history: [],
-            historyIndex: -1,
-          });
-        }
-
-        // Link the session to the flow node
-        updateNodeData(node.id, { linkedSessionId: newSessionId }, false);
-
-        // Switch to the new session
-        sessionStore.switchSession(newSessionId);
+        const { navigateTo } = await openFlowNodeEditor(node, useSessionStore.getState().activeSessionId);
+        if (navigateTo) navigate(navigateTo);
       } catch (error) {
-        console.error('Error creating session for flow:', error);
+        console.error('Error opening flow node:', error);
         alert(`Error opening flow: ${error instanceof Error ? error.message : String(error)}`);
       }
       return;

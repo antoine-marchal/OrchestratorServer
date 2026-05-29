@@ -6,6 +6,7 @@ import { prettyFormat } from '../utils/formatUtils';
 import { collectVariables, updateVariableNodes } from '../utils/variableUtils';
 import { useFlowLibraryStore } from '../flowLibraryStore';
 import { useSessionStore } from '../sessionStore';
+import { resolveFlowNodeContent } from '../flowNodeContent';
 
 // Resolve the workerId for the current session's linked flow, if any.
 // Single-node executions and the local flow walker pass this through to the
@@ -227,28 +228,9 @@ async function executeFlowNode(
     // Start execution time tracking
     const startTime = Date.now();
 
-    // Get the flow content - either from linked session or from node's code
-    let flowContent = node.data.code;
-
-    // flowRef: no embedded code — load live from the library store
-    if (!flowContent && node.data.flowRef) {
-      const refFlow = useFlowLibraryStore.getState().flows.find(f => f.id === node.data.flowRef);
-      if (!refFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
-      flowContent = JSON.stringify({ nodes: refFlow.nodes || [], edges: refFlow.edges || [] });
-    }
-
-    // If flow node is linked to a session, get current content from that session
-    if (node.data.linkedSessionId) {
-      const linkedSession = sessionStore().getSession(node.data.linkedSessionId);
-      if (linkedSession && linkedSession.flowState) {
-        // Serialize the linked session's current flow state
-        flowContent = JSON.stringify({
-          nodes: linkedSession.flowState.nodes,
-          edges: linkedSession.flowState.edges
-        });
-      }
-    }
-
+    // Resolve the sub-flow definition with the shared precedence
+    // (flowRef → linkedSessionId → embedded code). See flowNodeContent.ts.
+    const flowContent = resolveFlowNodeContent(node.data);
     if (!flowContent) {
       throw new Error('No flow content specified');
     }

@@ -23,6 +23,7 @@ import {
 import { NodeData } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
+import { openFlowNodeEditor } from '../../store/flowNodeContent';
 import { pathUtils } from '../../utils/pathUtils';
 interface NodeHeaderProps {
   data: NodeData;
@@ -64,81 +65,8 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   }[onErrorMode];
 
   const handleEditFlowNode = async () => {
-    // flowRef: navigate to the referenced flow in the library
-    if (data.flowRef) {
-      navigate(`/flows/${data.flowRef}?tab=edit`);
-      return;
-    }
-    // If flow node has a linked session that exists, switch to it
-    if (data.linkedSessionId) {
-      const existingSession = sessionStore.sessions.find(s => s.id === data.linkedSessionId);
-      if (existingSession) {
-        sessionStore.switchSession(data.linkedSessionId);
-        return;
-      }
-    }
-
-    // No linked session or it doesn't exist - create a new session with the flow content
-    const flowCode = data.code || '';
-    const sessionName = data.label || 'Flow Session';
-
-    // Save the original session ID before creating new session (which switches to it)
-    const originalSessionId = sessionStore.activeSessionId;
-
-    // Create new session (this switches to the new session)
-    const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
-    const newSessionId = await sessionStore.createSession(sessionName, parentFlowId);
-
-    // If there's flow content, parse and load it into the new session
-    if (flowCode.trim()) {
-      try {
-        const flowData = JSON.parse(flowCode);
-        if (flowData.nodes && flowData.edges) {
-          // Process nodes to ensure they have proper structure
-          const processedNodes = flowData.nodes.map((node: any) => ({
-            ...node,
-            data: {
-              ...node.data,
-              output: undefined,
-              executionTime: undefined
-            }
-          }));
-
-          sessionStore.updateActiveFlowState({
-            nodes: processedNodes,
-            edges: flowData.edges,
-            flowPath: sessionName,
-            history: [],
-            historyIndex: -1
-          });
-        }
-      } catch (e) {
-        console.error('Failed to parse flow content:', e);
-      }
-    }
-
-    // Link the flow node to the new session in the ORIGINAL session
-    // We need to update the original session's flow state directly
-    if (originalSessionId) {
-      useSessionStore.setState((state) => ({
-        sessions: state.sessions.map(session =>
-          session.id === originalSessionId
-            ? {
-                ...session,
-                flowState: {
-                  ...session.flowState,
-                  nodes: session.flowState.nodes.map(n =>
-                    n.id === nodeId
-                      ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } }
-                      : n
-                  )
-                }
-              }
-            : session
-        )
-      }));
-      sessionStore.saveSessions();
-    }
+    const { navigateTo } = await openFlowNodeEditor({ id: nodeId, data }, sessionStore.activeSessionId);
+    if (navigateTo) navigate(navigateTo);
   };
   return (
     <div className="p-4 border-b border-gray-700 dark:border-gray-300">

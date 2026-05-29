@@ -1,5 +1,6 @@
 import { Node } from 'reactflow';
 import { useSessionStore } from '../store/sessionStore';
+import { makeFlowNode } from '../store/flowNodeContent';
 
 export interface FlowNodeFromLibraryParams {
   flowId: string;
@@ -14,19 +15,7 @@ export const handleFlowNodeFromLibrary = ({
   position,
   setNodes,
 }: FlowNodeFromLibraryParams) => {
-  const newNode = {
-    id: `node-${Date.now()}`,
-    type: 'custom',
-    position: position || { x: 100, y: 100 },
-    data: {
-      label: flowName,
-      type: 'flow' as const,
-      code: '',
-      flowRef: flowId,
-      isRelativePath: false,
-    },
-    draggable: true,
-  };
+  const newNode = makeFlowNode({ label: flowName, flowRef: flowId, position });
   setNodes((nds) => [...nds, newNode]);
 };
 
@@ -62,20 +51,7 @@ export const handleFlowNodeFromSession = ({
     edges: session.flowState.edges,
   });
 
-  const newNode = {
-    id: `node-${Date.now()}`,
-    type: 'custom',
-    position: position || { x: 100, y: 100 },
-    data: {
-      label: sessionName,
-      type: 'flow' as const,
-      code: flowContent,
-      isRelativePath: false,
-      linkedSessionId: sessionId,
-    },
-    draggable: true,
-  };
-
+  const newNode = makeFlowNode({ label: sessionName, linkedSessionId: sessionId, code: flowContent, position });
   setNodes((nds) => [...nds, newNode]);
 };
 
@@ -107,19 +83,7 @@ export const handleFlowNodeFromFile = async ({
       historyIndex: -1,
     });
 
-    const newNode = {
-      id: `node-${Date.now()}`,
-      type: 'custom',
-      position: position || { x: 100, y: 100 },
-      data: {
-        label: flowName,
-        type: 'flow' as const,
-        code: fileContent,
-        isRelativePath: false,
-        linkedSessionId: newSessionId,
-      },
-      draggable: true,
-    };
+    const newNode = makeFlowNode({ label: flowName, linkedSessionId: newSessionId, code: fileContent, position });
 
     if (currentSessionId) {
       useSessionStore.getState().switchSession(currentSessionId);

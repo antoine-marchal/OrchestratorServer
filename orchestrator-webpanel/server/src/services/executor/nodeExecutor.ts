@@ -929,7 +929,7 @@ export function processJob(job: any): void {
         // (set in flowExecutor.executeRegularNode); use it for SSE/log routing so
         // events reach the listener. Top-level flows use the flow job id directly.
         const ssePath = job.execId || jobId;
-        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || process.cwd(), effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts);
+        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || EXECUTION_DIR, effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts);
         restore();
         const logMessages = logs.map(l => l.type === 'error' ? `ERROR: ${l.message}` : l.message).join('\n');
         finish({ output: result, log: logMessages || 'Successfully executed flow', error: null });

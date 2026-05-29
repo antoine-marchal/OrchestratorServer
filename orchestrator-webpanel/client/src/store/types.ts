@@ -52,8 +52,9 @@ export interface Session {
   flowState: FlowState;
   createdAt: number;
   lastActivity: number;
-  linkedFlowId?: string;  // flow library flow this session belongs to
+  linkedFlowId?: string;  // flow library flow workspace this session belongs to (grouping)
   isMain?: boolean;  // when true, this session is the one loaded on flow execute
+  isFlowRoot?: boolean;  // the ONE canonical editor session that mirrors the library flow
 }
 
 /**
@@ -140,14 +141,17 @@ export interface SessionStore {
   isLoading: boolean;
 
   // Session management
-  createSession: (name?: string, linkedFlowId?: string) => Promise<string>;
-  createLocalSession: (name?: string, linkedFlowId?: string) => string;
+  createSession: (name?: string, linkedFlowId?: string, opts?: { isFlowRoot?: boolean }) => Promise<string>;
   switchSession: (sessionId: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
   reorderSessions: (sourceIndex: number, destinationIndex: number) => void;
   setMainSession: (sessionId: string) => void;
   getActiveSession: () => Session | null;
   getSession: (sessionId: string) => Session | null;
+  // The canonical session that mirrors the library flow `flowId`: the user-set
+  // main session if any, else the auto-created flow-root, else the first session
+  // in the workspace. The single source of truth for hydrate / autosave / restore.
+  getCanonicalSession: (flowId: string) => Session | null;
 
   // Flow state management
   updateActiveFlowState: (updates: Partial<FlowState>) => void;
@@ -162,6 +166,21 @@ export interface SessionStore {
   openNodeEditor: (nodeId: string) => void;
   closeNodeEditor: () => void;
 }
+
+/**
+ * Coerce a possibly-corrupted `stoppingNodes` value (Set, array, or junk from
+ * localStorage) back into a real Set<string>. Centralised so load + runtime
+ * paths agree instead of re-implementing the same guard three times.
+ */
+export const coerceStoppingNodes = (value: unknown): Set<string> => {
+  try {
+    if (value instanceof Set) return value as Set<string>;
+    if (Array.isArray(value)) return new Set(value as string[]);
+  } catch {
+    /* fall through */
+  }
+  return new Set<string>();
+};
 
 /**
  * Default flow state factory

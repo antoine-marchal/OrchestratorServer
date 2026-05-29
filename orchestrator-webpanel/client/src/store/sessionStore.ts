@@ -1,13 +1,19 @@
 import { create } from 'zustand';
 import { apiClient } from '../utils/apiClient';
-import { SessionStore, Session, FlowState, createDefaultFlowState } from './types';
+import { SessionStore, Session, FlowState, createDefaultFlowState, coerceStoppingNodes } from './types';
+
+// Debounce handle for syncToLinkedFlowNodes. Linked flow-node `code` only needs
+// to be fresh for export / library persistence — in-app execution reads the
+// linked session live — so it's wasteful to re-serialize the whole graph on
+// every keystroke. Coalesce instead.
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   sessions: [],
   activeSessionId: null,
   isLoading: false,
 
-  createSession: async (name?: string, linkedFlowId?: string) => {
+  createSession: async (name?: string, linkedFlowId?: string, opts?: { isFlowRoot?: boolean }) => {
     const sessionName = name || `Session ${get().sessions.length + 1}`;
     const sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -18,6 +24,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       createdAt: Date.now(),
       lastActivity: Date.now(),
       ...(linkedFlowId ? { linkedFlowId } : {}),
+      ...(opts?.isFlowRoot ? { isFlowRoot: true } : {}),
     };
 
     set((state) => ({
@@ -25,25 +32,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       activeSessionId: sessionId,
     }));
 
-    get().saveSessions();
-    return sessionId;
-  },
-
-  createLocalSession: (name?: string, linkedFlowId?: string) => {
-    const sessionName = name || `Session ${get().sessions.length + 1}`;
-    const sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const newSession: Session = {
-      id: sessionId,
-      name: sessionName,
-      flowState: createDefaultFlowState(),
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
-      ...(linkedFlowId ? { linkedFlowId } : {}),
-    };
-    set((state) => ({
-      sessions: [...state.sessions, newSession],
-      activeSessionId: sessionId,
-    }));
     get().saveSessions();
     return sessionId;
   },
@@ -154,6 +142,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     return get().sessions.find(s => s.id === sessionId) || null;
   },
 
+  getCanonicalSession: (flowId: string) => {
+    const scoped = get().sessions.filter(s => s.linkedFlowId === flowId);
+    return scoped.find(s => s.isMain) || scoped.find(s => s.isFlowRoot) || scoped[0] || null;
+  },
+
   updateActiveFlowState: (updates: Partial<FlowState>) => {
     const { activeSessionId, sessions } = get();
     if (!activeSessionId) return;
@@ -170,11 +163,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     }));
 
     get().saveSessions();
-    
-    // Sync changes back to linked flow nodes in other sessions
-    const activeSession = get().getActiveSession();
-    if (activeSession && (updates.nodes || updates.edges)) {
-      get().syncToLinkedFlowNodes(activeSessionId);
+
+    // Sync changes back to linked flow nodes in other sessions — debounced so a
+    // burst of edits collapses into one pass instead of re-serializing the whole
+    // graph on every keystroke.
+    if (updates.nodes || updates.edges) {
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        syncTimer = null;
+        get().syncToLinkedFlowNodes(activeSessionId);
+      }, 500);
     }
   },
   
@@ -282,20 +280,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           history: [],
           historyIndex: -1,
           // Ensure stoppingNodes is a proper Set
-          stoppingNodes: (() => {
-            try {
-              if (session.flowState.stoppingNodes instanceof Set) {
-                return session.flowState.stoppingNodes;
-              } else if (Array.isArray(session.flowState.stoppingNodes)) {
-                return new Set(session.flowState.stoppingNodes);
-              } else {
-                return new Set<string>();
-              }
-            } catch (error) {
-              console.warn('stoppingNodes was corrupted during load, resetting to empty Set:', error);
-              return new Set<string>();
-            }
-          })(),
+          stoppingNodes: coerceStoppingNodes(session.flowState.stoppingNodes),
         },
       }));
 

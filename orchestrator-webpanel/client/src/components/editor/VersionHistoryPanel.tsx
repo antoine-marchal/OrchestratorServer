@@ -124,14 +124,19 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
       const restoredNodes = Array.isArray(restored?.nodes) ? restored.nodes : [];
       const restoredEdges = Array.isArray(restored?.edges) ? restored.edges : [];
       const sessionStore = useSessionStore.getState();
-      const activeSession = sessionStore.getActiveSession?.();
-      if (activeSession?.linkedFlowId === flowId) {
-        sessionStore.updateActiveFlowState({
-          nodes: restoredNodes,
-          edges: restoredEdges,
-          history: [],
-          historyIndex: -1,
-        });
+      // Write into the canonical session (the library mirror), NOT whichever
+      // session happens to be active — that could be a child flow-node editor,
+      // and writing the restored flow graph into it would wipe its content.
+      const canonical = sessionStore.getCanonicalSession(flowId);
+      if (canonical) {
+        useSessionStore.setState(state => ({
+          sessions: state.sessions.map(s =>
+            s.id === canonical.id
+              ? { ...s, flowState: { ...s.flowState, nodes: restoredNodes, edges: restoredEdges, history: [], historyIndex: -1 } }
+              : s
+          ),
+        }));
+        sessionStore.saveSessions();
       }
       await loadAll();
       await load();

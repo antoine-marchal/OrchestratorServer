@@ -4,7 +4,7 @@ import { pathUtils } from '../utils/pathUtils';
 import { apiClient } from '../utils/apiClient';
 
 // Import shared types
-import { FlowState, ConsoleMessage, FlowStoreInterface } from './types';
+import { FlowState, ConsoleMessage, FlowStoreInterface, coerceStoppingNodes } from './types';
 
 // Import utilities
 import { prettyFormat } from './utils/formatUtils';
@@ -365,20 +365,7 @@ export const useFlowStore = (): FlowStoreInterface => {
       }
 
       // Mark this node as being stopped - ensure stoppingNodes is always a Set
-      let currentStoppingNodes: Set<string>;
-      try {
-        if (activeFlowState.stoppingNodes instanceof Set) {
-          currentStoppingNodes = activeFlowState.stoppingNodes;
-        } else if (Array.isArray(activeFlowState.stoppingNodes)) {
-          currentStoppingNodes = new Set(activeFlowState.stoppingNodes);
-        } else {
-          currentStoppingNodes = new Set<string>();
-        }
-      } catch (error) {
-        console.warn('stoppingNodes was corrupted, resetting to empty Set:', error);
-        currentStoppingNodes = new Set<string>();
-      }
-      const newStoppingNodes = new Set(currentStoppingNodes);
+      const newStoppingNodes = new Set(coerceStoppingNodes(activeFlowState.stoppingNodes));
       newStoppingNodes.add(nodeId);
 
       updateFlowState({
@@ -422,22 +409,9 @@ export const useFlowStore = (): FlowStoreInterface => {
           // Mark the node as no longer loading
           updateFlowState({
             nodeLoading: { ...activeFlowState.nodeLoading, [nodeId]: false },
-            stoppingNodes: (() => {
-              let currentStoppingNodes: Set<string>;
-              try {
-                if (activeFlowState.stoppingNodes instanceof Set) {
-                  currentStoppingNodes = activeFlowState.stoppingNodes;
-                } else if (Array.isArray(activeFlowState.stoppingNodes)) {
-                  currentStoppingNodes = new Set(activeFlowState.stoppingNodes);
-                } else {
-                  currentStoppingNodes = new Set<string>();
-                }
-              } catch (error) {
-                console.warn('stoppingNodes was corrupted, resetting to empty Set:', error);
-                currentStoppingNodes = new Set<string>();
-              }
-              return new Set([...currentStoppingNodes].filter(id => id !== nodeId));
-            })(),
+            stoppingNodes: new Set(
+              [...coerceStoppingNodes(activeFlowState.stoppingNodes)].filter(id => id !== nodeId)
+            ),
             nodes: activeFlowState.nodes.map(n =>
               n.id === nodeId ? { ...n, data: { ...n.data, jobId: undefined } } : n
             ),

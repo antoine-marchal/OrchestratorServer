@@ -42,3 +42,4 @@ src-tauri/target/*
 webview/runtime/
 src-tauri/WebView2/
 webview
+deploy.bat

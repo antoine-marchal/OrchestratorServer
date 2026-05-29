@@ -687,7 +687,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();
-  const { sessions, activeSessionId, createSession, switchSession, updateActiveFlowState } = useSessionStore();
+  const { sessions, activeSessionId, createSession, switchSession, updateActiveFlowState, getCanonicalSession } = useSessionStore();
   const { updateFlow } = useFlowLibraryStore();
 
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
@@ -699,57 +699,52 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const [showVersions, setShowVersions] = useState(false);
   const artifacts = flow.artifacts || [];
 
-  const activeSession = sessions.find(s => s.id === activeSessionId);
-  const isFlowSession = activeSession?.linkedFlowId === flow.id;
-
   useEffect(() => {
     if (initializedRef.current === flow.id) return;
     initializedRef.current = flow.id;
     hydratedRef.current = false;
 
     const flowSessions = sessions.filter(s => s.linkedFlowId === flow.id);
-    if (flowSessions.length === 0) {
-      createSession(flow.name, flow.id).then(() => {
+    const canonical = getCanonicalSession(flow.id);
+
+    if (!canonical) {
+      // First time entering this flow: create its one canonical root session.
+      createSession(flow.name, flow.id, { isFlowRoot: true }).then(() => {
         updateActiveFlowState({ nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 });
         hydratedRef.current = true;
       });
-    } else {
-      const mainSession = flowSessions.find(s => s.isMain);
-      if (mainSession) {
-        // Main session is the canonical source-of-truth for cron / API / Execute.
-        // Hydrate server flow def INTO the main session without forcing the user
-        // away from whichever session they were editing.
-        useSessionStore.setState(state => ({
-          sessions: state.sessions.map(s =>
-            s.id === mainSession.id
-              ? { ...s, flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } }
-              : s
-          ),
-        }));
-        if (!flowSessions.some(s => s.id === activeSessionId)) {
-          switchSession(mainSession.id);
-        }
-        hydratedRef.current = true;
-      } else {
-        if (!flowSessions.some(s => s.id === activeSessionId)) {
-          switchSession(flowSessions[0].id);
-        }
-        setTimeout(() => {
-          updateActiveFlowState({ nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 });
-          hydratedRef.current = true;
-        }, 0);
-      }
+      return;
     }
+
+    // Hydrate the library definition INTO the canonical session ONLY — never the
+    // active session, which may be a child flow-node editor whose content must
+    // survive a refresh. Also normalise the single-root invariant: mark the
+    // canonical session as the flow root and clear the flag on any others (covers
+    // sessions migrated from before isFlowRoot existed).
+    useSessionStore.setState(state => ({
+      sessions: state.sessions.map(s => {
+        if (s.linkedFlowId !== flow.id) return s;
+        if (s.id === canonical.id) {
+          return { ...s, isFlowRoot: true, flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } };
+        }
+        return s.isFlowRoot ? { ...s, isFlowRoot: false } : s;
+      }),
+    }));
+
+    // If the user isn't on any session of this workspace, focus the canonical
+    // one. Otherwise leave them where they are.
+    if (!flowSessions.some(s => s.id === activeSessionId)) {
+      switchSession(canonical.id);
+    }
+    hydratedRef.current = true;
   }, [flow.id]);
 
   useEffect(() => {
-    if (!isFlowSession || !hydratedRef.current) return;
-    // Only the main session's edits propagate to the server flow definition.
-    // If no main is set for this flow, fall back to autosaving the active session
-    // (preserves the original single-session behavior).
-    const flowSessions = sessions.filter(s => s.linkedFlowId === flow.id);
-    const mainSession = flowSessions.find(s => s.isMain);
-    if (mainSession && mainSession.id !== activeSessionId) return;
+    if (!hydratedRef.current) return;
+    // Only the canonical session's edits propagate to the library flow
+    // definition. A child flow-node editor session never overwrites the flow.
+    const canonical = getCanonicalSession(flow.id);
+    if (!canonical || canonical.id !== activeSessionId) return;
 
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
@@ -761,7 +756,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       saveTimer.current = setTimeout(() => setSaveState('idle'), 2000);
     }, 800);
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
-  }, [nodes, edges, isFlowSession, sessions, activeSessionId]);
+  }, [nodes, edges, sessions, activeSessionId]);
 
   const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
