@@ -43,7 +43,11 @@ router.get('/trigger/:token', async (req: Request, res: Response) => {
     if (!schedule || !schedule.enabled) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Schedule not found or disabled' } }) as any;
 
     if (tokenDoc.singleUse) {
-      await tokensCol.update({ _id: tokenDoc._id }, { $set: { used: true } });
+      // Atomically claim the token: only the first of N concurrent requests
+      // flips used:false→true and gets a non-zero modified count. The rest
+      // lose the race and are rejected, so the flow fires exactly once.
+      const claimed = await tokensCol.update({ _id: tokenDoc._id, used: false }, { $set: { used: true } });
+      if (!claimed) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Single-use token already used' } }) as any;
     }
 
     const executionId = await executeOrchestratorFlow(schedule.flowId, 'api');

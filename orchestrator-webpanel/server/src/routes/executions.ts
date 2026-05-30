@@ -10,7 +10,13 @@ router.get('/', async (req: Request, res: Response) => {
     const query: any = {};
     if (req.query.flowId) query.flowId = req.query.flowId;
     if (req.query.status) query.status = req.query.status;
-    if (req.query.since) query.startTime = { $gt: new Date(req.query.since as string).toISOString() };
+    if (req.query.since) {
+      const since = new Date(req.query.since as string);
+      if (isNaN(since.getTime())) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Invalid "since" date' } }) as any;
+      }
+      query.startTime = { $gt: since.toISOString() };
+    }
 
     const limit = Math.min(parseInt((req.query.limit as string) || '50', 10) || 50, 500);
     const offset = Math.max(parseInt((req.query.offset as string) || '0', 10) || 0, 0);
@@ -189,7 +195,14 @@ router.get('/:id/stream', async (req: Request, res: Response) => {
     executionSSEListeners.get(k)!.add(res);
   }
 
+  // Keep-alive: idle proxies/load balancers drop long-lived SSE connections.
+  // A comment frame every 20s keeps the pipe warm without affecting the client.
+  const keepAlive = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch { /* client gone */ }
+  }, 20000);
+
   req.on('close', () => {
+    clearInterval(keepAlive);
     for (const k of keys) {
       const set = executionSSEListeners.get(k);
       if (set) { set.delete(res); if (!set.size) executionSSEListeners.delete(k); }

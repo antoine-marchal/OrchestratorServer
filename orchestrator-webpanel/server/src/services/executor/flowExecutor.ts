@@ -1,7 +1,8 @@
 import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED } from './nodeExecutor';
 import { getCollection } from '../db/index';
-import { dispatchToWorker } from '../../routes/workers';
+import { dispatchToWorker, isWorkerOnline } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
+import { eventBus } from '../scheduler/eventBus';
 import kill from 'tree-kill';
 import { ChildProcess } from 'child_process';
 
@@ -161,7 +162,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   if (rawCode.includes('${{')) {
     // Worker-scoped secrets shadow globals: when no worker is bound the node
     // runs on the server and only global / flow-scoped secrets apply.
-    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode, { workerId });
+    const { text, resolved, missing } = await resolveSecretsDetailed(rawCode, { workerId }, nodeType);
     resolvedCode = text;
     if (jobId && resolved.length > 0) {
       emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId);
@@ -591,8 +592,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   if (flow.workerId) {
     const workersCol = getCollection('workers');
     const w = await workersCol.findOne({ _id: flow.workerId });
-    const ONLINE_THRESHOLD_MS = 30_000;
-    const isOnline = w?.lastSeenAt && (Date.now() - new Date(w.lastSeenAt).getTime() < ONLINE_THRESHOLD_MS);
+    const isOnline = isWorkerOnline(w?.lastSeenAt);
     if (!w || !isOnline) {
       const endTime = new Date().toISOString();
       const duration = new Date(endTime).getTime() - new Date(startTime).getTime();
@@ -707,6 +707,15 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
     await execsCol.update({ _id: executionId }, { $set: { status, endTime, duration, output: j.output, error: j.error, logs: logBuf, nodeStatuses } });
     await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status, startTime, endTime, duration } } });
+
+    // Emit lifecycle events so `type=event` schedules bound to flow.completed /
+    // flow.failed actually fire. SUCCESS → flow.completed, anything else → flow.failed.
+    try {
+      const eventName = status === 'SUCCESS' ? 'flow.completed' : 'flow.failed';
+      eventBus.emit(eventName, { flowId, executionId, status, flowName: flow.name });
+    } catch (e: any) {
+      console.warn('[flow] failed to emit lifecycle event:', e.message);
+    }
 
     // Clean up locally extracted artifacts if ORCHESTRATOR_KEEP_ARTIFACTS is not set
     if (flowArtifacts.length && !resolvedWorkerId && !KEEP_ARTIFACTS) {

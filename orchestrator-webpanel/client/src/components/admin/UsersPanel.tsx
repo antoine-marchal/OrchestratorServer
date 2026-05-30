@@ -99,7 +99,7 @@ export const UsersPanel: React.FC = () => {
 
   const handleCreate = async () => {
     try {
-      await apiClient.post('/api/v1/users', { login, password, role });
+      await apiClient.post('/api/v1/users', { login, password: password || undefined, role });
       setShowCreate(false);
       setLogin(''); setPassword(''); setRole('operator');
       await load();
@@ -177,7 +177,7 @@ export const UsersPanel: React.FC = () => {
             <div className="flex flex-col gap-3">
               <input value={login} onChange={e => setLogin(e.target.value)} placeholder="Login" className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               <div className="relative">
-                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" className="w-full px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (blank = SSO-only)" className="w-full px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 <button onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
                   {showPwd ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>

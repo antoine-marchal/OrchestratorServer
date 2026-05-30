@@ -21,6 +21,8 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useFlowLibraryStore } from '../store/flowLibraryStore';
+import { apiClient } from '../utils/apiClient';
 import { openFlowNodeEditor } from '../store/flowNodeContent';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
@@ -161,6 +163,30 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
     }
     prevSessionIdRef.current = activeSessionId;
   }, [activeSessionId, fitView]);
+
+  // Force a version snapshot on the server right now (bypasses the autosave
+  // debounce window). Push the live canvas graph first so the snapshot captures
+  // exactly what the user sees, then create the manual version and reveal the
+  // history panel so the new entry is visible.
+  const forceSaveVersion = useCallback(async () => {
+    if (!flowId) return;
+    try {
+      const cleanNodes = (getNodes() as any[]).map((n) => {
+        const c = JSON.parse(JSON.stringify(n));
+        if (c?.data) { delete c.data.executionStatus; delete c.data.executionAttempt; }
+        return c;
+      });
+      const cleanEdges = getEdges();
+      // Await the persist so the snapshot below sees the latest graph.
+      await apiClient.put(`/api/v1/flows/${flowId}`, { nodes: cleanNodes, edges: cleanEdges });
+      // Keep the local library mirror in sync (drives the version-diff view).
+      useFlowLibraryStore.getState().updateFlow(flowId, { nodes: cleanNodes, edges: cleanEdges });
+      await apiClient.post(`/api/v1/flows/${flowId}/versions`, {});
+      if (!versionsVisible) onToggleVersions?.();
+    } catch (e) {
+      console.error('Force save version failed:', e);
+    }
+  }, [flowId, getNodes, getEdges, versionsVisible, onToggleVersions]);
 
   // Function to create a new flow
   const createNewFlow = () => {
@@ -618,6 +644,7 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
           addNewNode={addNewNode}
           versionsVisible={versionsVisible}
           onToggleVersions={onToggleVersions}
+          onForceSaveVersion={forceSaveVersion}
         />
         {contextMenu && !readOnly && (
           <NodeCreationMenu

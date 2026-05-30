@@ -131,11 +131,17 @@ const SECRET_REF_RE = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 // Resolve `${{ secrets.NAME }}` placeholders in the node's code at execution
 // time. The job record only carries the placeholders; we fetch the decrypted
 // values from the orchestrator over the worker channel right before running.
+// JS-family node types where a missing secret should become the literal
+// `undefined`. Other languages (python/groovy/powershell/batch/shell/bash) get
+// an empty string — `undefined` is not a valid token there.
+const JS_NODE_TYPES = new Set(['javascript', 'jsbackend']);
+
 async function resolveSecrets(
   workerId: string,
   jobId: string,
   code: string,
   onLog: (type: 'log' | 'error', message: string) => void,
+  nodeType?: string,
 ): Promise<string> {
   if (!code || !code.includes('${{')) return code;
   const names = [...new Set([...code.matchAll(SECRET_REF_RE)].map(m => m[1]))];
@@ -154,8 +160,10 @@ async function resolveSecrets(
   if (resolved.length) onLog('log', `[secrets] resolved: ${resolved.join(', ')}`);
   if (missing.length) onLog('error', `[secrets] no secret found for: ${missing.map(m => `\`${m}\``).join(', ')} — create one in /admin or remove the placeholder`);
 
-  // Missing names become the literal `undefined` so inlined code stays valid.
-  return code.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
+  // Missing names: `undefined` for JS (keeps it syntactically valid), empty
+  // string elsewhere so we don't inject a bogus token into Python/Groovy/etc.
+  const missingFill = nodeType && JS_NODE_TYPES.has(nodeType) ? 'undefined' : '';
+  return code.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : missingFill));
 }
 
 // Reject absolute paths and any `..` traversal that escapes EXECUTION_DIR.
@@ -234,6 +242,16 @@ function cleanupArtifacts(artifacts: Array<{name: string; data: string}>): void 
   }
 }
 
+// Only clean up shared artifacts when no sibling job is still running in the
+// same EXECUTION_DIR — otherwise (parallel mode) the first job to finish would
+// delete files a concurrent job is still using. `runningJobs` includes the
+// caller itself, so <= 1 means "I'm the last one out".
+function maybeCleanupArtifacts(artifacts: Array<{name: string; data: string}>): void {
+  if (!artifacts.length || KEEP_ARTIFACTS) return;
+  if (runningJobs > 1) return;
+  cleanupArtifacts(artifacts);
+}
+
 async function executeJob(workerId: string, job: any): Promise<void> {
   const jobId = job._id;
   const artifacts: Array<{name: string; data: string}> = job.artifacts || [];
@@ -250,7 +268,7 @@ async function executeJob(workerId: string, job: any): Promise<void> {
     }
 
     if (job.node?.data) {
-      job.node.data.code = await resolveSecrets(workerId, jobId, job.node.data.code || '', onLog);
+      job.node.data.code = await resolveSecrets(workerId, jobId, job.node.data.code || '', onLog, job.node?.type);
     }
     const result = await executeNode(job.node, onLog);
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/complete`, {
@@ -258,9 +276,7 @@ async function executeJob(workerId: string, job: any): Promise<void> {
     });
     console.log(`[worker] Job ${jobId} completed`);
 
-    if (artifacts.length && !KEEP_ARTIFACTS) {
-      cleanupArtifacts(artifacts);
-    }
+    maybeCleanupArtifacts(artifacts);
   } catch (err: any) {
     onLog('error', `[worker] ${err.message}`);
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/complete`, {
@@ -268,9 +284,7 @@ async function executeJob(workerId: string, job: any): Promise<void> {
     }).catch(() => {});
     console.error(`[worker] Job ${jobId} failed:`, err.message);
 
-    if (artifacts.length && !KEEP_ARTIFACTS) {
-      cleanupArtifacts(artifacts);
-    }
+    maybeCleanupArtifacts(artifacts);
   }
 }
 

@@ -123,11 +123,21 @@ export async function resolveSecretValues(names: string[], ctx: ResolveCtx = {})
   return { values, missing };
 }
 
-// Substitute resolved values into code. Missing names become the literal
-// `undefined` so inlined code stays syntactically valid (avoids "missing : after
-// property id" from the raw `${{ secrets.NAME }}` token being parsed as JS).
-export function substituteSecrets(text: string, values: Record<string, string>): string {
-  return text.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : 'undefined'));
+// JS-family node types where a missing secret should become the literal
+// `undefined` (keeps inlined code syntactically valid). For every other
+// language (python, groovy, powershell, batch, shell, bash) `undefined` is the
+// wrong token — there an empty string is the safe fill.
+const JS_NODE_TYPES = new Set(['javascript', 'jsbackend']);
+export function missingSecretFill(nodeType?: string | null): string {
+  return nodeType && JS_NODE_TYPES.has(nodeType) ? 'undefined' : '';
+}
+
+// Substitute resolved values into code. Missing names become `missingFill`
+// (default `undefined` for JS; pass '' for other languages — see
+// missingSecretFill). Avoids injecting the bare token `undefined` into Python
+// etc. where it is not a valid value.
+export function substituteSecrets(text: string, values: Record<string, string>, missingFill: string = 'undefined'): string {
+  return text.replace(SECRET_REF_RE, (_m, name: string) => (name in values ? String(values[name]) : missingFill));
 }
 
 // Utility: resolve `${{ secrets.NAME }}` references in code/config at execution
@@ -140,16 +150,16 @@ export interface ResolvedSecrets {
   resolved: string[];
 }
 
-export async function resolveSecretsDetailed(text: string, ctx: ResolveCtx = {}): Promise<ResolvedSecrets> {
+export async function resolveSecretsDetailed(text: string, ctx: ResolveCtx = {}, nodeType?: string | null): Promise<ResolvedSecrets> {
   const names = extractSecretNames(text);
   if (!names.length) return { text, missing: [], resolved: [] };
   const { values, missing } = await resolveSecretValues(names, ctx);
-  return { text: substituteSecrets(text, values), missing, resolved: names.filter(n => n in values) };
+  return { text: substituteSecrets(text, values, missingSecretFill(nodeType)), missing, resolved: names.filter(n => n in values) };
 }
 
 // Backwards-compatible string-only API.
-export async function resolveSecrets(text: string, ctx: ResolveCtx = {}): Promise<string> {
-  const { text: out } = await resolveSecretsDetailed(text, ctx);
+export async function resolveSecrets(text: string, ctx: ResolveCtx = {}, nodeType?: string | null): Promise<string> {
+  const { text: out } = await resolveSecretsDetailed(text, ctx, nodeType);
   return out;
 }
 

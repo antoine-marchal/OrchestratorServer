@@ -523,6 +523,11 @@ export function finalizeJob(id: string, result: any): void {
       }
     }
     cleanupJobLogs(id);
+    // Free the in-memory job record after a grace window so the executor's
+    // completion monitors and GET /executions/:id self-heal can still read the
+    // terminal state. Without this the `jobs` Map grows unbounded for the
+    // lifetime of the process (every flow run + every transient sub-node job).
+    setTimeout(() => jobs.delete(id), 60000);
   } catch (err) {
     console.error(`Error during job finalize for ${id}:`, (err as Error).message);
   }

@@ -45,6 +45,8 @@ const LoginPage: React.FC = () => {
 
   // Proxy auth: on mount, check if proxy auth is enabled and URL has a ticket
   useEffect(() => {
+    // Reaching the login page ends any SSO bounce cycle (see SsoGate loop guard).
+    sessionStorage.removeItem('sso_bounced');
     (async () => {
       try {
         const cfgRes = await fetch('/api/v1/authProxy/config');

@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
+import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
 
 const router = Router();
 
@@ -151,6 +152,37 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
   }
 });
 
+// Force a version snapshot of the flow's current persisted state right now,
+// bypassing the autosave debounce window. Used by the editor's "Save version"
+// button so a user can checkpoint on demand instead of waiting for the next
+// interval-gated snapshot inside PUT /:id.
+router.post('/:id/versions', requireFlowEditAccess, async (req: Request, res: Response) => {
+  const now = new Date().toISOString();
+  try {
+    const col = getCollection('flows');
+    const versionsCol = getCollection('flow_versions');
+    const flow = await col.findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const version = {
+      _id: nowUid(),
+      flowId: req.params.id,
+      nodes: flow.nodes || [],
+      edges: flow.edges || [],
+      artifacts: flow.artifacts || [],
+      name: flow.name,
+      namespace: flow.namespace,
+      description: flow.description,
+      savedAt: now,
+      author: (req as any).user?.login || 'unknown',
+      manual: true,
+    };
+    await versionsCol.insert(version);
+    res.status(201).json({ _id: version._id, savedAt: now, manual: true });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
 router.get('/:id/versions', async (req: Request, res: Response) => {
   try {
     const versionsCol = getCollection('flow_versions');
@@ -224,6 +256,11 @@ router.delete('/:id', requireFlowEditAccess, async (req: Request, res: Response)
 
 router.post('/:id/execute', async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user;
+    // Viewers are read-only — they must not be able to trigger executions.
+    if (!user || (user.role !== 'admin' && user.role !== 'operator')) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins and operators can execute flows' } }) as any;
+    }
     const col = getCollection('flows');
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
@@ -240,9 +277,29 @@ router.put('/:id/schedule', async (req: Request, res: Response) => {
   if (!cron) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'cron is required' } }) as any;
   try {
     const col = getCollection('flows');
+    const schedulesCol = getCollection('schedules');
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
-    await col.update({ _id: req.params.id }, { $set: { schedule: { cron, enabled, timezone }, updatedAt: new Date().toISOString() } });
+    const now = new Date().toISOString();
+    await col.update({ _id: req.params.id }, { $set: { schedule: { cron, enabled, timezone }, updatedAt: now } });
+
+    // Mirror into the schedules collection — that's what cronScheduler watches.
+    // Without this the cron only fires after the next server restart (the
+    // startup migration mirrors flow.schedule once). Upsert + (un)register now.
+    let sched = await schedulesCol.findOne({ flowId: req.params.id, type: 'cron' });
+    if (sched) {
+      await schedulesCol.update({ _id: sched._id }, { $set: { cronExpr: cron, timezone, enabled, label: cron, updatedAt: now } });
+      sched = { ...sched, cronExpr: cron, timezone, enabled };
+    } else {
+      sched = {
+        _id: nowUid(), flowId: req.params.id, type: 'cron', cronExpr: cron, timezone,
+        label: cron, enabled, createdBy: (req as any).user?._id || 'system', createdAt: now, updatedAt: now,
+      };
+      await schedulesCol.insert(sched);
+    }
+    unregisterCron(sched._id);
+    if (enabled) registerCron(sched as any);
+
     res.json(await col.findOne({ _id: req.params.id }));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
@@ -252,7 +309,14 @@ router.put('/:id/schedule', async (req: Request, res: Response) => {
 router.delete('/:id/schedule', async (req: Request, res: Response) => {
   try {
     const col = getCollection('flows');
+    const schedulesCol = getCollection('schedules');
     await col.update({ _id: req.params.id }, { $set: { schedule: null, updatedAt: new Date().toISOString() } });
+    // Tear down the mirrored cron row + its registered node-cron task.
+    const sched = await schedulesCol.findOne({ flowId: req.params.id, type: 'cron' });
+    if (sched) {
+      unregisterCron(sched._id);
+      await schedulesCol.remove({ _id: sched._id });
+    }
     res.json(await col.findOne({ _id: req.params.id }));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });

@@ -153,7 +153,7 @@ Deux types d'identifiants, tous deux via l'en-tête `Authorization` (`middleware
 
 **RBAC** (`middleware/rbac.ts`) : `requireRole(...)` protège les routes. admin = tout ; operator = exécuter/gérer ; viewer = lecture seule.
 
-**SSO / proxy auth.** Quand `ORCHESTRATOR_PROXYAUTH_URL` + `ORCHESTRATOR_PROXYAUTH_REGEX` sont définis, `/authProxy` valide un ticket SSO/CAS externe (en construisant `service=<DOMAIN>:<PORT>`), extrait le login via la regex, et émet des tokens pour l'utilisateur correspondant.
+**SSO / proxy auth.** Quand `ORCHESTRATOR_PROXYAUTH_URL` + `ORCHESTRATOR_PROXYAUTH_REGEX` sont définis, `/authProxy` valide un ticket SSO/CAS externe (en construisant `service=<DOMAIN>:<PORT>`), extrait le login via la regex, et émet des tokens pour l'utilisateur correspondant. Côté front, toute route atteinte sans session redirige automatiquement le navigateur vers `ORCHESTRATOR_PROXYAUTH_LOGIN_URL` (défaut : l'URL de validation avec `/validate`→`/login`) pour obtenir un ticket, puis l'échange. Le formulaire mot de passe reste accessible via la route explicite `#/login` (échappatoire — pas de redirection auto). Un utilisateur **sans `passwordHash`** est SSO-only : `/auth/login` lui refuse le login mot de passe (« Password login disabled for this account »), connexion par ticket uniquement. Le mock CAS de test vit dans `authent_test_service/`.
 
 ---
 

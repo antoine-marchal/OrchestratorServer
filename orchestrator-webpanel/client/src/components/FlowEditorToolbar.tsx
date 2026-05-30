@@ -16,6 +16,7 @@ import {
   Copy,
   Clipboard,
   History,
+  BookmarkPlus,
 } from 'lucide-react';
 
 interface FlowEditorToolbarProps {
@@ -55,6 +56,8 @@ interface FlowEditorToolbarProps {
   // Versions panel toggle
   versionsVisible?: boolean;
   onToggleVersions?: () => void;
+  // Force an immediate version snapshot (bypasses autosave debounce)
+  onForceSaveVersion?: () => void;
 }
 
 const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
@@ -80,6 +83,7 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
   addNewNode,
   versionsVisible,
   onToggleVersions,
+  onForceSaveVersion,
 }) => {
   if (readOnly) return null;
 
@@ -162,6 +166,15 @@ const FlowEditorToolbar: React.FC<FlowEditorToolbarProps> = ({
             label="Versions"
             color={versionsVisible ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-cyan-500 hover:bg-cyan-600'}
             title="Toggle version history"
+          />
+        )}
+        {onForceSaveVersion && (
+          <ToolbarButton
+            onClick={onForceSaveVersion}
+            icon={BookmarkPlus}
+            label="Save Version"
+            color="bg-cyan-500 hover:bg-cyan-600"
+            title="Save a version snapshot now (don't wait for the next autosave)"
           />
         )}
       </div>

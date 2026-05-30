@@ -33,6 +33,9 @@ export function register(schedule: Schedule): void {
   // Unregister existing if any
   unregister(schedule._id);
 
+  // node-cron defaults to server-local time; honour a stored timezone so a
+  // schedule created with "America/New_York" fires in that zone, not UTC/local.
+  const options = schedule.timezone ? { timezone: schedule.timezone } : undefined;
   const task = cron.schedule(schedule.cronExpr, async () => {
     if (!_executeFlow) return;
     console.log(`[Cron] Firing schedule ${schedule._id} for flow ${schedule.flowId}`);
@@ -43,7 +46,7 @@ export function register(schedule: Schedule): void {
     } catch (err) {
       console.error(`[Cron] Error executing flow ${schedule.flowId}:`, (err as Error).message);
     }
-  });
+  }, options);
 
   tasks.set(schedule._id, task);
 }

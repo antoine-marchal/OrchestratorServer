@@ -16,7 +16,7 @@ router.post('/', async (req: Request, res: Response) => {
   if (!workerId && resolvedCode.includes('${{')) {
     // No workerId here means the job runs locally on the server — only the
     // global (and flow-scoped, when applicable) secrets apply.
-    const { text } = await resolveSecretsDetailed(resolvedCode);
+    const { text } = await resolveSecretsDetailed(resolvedCode, {}, type);
     resolvedCode = text;
   }
 
@@ -73,7 +73,13 @@ router.get('/:jobId/logs', (req: Request, res: Response) => {
   if (!jobLogListeners.has(jobId)) jobLogListeners.set(jobId, new Set());
   jobLogListeners.get(jobId)!.add(res);
 
+  // Keep-alive comment so idle proxies don't drop the SSE connection.
+  const keepAlive = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch { /* client gone */ }
+  }, 20000);
+
   req.on('close', () => {
+    clearInterval(keepAlive);
     const set = jobLogListeners.get(jobId);
     if (set) { set.delete(res); if (!set.size) jobLogListeners.delete(jobId); }
   });

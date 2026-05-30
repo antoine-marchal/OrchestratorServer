@@ -1,0 +1,13 @@
+{"ticket":"ST-b7b2cfdab747a16c8e3fc1727e3dfa5df0c13ce7","service":"http://google.fr","user":"marchala","consumed":false,"createdAt":1780136511422,"_id":"LTU0bsDHt0pF03ZB"}
+{"ticket":"ST-e21ce4f87c01c90d5fba6c5a3f85050a542d5416","service":"http://localhost:8443","user":"marchala","consumed":false,"createdAt":1780136540164,"_id":"PbYIzGxBbopJm6vg"}
+{"$$deleted":true,"_id":"PbYIzGxBbopJm6vg"}
+{"ticket":"ST-033350b18fddc6f66ad8a4e159af7c867b733de4","service":"http://localhost:8443/validate","user":"marchala","consumed":false,"createdAt":1780136659424,"_id":"QKatM96oFKXHA8kC"}
+{"$$deleted":true,"_id":"QKatM96oFKXHA8kC"}
+{"ticket":"ST-5c482c091bce3a67384d919418ecc7af6876a79f","service":"http://localhost:3939","user":"marchala","consumed":false,"createdAt":1780137937020,"_id":"7wLbIXDXuroeOKho"}
+{"$$deleted":true,"_id":"7wLbIXDXuroeOKho"}
+{"ticket":"ST-ccf3db30a2c2ceeca774c44ee0671691005720ef","service":"http://localhost:3939","user":"marchala","consumed":false,"createdAt":1780137995836,"_id":"rtIGFZUpaUENoTFU"}
+{"$$deleted":true,"_id":"rtIGFZUpaUENoTFU"}
+{"ticket":"ST-642290a00684b58271fff4ba7df347e04e20384c","service":"http://localhost:3939","user":"marchala","consumed":false,"createdAt":1780138076448,"_id":"m8OR6EIyqcr36oxo"}
+{"$$deleted":true,"_id":"m8OR6EIyqcr36oxo"}
+{"ticket":"ST-2f89d6b71b6971cfb7b864d49382eec873b56196","service":"http://localhost:3939","user":"marchala","consumed":false,"createdAt":1780138240209,"_id":"s6Xeqvdq58Cg4IOM"}
+{"$$deleted":true,"_id":"s6Xeqvdq58Cg4IOM"}

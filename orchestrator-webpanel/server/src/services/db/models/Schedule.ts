@@ -3,6 +3,7 @@ export interface Schedule {
   flowId: string;
   type: 'cron' | 'event' | 'api';
   cronExpr?: string;
+  timezone?: string;
   eventName?: string;
   label?: string;
   createdBy: string;

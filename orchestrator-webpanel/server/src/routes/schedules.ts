@@ -31,13 +31,14 @@ router.get('/', async (req: Request, res: Response) => {
 
 // Create cron schedule
 router.post('/cron', async (req: Request, res: Response) => {
-  const { flowId, cronExpr, label, enabled = true } = req.body;
+  const { flowId, cronExpr, label, enabled = true, timezone } = req.body;
   if (!flowId || !cronExpr) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId and cronExpr required' } }) as any;
   try {
     const col = getCollection('schedules');
     const now = new Date().toISOString();
     const schedule: any = {
       _id: uuidv4(), flowId, type: 'cron', cronExpr, label: label || cronExpr,
+      timezone: timezone || undefined,
       createdBy: (req as any).user?._id || 'system', enabled,
       createdAt: now, updatedAt: now,
     };
@@ -114,6 +115,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
     if (req.body.enabled !== undefined) updates.enabled = req.body.enabled;
     if (req.body.label !== undefined) updates.label = req.body.label;
     if (req.body.cronExpr !== undefined) updates.cronExpr = req.body.cronExpr;
+    if (req.body.timezone !== undefined) updates.timezone = req.body.timezone;
 
     await col.update({ _id: req.params.id }, { $set: updates });
     const updated = await col.findOne({ _id: req.params.id });

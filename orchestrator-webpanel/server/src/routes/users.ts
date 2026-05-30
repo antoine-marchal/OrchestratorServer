@@ -11,6 +11,23 @@ import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
 
+// Builds the CAS `service` URL from PROTOCOL + DOMAIN + PORT so it matches what
+// the browser used. The same value must be sent at /login (ticket issuance) and
+// /validate (ticket check), or a strict CAS server rejects the mismatch.
+function buildServiceUrl(): string {
+  const protocol = (process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true') ? 'https' : 'http';
+  const domain = process.env.DOMAIN || process.env.ORCHESTRATOR_DOMAIN || 'http://localhost';
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 3939;
+  let serviceBase: string;
+  if (/^https?:\/\//i.test(domain)) {
+    serviceBase = domain.replace(/\/$/, '');
+  } else {
+    serviceBase = `${protocol}://${domain.replace(/\/$/, '')}`;
+  }
+  const hasPort = /:\d+$/.test(serviceBase.replace(/^https?:\/\//, ''));
+  return hasPort ? serviceBase : `${serviceBase}:${port}`;
+}
+
 // Auth endpoints (no auth required)
 router.post('/auth/login', async (req: Request, res: Response) => {
   const { login, password } = req.body;
@@ -42,7 +59,13 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 
   try {
     const payload: any = verifyRefreshToken(refreshToken);
-    const accessToken = generateJWT({ _id: payload._id, login: payload.login, role: payload.role });
+    // Re-load the user so a deleted account can't keep refreshing, and so the
+    // new access token carries the CURRENT role (a demoted user shouldn't keep
+    // elevated access for the remaining 7-day refresh window).
+    const users = getCollection('users');
+    const user = await users.findOne({ _id: payload._id });
+    if (!user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'User no longer exists' } }) as any;
+    const accessToken = generateJWT({ _id: user._id, login: user.login, role: user.role });
     res.json({ accessToken });
   } catch {
     res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or expired refresh token' } });
@@ -62,14 +85,17 @@ router.get('/users', authMiddleware, requireRole('admin', 'operator'), async (_r
 
 router.post('/users', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   const { login, password, role = 'operator' } = req.body;
-  if (!login || !password) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'login and password required' } }) as any;
+  // Password is optional: a user without one is SSO-only (proxy-auth ticket
+  // login). The /auth/login route already rejects them with "Password login
+  // disabled for this account".
+  if (!login) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'login required' } }) as any;
 
   try {
     const users = getCollection('users');
     const existing = await users.findOne({ login: login.toLowerCase() });
     if (existing) return res.status(409).json({ error: { code: 'CONFLICT', message: 'User already exists' } }) as any;
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = password ? await bcrypt.hash(password, 12) : null;
     const now = new Date().toISOString();
     const user = { _id: uuidv4(), login: login.toLowerCase(), passwordHash, role, apiKeys: [], createdAt: now, updatedAt: now };
     await users.insert(user);
@@ -104,6 +130,16 @@ router.patch('/users/:id/password', authMiddleware, async (req: Request, res: Re
 router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const users = getCollection('users');
+    const target = await users.findOne({ _id: req.params.id });
+    if (!target) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
+    // Never allow removing the last admin — that would permanently lock out
+    // all admin access (covers an admin deleting themselves too).
+    if (target.role === 'admin') {
+      const adminCount = await users.count({ role: 'admin' });
+      if (adminCount <= 1) {
+        return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Cannot delete the last admin user' } }) as any;
+      }
+    }
     const removed = await users.remove({ _id: req.params.id });
     if (!removed) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
     res.json({ message: 'User deleted' });
@@ -155,7 +191,17 @@ router.delete('/users/:id/apikeys/:keyId', authMiddleware, requireRole('admin'),
 router.get('/authProxy/config', (_req: Request, res: Response) => {
   const paramName = process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
   const enabled = !!(process.env.ORCHESTRATOR_PROXYAUTH_URL && process.env.ORCHESTRATOR_PROXYAUTH_REGEX);
-  res.json({ enabled, paramName });
+  // loginUrl: where the browser is bootstrapped to obtain a ticket. Explicit
+  // env wins; otherwise derive it from the validate URL (CAS convention:
+  // /validate and /login are siblings). service: the value the SSO must echo.
+  let loginUrl: string | undefined;
+  let service: string | undefined;
+  if (enabled) {
+    loginUrl = process.env.ORCHESTRATOR_PROXYAUTH_LOGIN_URL
+      || process.env.ORCHESTRATOR_PROXYAUTH_URL!.replace(/\/validate\/?$/i, '/login');
+    service = buildServiceUrl();
+  }
+  res.json({ enabled, paramName, loginUrl, service });
 });
 
 // Proxy authentication endpoint — bypasses password login via an external SSO ticket.
@@ -179,21 +225,8 @@ router.get('/authProxy', async (req: Request, res: Response) => {
 
   try {
     // Some SSO/CAS servers require the `service` parameter on the validation
-    // call to match the URL the ticket was originally issued for. Build it
-    // from PROTOCOL + DOMAIN + PORT so it matches what the browser used.
-    const protocol = (process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true') ? 'https' : 'http';
-    const domain = process.env.DOMAIN || process.env.ORCHESTRATOR_DOMAIN || 'http://localhost';
-    const port = process.env.PORT ? parseInt(process.env.PORT) : 3939;
-    // If DOMAIN already includes scheme, use it as-is; otherwise prepend.
-    let serviceBase: string;
-    if (/^https?:\/\//i.test(domain)) {
-      serviceBase = domain.replace(/\/$/, '');
-    } else {
-      serviceBase = `${protocol}://${domain.replace(/\/$/, '')}`;
-    }
-    // Only append port if not already present in serviceBase.
-    const hasPort = /:\d+$/.test(serviceBase.replace(/^https?:\/\//, ''));
-    const serviceUrl = hasPort ? serviceBase : `${serviceBase}:${port}`;
+    // call to match the URL the ticket was originally issued for.
+    const serviceUrl = buildServiceUrl();
     const validateUrl = `${proxyUrl}?${paramName}=${encodeURIComponent(ticket)}&service=${encodeURIComponent(serviceUrl)}`;
     const body = await new Promise<string>((resolve, reject) => {
       const client = validateUrl.startsWith('https://') ? https : http;

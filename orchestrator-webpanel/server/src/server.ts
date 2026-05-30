@@ -25,6 +25,25 @@ import { v4 as uuidv4 } from 'uuid';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3939;
 
+// Resolve the running version once at boot. set-version.bat keeps `.version`
+// and every package.json in sync, so read whichever we find first across the
+// dev layout and the pkg-bundled layout. Avoids hardcoded drift (e.g. /ping).
+const VERSION: string = (() => {
+  const candidates = [
+    path.join(__dirname, '..', '.version'),
+    path.join(__dirname, '..', '..', '.version'),
+    path.join(__dirname, '..', '..', '..', '.version'),
+    path.join(process.cwd(), '.version'),
+  ];
+  for (const p of candidates) {
+    try { const v = fs.readFileSync(p, 'utf8').trim(); if (v) return v; } catch { /* next */ }
+  }
+  for (const p of [path.join(__dirname, '..', 'package.json'), path.join(__dirname, '..', '..', 'package.json')]) {
+    try { const v = JSON.parse(fs.readFileSync(p, 'utf8')).version; if (v) return v; } catch { /* next */ }
+  }
+  return 'unknown';
+})();
+
 /* ─── Production secret guards ──────────────────────────────────────────────
  * Refuse to start in production if any secret is at its placeholder default.
  * A misconfigured prod deploy with the dev fallbacks would let any attacker
@@ -92,7 +111,10 @@ if (process.env.NODE_ENV === 'production' && corsOrigins.length) {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       const o = origin.replace(/\/$/, '');
-      cb(null, corsOrigins.some(allowed => o === allowed || o.startsWith(allowed)));
+      // Exact match only. A prefix match (startsWith) is unsafe — an allowed
+      // origin "https://app.example.com" would also match the attacker-owned
+      // "https://app.example.com.evil.com".
+      cb(null, corsOrigins.some(allowed => o === allowed));
     },
     credentials: true,
   }));
@@ -110,7 +132,7 @@ const panelDist = fs.existsSync(path.join(__dirname, 'webpanel'))
 app.use(express.static(panelDist));
 
 app.get('/api/v1/ping', (_req, res) => {
-  res.json({ status: 'ok', version: '2.2.0' });
+  res.json({ status: 'ok', version: VERSION });
 });
 
 // Auth routes (no auth required)
@@ -283,7 +305,7 @@ async function start(): Promise<void> {
   eventBus.on('file.arrived', (data: any) => scheduleEventHandler('file.arrived', data));
 
   // Auto-expire trigger tokens every minute
-  setInterval(async () => {
+  const tokenExpiryTimer = setInterval(async () => {
     try {
       const col = getCollection('trigger_tokens');
       const now = new Date().toISOString();
@@ -302,7 +324,7 @@ async function start(): Promise<void> {
   // jobs flipped to 'cancelled' with a reason; the awaiting executor then
   // rejects on its next poll.
   const WORKER_OFFLINE_TIMEOUT_MS = parseInt(process.env.WORKER_OFFLINE_TIMEOUT_MS || '60000');
-  setInterval(async () => {
+  const reaperTimer = setInterval(async () => {
     try {
       const workersCol = getCollection('workers');
       const jobsCol = getCollection('worker_jobs');
@@ -364,6 +386,9 @@ async function start(): Promise<void> {
 
   const shutdown = (signal: string) => {
     console.log(`\nReceived ${signal}. Shutting down...`);
+    clearInterval(tokenExpiryTimer);
+    clearInterval(reaperTimer);
+    eventBus.stopWatcher();
     server.close(() => {
       console.log('Server shut down successfully.');
       process.exit(0);

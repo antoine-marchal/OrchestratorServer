@@ -85,26 +85,6 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
         return;
       }
 
-      // Upsert worker record
-      try {
-        const workers = getCollection('workers');
-        const workerIp = req.ip || 'unknown';
-        await workers.update(
-          { apiKeyId: matchedKeyId },
-          {
-            $set: {
-              assignedUserId: matchedUser._id,
-              apiKeyId: matchedKeyId,
-              lastSeen: new Date().toISOString(),
-              ip: workerIp,
-            },
-          },
-          { upsert: true }
-        );
-      } catch {
-        // Non-fatal
-      }
-
       req.user = {
         _id: matchedUser._id,
         login: matchedUser.login,

@@ -92,6 +92,10 @@ Référence complète : `release/server.env.example` et `release/worker.env.exam
 | `WORKER_OFFLINE_TIMEOUT_MS` | `60000` | Seuil du reaper pour déclarer un worker hors ligne. |
 | `ORCHESTRATOR_SERVER_EXECUTION_ENABLED` | `true` | `false` interdit l'exécution locale des nœuds feuilles — force tous les nœuds de script sur les workers. |
 | `HTTPS` | `false` | `true` → écoute TLS (voir §6). |
+| `ORCHESTRATOR_PROXYAUTH_URL` | — | URL de validation SSO/CAS. Avec `_REGEX`, active le login SSO (redirection auto du front). |
+| `ORCHESTRATOR_PROXYAUTH_REGEX` | — | Regex sur la réponse de validation ; groupe 1 = login. Ex. `<cas:user>([^<]+)</cas:user>`. |
+| `ORCHESTRATOR_PROXYAUTH_LOGIN_URL` | `_URL` avec `/validate`→`/login` | URL de login SSO vers laquelle le navigateur est redirigé pour obtenir un ticket. |
+| `ORCHESTRATOR_PROXYAUTH_NAME` | `ticket` | Nom du paramètre de requête portant le ticket. |
 
 **Worker :**
 

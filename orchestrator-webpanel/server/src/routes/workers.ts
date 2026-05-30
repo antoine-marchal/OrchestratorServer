@@ -8,10 +8,18 @@ import { extractSecretNames, resolveSecretValues } from './secrets';
 
 const router = Router();
 
-const ONLINE_THRESHOLD_MS = 30_000; // worker is online if seen within 30s
+// Worker counts as online if its last heartbeat/poll is within this window.
+// Single source of truth — flowExecutor imports this for its pre-dispatch
+// liveness check so the UI's "online" badge and dispatch eligibility agree.
+// Override via WORKER_ONLINE_THRESHOLD_MS.
+export const ONLINE_THRESHOLD_MS = parseInt(process.env.WORKER_ONLINE_THRESHOLD_MS || '30000');
+
+export function isWorkerOnline(lastSeenAt: string | undefined): boolean {
+  return !!lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
+}
 
 function isOnline(lastSeenAt: string): boolean {
-  return Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
+  return isWorkerOnline(lastSeenAt);
 }
 
 // Per-worker bearer token middleware. /register is the only worker endpoint

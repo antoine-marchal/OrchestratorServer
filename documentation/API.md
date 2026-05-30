@@ -59,10 +59,10 @@ Codes courants : `BAD_REQUEST` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `
 |---|---|---|---|
 | POST | `/auth/login` | public | Corps `{ login, password }` → `{ accessToken, refreshToken, user }`. |
 | POST | `/auth/refresh` | public | Corps `{ refreshToken }` → `{ accessToken }`. |
-| GET | `/authProxy/config` | public | `{ enabled, paramName }` — indique si le SSO est configuré. |
+| GET | `/authProxy/config` | public | `{ enabled, paramName, loginUrl, service }` — config SSO pour le bootstrap front (redirection auto vers `loginUrl`). |
 | GET | `/authProxy?<ticket>=…` | public | Échange un ticket SSO externe contre des tokens. |
 | GET | `/users` | admin, operator | Liste les utilisateurs (sans hash ; les clés API n'apparaissent qu'en métadonnées). |
-| POST | `/users` | admin | Corps `{ login, password, role? }` → utilisateur créé. |
+| POST | `/users` | admin | Corps `{ login, password?, role? }` → utilisateur créé. **`password` optionnel** : omis = utilisateur SSO-only (login mot de passe refusé, connexion via ticket SSO uniquement). |
 | PATCH | `/users/:id/password` | soi-même ou admin | Corps `{ password }`. |
 | DELETE | `/users/:id` | admin | Supprime un utilisateur. |
 | POST | `/users/:id/apikeys` | admin | Corps `{ label, expiresAt? }` → `{ id, label, rawKey }`. **`rawKey` n'est montrée qu'une fois.** |
