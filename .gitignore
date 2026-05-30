@@ -1,3 +1,8 @@
+# Environment files (contain secrets — commit .env.example instead)
+.env
+.env.local
+.env.*.local
+
 # Logs
 logs
 *.log
@@ -10,6 +15,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+release/
 *.local
 backend/inbox
 backend/outbox
@@ -36,3 +42,5 @@ src-tauri/target/*
 webview/runtime/
 src-tauri/WebView2/
 webview
+deploy.bat
+workerWorkspace
