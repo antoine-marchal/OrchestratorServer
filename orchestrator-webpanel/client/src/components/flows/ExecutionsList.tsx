@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, Trash2 } from 'lucide-react';
+import { Search, RefreshCw, Trash2, Eye, Play, Loader2 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import StatusBadge from './StatusBadge';
 import ExecIdCell from './ExecIdCell';
@@ -31,7 +31,7 @@ const CHIP_LABELS: Record<string, string> = {
 
 const ExecutionsList: React.FC = () => {
   const navigate = useNavigate();
-  const { executions, killExecution, clearExecutions, syncBackendExecutions } = useFlowLibraryStore();
+  const { executions, killExecution, clearExecutions, syncBackendExecutions, executeFlow } = useFlowLibraryStore();
   const { canEdit } = useAuth();
 
   const [search, setSearch] = useState('');
@@ -39,6 +39,19 @@ const ExecutionsList: React.FC = () => {
   const [, setTick] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [rerunningId, setRerunningId] = useState<string | null>(null);
+
+  const handleRerun = async (flowId: string, fromId: string) => {
+    setRerunningId(fromId);
+    try {
+      const execId = await executeFlow(flowId);
+      navigate(`/flows/${flowId}?tab=executions&exec=${execId}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Execution failed');
+    } finally {
+      setRerunningId(null);
+    }
+  };
 
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 3000);
@@ -201,6 +214,13 @@ const ExecutionsList: React.FC = () => {
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
+                        <button
+                          className="tc-icon-btn"
+                          onClick={() => navigate(`/flows/${exec.flowId}?tab=executions&exec=${exec.id}`)}
+                          title="View execution"
+                        >
+                          <Eye size={14} />
+                        </button>
                         {exec.status === 'RUNNING' && canEdit && (
                           <button
                             className="tc-icon-btn danger"
@@ -208,6 +228,16 @@ const ExecutionsList: React.FC = () => {
                             title="Kill execution"
                           >
                             <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Kill</span>
+                          </button>
+                        )}
+                        {exec.status !== 'RUNNING' && canEdit && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={() => handleRerun(exec.flowId, exec.id)}
+                            disabled={rerunningId === exec.id}
+                            title="Re-run flow"
+                          >
+                            {rerunningId === exec.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           </button>
                         )}
                       </div>

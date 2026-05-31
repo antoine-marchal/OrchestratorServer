@@ -79,6 +79,10 @@ interface FlowLibraryState {
   flows: OrchestratorFlow[];
   executions: FlowExecution[];
   schedulerActive: boolean;
+  // False until the first /api/v1/flows fetch settles (success or failure).
+  // The FlowsList uses this to show a loading state instead of the "no flows
+  // yet" empty state while the initial request is still in flight.
+  loaded: boolean;
 
   loadAll: () => void;
   createFlow: (data: { name: string; namespace?: string; description?: string; workerId?: string }) => OrchestratorFlow;
@@ -213,6 +217,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
     flows: [],
     executions: [],
     schedulerActive: false,
+    loaded: false,
 
     loadAll: () => {
       // First call only: hydrate from localStorage so the UI has something to
@@ -244,6 +249,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
           });
           persistFlows(merged);
         } catch { /* server may not be ready yet */ }
+        finally { if (!get().loaded) set({ loaded: true }); }
       })();
     },
 

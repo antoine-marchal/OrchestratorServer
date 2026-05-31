@@ -752,7 +752,7 @@ export const AdminLayout: React.FC = () => {
                         }}>
                           {s.scope}
                           {s.scope === 'flow' && s.flowId ? ` · ${s.flowId.slice(0, 8)}` : ''}
-                          {s.scope === 'worker' && s.workerId ? ` · ${workerOptions.find(w => w._id === s.workerId)?.name ?? s.workerId.slice(0, 8)}` : ''}
+                          {s.scope === 'worker' && s.workerId ? ` · ${workerOptions.find(w => w._id === s.workerId)?.name ?? `${s.workerId.slice(0, 8)} (removed)`}` : ''}
                         </span>
                       </td>
                       <td>

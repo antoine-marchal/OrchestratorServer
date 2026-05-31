@@ -374,8 +374,12 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
         />
       </div>
 
-      {/* API Key Input */}
-      <div className={`${compact ? 'hidden' : 'flex'} items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}>
+      {/* API Key Input — wrapped in a form so Chromium doesn't warn about a
+          password field outside a form (also enables Enter-to-submit). */}
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        className={`${compact ? 'hidden' : 'flex'} items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}
+      >
         <KeyRound size={14} className="mr-2 text-gray-500 dark:text-gray-400 flex-shrink-0" />
         <input
           type={showApiKey ? 'text' : 'password'}
@@ -384,6 +388,8 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
           onBlur={handleApiKeyBlur}
           onKeyPress={handleApiKeyKeyPress}
           placeholder="API key"
+          autoComplete="off"
+          name="orchestrator-api-key"
           className="bg-transparent border-none outline-none text-sm w-32 text-gray-700 dark:text-gray-200"
           title="Server API key (shown in backend console)"
         />
@@ -394,7 +400,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
         >
           {showApiKey ? '●' : '○'}
         </button>
-      </div>
+      </form>
 
       <DndContext
         sensors={sensors}

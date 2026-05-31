@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "engineering/skills/documentation/SKILL.md",
       "computedHash": "43947d80ab634432362a076657eb225212760adbe731c0829a92709aeb842666"
+    },
+    "playwright-skill": {
+      "source": "testdino-hq/playwright-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "9b3049a52c2c85e73a5eabaebdae281a3496657931812cc307e4899e2400450e"
     }
   }
 }

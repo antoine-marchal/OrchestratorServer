@@ -1,0 +1,11 @@
+{"code":"ca597444af35c5eb1f39dddc7e9418681acb29b99ac636c7","login":"marchala","clientId":"some_id","redirectUri":"http://localhost:3000/login/generic_oauth","scope":"user:email","createdAt":1780154056670,"_id":"otR3YznsgR0iv33n"}
+{"code":"53f6d5bc1bce46c8931b2e8b4e0f407e9e53ebbeeabd4bb1","login":"marchala","clientId":"some_id","redirectUri":"http://localhost:3000/login/generic_oauth","scope":"user:email","createdAt":1780154470972,"_id":"L0o7uBLW2oVtxPh8"}
+{"code":"1e41dc205b6df568447c8d0fdec422d3d86baf349327aaa5","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154646078,"_id":"jupp9M4BwCPRNbdM"}
+{"code":"ffdf067b0fe067484e473eacf4fb5cec8304306427cc213a","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154650692,"_id":"raW35UcFa48gkZNd"}
+{"code":"cbde2f420d3c8cc2ef8e867cd3284902cf14864e22ca9a14","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154654545,"_id":"LdO28CPUUO0pp2Im"}
+{"code":"d10b16a58e4cb49c685037591abe1ef929ecec87084e7c8a","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154655696,"_id":"ZX8lmrwmibiUT5Cz"}
+{"code":"fab735f82887678397a29e474a90422cbe8f9e7901772e73","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154667650,"_id":"S3CYtbg4ssekXu5F"}
+{"code":"657d123a4a4bd8ed35f53f2c8fe598c1d00b492c13f58011","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780154758963,"_id":"BcyKe4p71ZZa5EWT"}
+{"$$deleted":true,"_id":"BcyKe4p71ZZa5EWT"}
+{"code":"8e75496be884ec65bedf150adb0224aa9fed2b9009ceb0d9","login":"marchala","clientId":"some_id","redirectUri":"http://192.168.1.165:3000/login/generic_oauth","scope":"user:email","createdAt":1780155239406,"_id":"n0XDHAsL4Sbw71Nu"}
+{"$$deleted":true,"_id":"n0XDHAsL4Sbw71Nu"}

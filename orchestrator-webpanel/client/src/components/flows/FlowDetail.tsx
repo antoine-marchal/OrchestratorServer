@@ -420,6 +420,15 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
           <>
             <div className="px-4 py-2 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
               <StatusBadge status={selectedExec.status} />
+              {selectedExec.status === 'SUCCESS' && (selectedExec.logs || []).some(l => l.type === 'error' || (l.type === 'flow' && /fail/i.test(l.message))) && (
+                <span
+                  className="tc-status warn"
+                  title="The flow completed, but one or more nodes errored (on-error: continue)"
+                >
+                  <span className="dot" />
+                  completed with errors
+                </span>
+              )}
               <input
                 value={selectedLabel}
                 onChange={e => renameExecution(selectedExec.id, e.target.value)}
@@ -1028,7 +1037,7 @@ const FlowDetail: React.FC = () => {
                   {flow.name}
                 </h1>
               )}
-              {flow.lastExecution && <StatusBadge status={flow.lastExecution.status} />}
+              {activeTab === 'executions' && flow.lastExecution && <StatusBadge status={flow.lastExecution.status} />}
             </div>
             {assignedWorker && (
               <div className="flex items-center gap-2 mt-0.5">

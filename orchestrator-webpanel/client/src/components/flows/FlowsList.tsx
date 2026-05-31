@@ -60,7 +60,7 @@ function exportFlowFile(flow: OrchestratorFlow) {
 
 const FlowsList: React.FC = () => {
   const navigate = useNavigate();
-  const { flows, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
+  const { flows, loaded, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
   const { canEdit, isViewer, role, isAdmin } = useAuth();
   const [users, setUsers] = useState<Array<{ _id: string; login: string; role: string }>>([]);
@@ -87,6 +87,11 @@ const FlowsList: React.FC = () => {
   // (lastExecution status / time) without a manual refresh. Polls every 5s
   // while the user is on /flows. We also re-fetch the flows themselves so
   // changes from outside the UI (e.g., a manual DB edit) appear too.
+  //
+  // The first tick runs immediately on mount. App.tsx only calls loadAll()
+  // when a JWT already exists at app-mount time; after a fresh login the
+  // effect there has already run (and bailed), so without this the list
+  // stayed on "no flows yet" until the first 5s interval fired.
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -94,6 +99,7 @@ const FlowsList: React.FC = () => {
       try { await syncBackendExecutions(); } catch { /* network blip */ }
       try { loadAll(); } catch { /* same */ }
     };
+    tick();
     const interval = setInterval(tick, 5000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [syncBackendExecutions, loadAll]);
@@ -261,7 +267,11 @@ const FlowsList: React.FC = () => {
             <span className="slash"> /&gt;</span>
           </h1>
           <span className="subtitle">
-            <span className="num">{flows.length}</span> flow{flows.length !== 1 ? 's' : ''}
+            {search ? (
+              <><span className="num">{filtered.length}</span> of {flows.length} flow{flows.length !== 1 ? 's' : ''}</>
+            ) : (
+              <><span className="num">{flows.length}</span> flow{flows.length !== 1 ? 's' : ''}</>
+            )}
           </span>
         </div>
         {canEdit && (
@@ -317,7 +327,11 @@ const FlowsList: React.FC = () => {
       {filtered.length === 0 ? (
         <div className="tc-card">
           <div className="tc-empty">
-            {search ? `no flows match "${search}"` : 'no flows yet — create your first flow to get started'}
+            {!loaded && flows.length === 0
+              ? 'loading flows…'
+              : search
+                ? `no flows match "${search}"`
+                : 'no flows yet — create your first flow to get started'}
           </div>
         </div>
       ) : (

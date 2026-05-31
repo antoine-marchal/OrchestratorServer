@@ -45,3 +45,5 @@ webview
 deploy.bat
 workerWorkspace
 .agents
+.playwright-cli
+/*todo*.md

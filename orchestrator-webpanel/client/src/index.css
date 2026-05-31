@@ -71,6 +71,10 @@ html, body, #root {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* Paint the themed background on the root elements too, so overscroll and
+     any momentary gap before the app shell renders don't flash an unstyled
+     (transparent/white) background. */
+  background-color: var(--bg);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
