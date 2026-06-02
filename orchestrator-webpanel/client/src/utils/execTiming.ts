@@ -52,10 +52,19 @@ export function computeNodeRuns(logs: LogEntry[]): Map<string, NodeRun[]> {
   for (const l of sorted) {
     const id = l.nodeId;
     if (!id) continue;
-    // Skip `flow` marker entries entirely: they're emitted *before* the
-    // `input` log for flow-type nodes and would otherwise count as a phantom
-    // run-opening event, making every executed flow node show up as ×2.
-    if (l.type === 'flow') continue;
+    // `flow` marker entries never open or extend a run (they'd otherwise count
+    // as a phantom run-opening event, making every executed flow node show up
+    // as ×2). EXCEPTION: a per-node failure marker (`[FLOW] node "x" failed…`)
+    // flags the currently-open run as errored. This makes a failed attempt show
+    // red on the timeline even when the node failed without emitting any stderr
+    // `error` log (timeouts, non-zero exits, thrown backend errors).
+    if (l.type === 'flow') {
+      if (/failed/i.test(l.message || '')) {
+        const r = open.get(id);
+        if (r) { r.hasError = true; if (l.timestamp > r.end) r.end = l.timestamp; }
+      }
+      continue;
+    }
     if (l.type === 'input') {
       closeRun(id);
       open.set(id, { start: l.timestamp, end: l.timestamp, hasError: false });

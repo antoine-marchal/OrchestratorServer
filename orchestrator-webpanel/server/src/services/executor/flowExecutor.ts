@@ -431,11 +431,8 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
       const rawValue = node.data.value || '';
       try { nodeResults[nodeId] = JSON.parse(rawValue); } catch { nodeResults[nodeId] = rawValue; }
     } else {
-      if (jobId) {
-        if (node?.data?.type === 'flow') {
-          emitJobLog(jobId, 'flow', `[flow] ${node.data?.label || nodeId}`, nodeId);
-        }
-        emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId);
+      if (jobId && node?.data?.type === 'flow') {
+        emitJobLog(jobId, 'flow', `[flow] ${node.data?.label || nodeId}`, nodeId);
       }
 
       // Error-handling policy for this node:
@@ -480,6 +477,11 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         }
 
         if (jobId) emitNodeStatus(jobId, nodeId, attempt === 0 ? 'running' : 'retrying', { attempt, parentNodeId });
+
+        // One input log per attempt: computeNodeRuns opens a new run on each
+        // input log, so every retry becomes its own timeline segment (started
+        // after the back-off wait, coloured by that attempt's own outcome).
+        if (jobId) emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId);
 
         try {
           res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts);
