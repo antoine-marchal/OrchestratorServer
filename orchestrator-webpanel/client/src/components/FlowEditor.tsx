@@ -112,6 +112,12 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
   const [dropdownMenu, setDropdownMenu] = useState(false);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  // Transient hint shown when a connection drag is rejected by
+  // isValidConnection (otherwise the drag just vanishes with no explanation).
+  const [connectHint, setConnectHint] = useState<string | null>(null);
+  const connectStartNodeRef = useRef<string | null>(null);
+  const connectMadeRef = useRef(false);
+  const connectHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [flowNodeModal, setFlowNodeModal] = useState<{
     isOpen: boolean;
     position?: { x: number; y: number };
@@ -264,6 +270,13 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
 
         visited.add(node.id);
 
+        // Goto nodes are explicit, condition-guarded loop points. A cycle that
+        // closes through a Goto can always terminate (its condition decides
+        // whether to jump), so paths through a Goto are NOT illegal infinite
+        // loops — stop traversal here. Cycles with no Goto on the path are real
+        // infinite loops and stay blocked.
+        if ((node.data as any)?.type === 'goto') return false;
+
         for (const outgoer of getOutgoers(node, nodes, edges)) {
           if (outgoer.id === connection.source) return true;
           if (hasCycle(outgoer, visited)) return true;
@@ -385,9 +398,54 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
   }, [nodes, edges, edgeLabelStyles]);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({ ...params, id: `e${Date.now()}` }, eds)),
+    (params: Connection) => {
+      connectMadeRef.current = true;
+      setEdges((eds) => addEdge({ ...params, id: `e${Date.now()}` }, eds));
+    },
     [setEdges]
   );
+
+  const showConnectHint = useCallback((msg: string) => {
+    setConnectHint(msg);
+    if (connectHintTimer.current) clearTimeout(connectHintTimer.current);
+    connectHintTimer.current = setTimeout(() => setConnectHint(null), 4000);
+  }, []);
+
+  const onConnectStart = useCallback(
+    (_e: unknown, params: { nodeId?: string | null }) => {
+      connectStartNodeRef.current = params?.nodeId ?? null;
+      connectMadeRef.current = false;
+    },
+    []
+  );
+
+  // ReactFlow drops a rejected connection silently (isValidConnection returned
+  // false). Detect the case where the drag ended on another node's handle but
+  // no edge was created, and explain why — almost always a cycle, which the
+  // editor forbids (loops are expressed via a Goto node's condition instead).
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      if (connectMadeRef.current) return;
+      // During a connection drag ReactFlow overlays a connection line, so
+      // event.target is usually that line, not the handle under the cursor.
+      // Resolve what's actually beneath the drop point instead.
+      const pt: { clientX: number; clientY: number } | undefined =
+        'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
+      const el = pt ? (document.elementFromPoint(pt.clientX, pt.clientY) as Element | null) : null;
+      const handle = el?.closest?.('.react-flow__handle');
+      if (!handle) return; // dropped on empty canvas — normal cancel, no hint
+      const targetNodeId = handle.closest('.react-flow__node')?.getAttribute('data-id') ?? null;
+      const sourceNodeId = connectStartNodeRef.current;
+      if (targetNodeId && sourceNodeId && targetNodeId === sourceNodeId) {
+        showConnectHint("Can't connect a node to itself.");
+      } else {
+        showConnectHint('Connection blocked — it would create a loop. To loop back, use a Goto node condition.');
+      }
+    },
+    [showConnectHint]
+  );
+
+  useEffect(() => () => { if (connectHintTimer.current) clearTimeout(connectHintTimer.current); }, []);
 
   const getUniqueNodeLabel = (baseLabel: string) => {
     const existingLabels = nodes.map((node) => node.data.label);
@@ -460,6 +518,15 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
         position = screenToFlowPosition(center);
       } else {
         position = { x: 100, y: 100 };
+      }
+      // Cascade away from any node already near this spot so new nodes from the
+      // "Add Node" button don't all stack on the exact viewport center.
+      const tooClose = (p: { x: number; y: number }) =>
+        nodes.some((n) => Math.abs(n.position.x - p.x) < 40 && Math.abs(n.position.y - p.y) < 40);
+      let guard = 0;
+      while (tooClose(position) && guard < 50) {
+        position = { x: position.x + 40, y: position.y + 40 };
+        guard++;
       }
     }
 
@@ -585,12 +652,29 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
 
   return (
     <div ref={wrapperRef} className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
+      {connectHint && (
+        <div
+          role="status"
+          className="absolute left-1/2 -translate-x-1/2 top-3 z-20 px-3 py-2 rounded-md text-xs shadow-lg"
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--accent-line, rgba(255,255,255,0.15))',
+            color: 'var(--text, #E6ECF2)',
+            fontFamily: 'var(--font-mono)',
+            maxWidth: 420,
+          }}
+        >
+          {connectHint}
+        </div>
+      )}
       <ReactFlow
         className="react-flow__dark"
         nodes={nodes}
         edges={displayEdges}
         onNodesChange={readOnly ? undefined : onNodesChange}
         onConnect={readOnly ? undefined : onConnect}
+        onConnectStart={readOnly ? undefined : onConnectStart}
+        onConnectEnd={readOnly ? undefined : onConnectEnd}
         nodeTypes={nodeTypes}
         fitView
         snapToGrid={true}

@@ -86,7 +86,7 @@ interface FlowLibraryState {
 
   loadAll: () => void;
   createFlow: (data: { name: string; namespace?: string; description?: string; workerId?: string }) => OrchestratorFlow;
-  updateFlow: (id: string, data: Partial<OrchestratorFlow>) => void;
+  updateFlow: (id: string, data: Partial<OrchestratorFlow>) => Promise<void>;
   deleteFlow: (id: string) => void;
   syncWorkerFlows: () => Promise<number>;
 
@@ -282,17 +282,21 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
     updateFlow: (id, data) => {
       const existing = getFlows().find(f => f.id === id);
-      if (!existing) return;
+      if (!existing) return Promise.resolve();
       const updated = { ...existing, ...data, updatedAt: new Date().toISOString() };
       persistFlows(getFlows().map(f => f.id === id ? updated : f));
 
-      apiClient.put(`/api/v1/flows/${id}`, {
+      // Return the PUT promise so callers that must guarantee the server has
+      // the latest definition before acting (e.g. executeFlow) can await it.
+      // Most callers fire-and-forget; the .catch keeps those from producing
+      // unhandled rejections.
+      return apiClient.put(`/api/v1/flows/${id}`, {
         name: updated.name, namespace: updated.namespace,
         description: updated.description, nodes: updated.nodes, edges: updated.edges,
         workerId: updated.workerId || '',
         artifacts: updated.artifacts || [],
         owner: updated.owner,
-      }).catch(console.error);
+      }).then(() => undefined).catch(err => { console.error(err); });
     },
 
     deleteFlow: (id) => {

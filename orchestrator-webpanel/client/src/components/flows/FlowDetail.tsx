@@ -918,6 +918,27 @@ const FlowDetail: React.FC = () => {
     if (!id) return;
     setRunning(true);
     try {
+      // Flush any pending editor edits to the server BEFORE dispatching.
+      // The server reads the flow definition from its own DB, while the editor
+      // persists via a debounced (800ms), fire-and-forget autosave. Executing
+      // right after an edit would otherwise dispatch the previously-persisted
+      // version. Push the canonical session's live state and await the PUT so
+      // the execution always runs the latest definition.
+      //
+      // Only flush while the Edit tab is active: there the EditorTab has
+      // hydrated the canonical session from the (server-synced) library flow,
+      // so it is authoritative and holds the latest live edits. When the editor
+      // hasn't been opened this load, the persisted session may carry a stale
+      // flowState — flushing it would clobber newer server state, so we skip.
+      const canonical = activeTab === 'edit' ? useSessionStore.getState().getCanonicalSession(id) : null;
+      if (canonical) {
+        const fs = canonical.flowState;
+        const cleanNodes = (fs.nodes || []).map(n => ({
+          ...n,
+          data: { ...n.data, executionStatus: undefined, executionAttempt: undefined },
+        }));
+        await updateFlow(id, { nodes: cleanNodes, edges: fs.edges || [] });
+      }
       const execId = await executeFlow(id);
       const p = new URLSearchParams(searchParams);
       p.set('tab', 'executions');
