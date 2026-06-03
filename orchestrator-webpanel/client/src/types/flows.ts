@@ -34,6 +34,12 @@ export interface LogEntry {
   message: string;
   timestamp: number;
   nodeId?: string | null;
+  /**
+   * Ancestor flow-node chain (SEP-joined) of the node that emitted this log.
+   * Distinguishes the same subflow node reached via different parents — e.g.
+   * A.F1 vs B.F1 share `nodeId` but differ in `parentScope`. See execScope.ts.
+   */
+  parentScope?: string | null;
 }
 
 export interface FlowExecution {

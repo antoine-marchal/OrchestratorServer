@@ -8,8 +8,11 @@ import {
 import { Node, Edge } from 'reactflow';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { formatDurationShort, type NodeRun } from '../../utils/execTiming';
+import { scopeKey } from '../../utils/execScope';
 
-export interface SelectedRun { nodeId: string; idx: number; start: number; end: number }
+// `scope` is the full node-instance key (ancestor chain + own id) so A.F1 and
+// B.F1 select independently. `nodeId` kept for the run-window filter.
+export interface SelectedRun { scope: string; nodeId: string; idx: number; start: number; end: number }
 
 const HIDDEN_TYPES = new Set(['comment', 'variable']);
 export const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || '');
@@ -119,21 +122,25 @@ export function RelationBadge({ direction, items }: { direction: 'in' | 'out'; i
 interface NodeItemProps {
   node: Node;
   depth: number;
+  /** Ancestor flow-node scope of this node (SEP-joined). '' at the root. */
+  scopePrefix: string;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   relations: Record<string, NodeRelations>;
   statuses: Record<string, NodeExecStatus | undefined>;
   runsByNode?: Map<string, NodeRun[]>;
   selectedRun?: SelectedRun | null;
-  onSelectRun?: (nodeId: string, idx: number, run: NodeRun) => void;
+  onSelectRun?: (scope: string, nodeId: string, idx: number, run: NodeRun) => void;
 }
 
-function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, runsByNode, selectedRun, onSelectRun }: NodeItemProps) {
+function NodeItemView({ node, depth, scopePrefix, selectedId, onSelect, relations, statuses, runsByNode, selectedRun, onSelectRun }: NodeItemProps) {
   const [expanded, setExpanded] = useState(true);
   const type = node.data?.type || 'javascript';
   const isFlow = type === 'flow';
-  const isSelected = selectedId === node.id;
-  const status = statuses[node.id];
+  // Full instance key for this node under its parent chain.
+  const scope = scopeKey(scopePrefix, node.id);
+  const isSelected = selectedId === scope;
+  const status = statuses[scope];
   const libraryFlows = useFlowLibraryStore(s => s.flows);
 
   // Parse children + edges from flow node so sub-tree shows the right local
@@ -161,9 +168,9 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, 
   );
 
   const rel = relations[node.id] || { preds: [], succs: [] };
-  // Run instances of this node (issue 1). >1 means the node was revisited
-  // (goto loop) or retried, and each visit is a separable instance.
-  const runs = runsByNode?.get(node.id) ?? [];
+  // Run instances of this node *instance* (issue 1). >1 means the node was
+  // revisited (goto loop) or retried, and each visit is a separable instance.
+  const runs = runsByNode?.get(scope) ?? [];
   const multiRun = runs.length > 1 && !(isFlow && childNodes.length > 0);
 
   return (
@@ -173,7 +180,7 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, 
           ${isSelected ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         // Click toggles selection: click again to clear filter.
-        onClick={() => onSelect(isSelected ? null : node.id)}
+        onClick={() => onSelect(isSelected ? null : scope)}
       >
         {isFlow && childNodes.length > 0 ? (
           <button
@@ -200,14 +207,14 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, 
       </div>
       {/* Per-instance run rows: one selectable child per visit (issue 1). */}
       {multiRun && runs.map((run, idx) => {
-        const runSelected = !!selectedRun && selectedRun.nodeId === node.id && selectedRun.idx === idx;
+        const runSelected = !!selectedRun && selectedRun.scope === scope && selectedRun.idx === idx;
         return (
           <div
             key={`${node.id}#${idx}`}
             className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm text-[11px] select-none
               ${runSelected ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-400'}`}
             style={{ paddingLeft: `${8 + (depth + 1) * 14}px` }}
-            onClick={(e) => { e.stopPropagation(); onSelectRun?.(node.id, idx, run); }}
+            onClick={(e) => { e.stopPropagation(); onSelectRun?.(scope, node.id, idx, run); }}
           >
             <span className="w-3 h-3 flex-shrink-0" />
             <StatusIcon status={run.hasError ? 'failed' : 'success'} />
@@ -225,6 +232,7 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, 
               key={child.id}
               node={child}
               depth={depth + 1}
+              scopePrefix={scope}
               selectedId={selectedId}
               onSelect={onSelect}
               relations={childRelations}
@@ -250,7 +258,7 @@ interface ExecutionNodeTreeProps {
   /** Per-node run instances (issue 1) — renders ×N badge + selectable run rows. */
   runsByNode?: Map<string, NodeRun[]>;
   selectedRun?: SelectedRun | null;
-  onSelectRun?: (nodeId: string, idx: number, run: NodeRun) => void;
+  onSelectRun?: (scope: string, nodeId: string, idx: number, run: NodeRun) => void;
 }
 
 const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, selectedId, onSelect, statuses = {}, runsByNode, selectedRun, onSelectRun }) => {
@@ -280,6 +288,7 @@ const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, sel
             key={node.id}
             node={node}
             depth={0}
+            scopePrefix=""
             selectedId={selectedId}
             onSelect={onSelect}
             relations={relations}

@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+﻿import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -13,7 +13,7 @@ import kill from 'tree-kill';
 // sidesteps the walk; nested dependencies still resolve normally because
 // the resolved file is itself inside a real node_modules tree.
 // Only resolve user-script bare imports against ORCHESTRATOR_WORK_DIR first,
-// then ORCHESTRATOR_EXECUTION_DIR. Nothing else — pkg's `__dirname` is
+// then ORCHESTRATOR_EXECUTION_DIR. Nothing else â€” pkg's `__dirname` is
 // virtual (C:\snapshot\...) and process.cwd() is unpredictable when the
 // binary runs as a service.
 const bareResolver: (spec: string) => string | null = (() => {
@@ -48,7 +48,7 @@ function specToFileUrl(spec: string): string | null {
 // statements.
 //
 // Why not just rewrite the *string* in the import? Static `import { x } from
-// 'file://.../index.js'` fails when the target is CJS — Node's CJS-named-export
+// 'file://.../index.js'` fails when the target is CJS â€” Node's CJS-named-export
 // detector misses many real-world packages (Playwright among them), giving
 // "Named export 'chromium' not found". Dynamic `await import()` of a CJS file
 // always works: you get `{ default: module.exports }`. We then destructure
@@ -69,7 +69,7 @@ function rewriteBareEsmImports(code: string): string {
   const tmp = () => `__esm_${++n}`;
 
   const renderNamed = (clause: string, src: string): string => {
-    // `{ a, b as c }` → `{ a, b: c }`
+    // `{ a, b as c }` â†’ `{ a, b: c }`
     const m = clause.match(/^\{\s*([^}]*)\s*\}$/);
     if (!m) return '';
     const items = m[1].split(',').map(s => s.trim()).filter(Boolean);
@@ -113,7 +113,7 @@ function rewriteBareEsmImports(code: string): string {
       return out.join('\n');
     });
 
-  // `export ... from 'X';` — flatten to a const re-bind (rare in node-runner scripts).
+  // `export ... from 'X';` â€” flatten to a const re-bind (rare in node-runner scripts).
   code = code.replace(/^[ \t]*export\s+(\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"][ \t]*;?[ \t]*$/gm,
     (m, clause: string, spec: string) => {
       const url = specToFileUrl(spec);
@@ -146,7 +146,7 @@ const STOP_CHECK_INTERVAL_MS = Number(process.env.STOP_CHECK_INTERVAL_MS ?? 500)
 export const JS_BACKEND_TIMEOUT_MS = Number(process.env.JS_BACKEND_TIMEOUT_MS ?? 0);
 export const DEFAULT_FLOW_TIMEOUT_MS = Number(process.env.DEFAULT_FLOW_TIMEOUT_MS ?? 0);
 
-// When false, the server refuses to execute any node locally — every job must
+// When false, the server refuses to execute any node locally â€” every job must
 // be dispatched to a remote worker. Top-level orchestration (flow parsing,
 // nested-flow nodes) still runs in-process; only script-type nodes are gated.
 export const SERVER_EXECUTION_ENABLED =
@@ -183,8 +183,19 @@ export const executionSSEListeners = new Map<string, Set<any>>();
 // completion (see flowExecutor.executeOrchestratorFlow).
 export const executionNodeStatuses = new Map<string, Record<string, any>>();
 
-export function emitJobLog(jobId: string, type: string, message: string, nodeId?: string | null): void {
-  const entry = { type, message, nodeId: nodeId ?? null, timestamp: Date.now() };
+// Separator joining the chain of ancestor flow-node ids into a `parentScope`
+// string. The same subflow node (e.g. F1) invoked from two different parent
+// flow nodes (A, B) shares one `nodeId` but gets distinct scopes (`â€¦A`, `â€¦B`),
+// so logs / statuses / runs for A.F1 and B.F1 no longer collide.
+export const NODE_SCOPE_SEP = '\u001f';
+
+/** Full identity of a node *instance* = ancestor chain + own id. */
+export function scopeKey(parentScope: string | null | undefined, nodeId: string): string {
+  return parentScope ? `${parentScope}${NODE_SCOPE_SEP}${nodeId}` : nodeId;
+}
+
+export function emitJobLog(jobId: string, type: string, message: string, nodeId?: string | null, parentScope?: string | null): void {
+  const entry = { type, message, nodeId: nodeId ?? null, parentScope: parentScope ?? null, timestamp: Date.now() };
   if (!jobLogBuffers.has(jobId)) jobLogBuffers.set(jobId, []);
   jobLogBuffers.get(jobId)!.push(entry);
 
@@ -196,13 +207,14 @@ export function emitJobLog(jobId: string, type: string, message: string, nodeId?
   }
 }
 
-export function emitNodeStatus(execId: string, nodeId: string, status: string, extra: object = {}): void {
+export function emitNodeStatus(execId: string, nodeId: string, status: string, extra: { parentScope?: string | null } & Record<string, any> = {}): void {
   const payload = { execId, nodeId, status, ...extra, ts: Date.now() };
 
-  // Remember the latest payload per node so a late-joining SSE listener
-  // (e.g., user switched executions) can be brought back up to speed.
+  // Remember the latest payload per node *instance* so a late-joining SSE
+  // listener (e.g., user switched executions) can be brought back up to speed.
+  // Key by scope so A.F1 and B.F1 don't clobber each other in the replay map.
   if (!executionNodeStatuses.has(execId)) executionNodeStatuses.set(execId, {});
-  executionNodeStatuses.get(execId)![nodeId] = payload;
+  executionNodeStatuses.get(execId)![scopeKey(extra.parentScope, nodeId)] = payload;
 
   const listeners = executionSSEListeners.get(execId);
   if (listeners) {
@@ -303,7 +315,7 @@ export function safeArtifactPath(name: string, targetDir: string): string | null
   return resolved;
 }
 
-// Extensions recognised as archives — when an artifact's name ends with one,
+// Extensions recognised as archives â€” when an artifact's name ends with one,
 // the file is unpacked into the same execution dir and (optionally) removed.
 // Detection is purely by extension so users can rely on `.zip` / `.tar.gz`
 // without an explicit flag on the artifact record.
@@ -382,7 +394,7 @@ function getNodeExecutablePath(): string {
   if (process.env.NODE_EXECUTABLE_PATH) return process.env.NODE_EXECUTABLE_PATH;
   // When packaged with pkg, process.execPath is the bundle itself, not a Node
   // runtime. Pkg's bundled Node 18 also can't `require()` ESM .mjs, and pkg
-  // intercepts `spawn('node', ...)` to re-launch the bundle as Node — so a
+  // intercepts `spawn('node', ...)` to re-launch the bundle as Node â€” so a
   // bare 'node' string still routes back to the orchestrator binary.
   // Resolve to an absolute path of a real system Node so pkg's interceptor
   // can't touch it.
@@ -399,7 +411,7 @@ function getNodeExecutablePath(): string {
       try { if (fs.existsSync(candidate)) return candidate; } catch { /* skip */ }
     }
 
-    // Fall back to `where node` / `which node` — the OS resolver knows about
+    // Fall back to `where node` / `which node` â€” the OS resolver knows about
     // installer-registered locations PATH might miss in our process env.
     try {
       const { execSync } = require('child_process');
@@ -539,24 +551,24 @@ export function finalizeJob(id: string, result: any): void {
 
 type FinishFn = (result: { output: any; log: string | null; error: string | null; variables?: Record<string, any> }) => void;
 
-function processJsNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, _execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processJsNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, _execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const logs: string[] = [];
   const customConsole = {
     log: (...args: any[]) => {
       const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId);
+      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId, flowNodeScope);
     },
     warn: (...args: any[]) => {
       const msg = '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId);
+      if (jobId) emitJobLog(jobId, 'log', msg, emitNodeId, flowNodeScope);
     },
     error: (...args: any[]) => {
       const msg = '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
       logs.push(msg);
-      if (jobId) emitJobLog(jobId, 'error', msg, emitNodeId);
+      if (jobId) emitJobLog(jobId, 'error', msg, emitNodeId, flowNodeScope);
     },
   };
 
@@ -602,7 +614,7 @@ function processJsNode(id: string, code: string, input: any, finish: FinishFn, _
   }
 }
 
-function processGroovyNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processGroovyNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempGroovyPath = path.join(INBOX, `node_groovy_${uid}.groovy`);
@@ -639,8 +651,8 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
 
   const child = spawn('java', ['-jar', resolveGroovyJar(), tempGroovyPath, 'lib'], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id);
     safeUnlinkSync(tempGroovyPath);
@@ -662,7 +674,7 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
   child.on('exit', () => clearInterval(si));
 }
 
-function processBatchNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processBatchNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempBatchPath = path.join(INBOX, `node_batch_${uid}.bat`);
@@ -674,8 +686,8 @@ function processBatchNode(id: string, code: string, input: any, finish: FinishFn
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('cmd', ['/C', tempBatchPath], { cwd: execCwd, shell: false });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempBatchPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempBatchPath);
@@ -692,7 +704,7 @@ function processBatchNode(id: string, code: string, input: any, finish: FinishFn
   child.on('exit', () => clearInterval(si));
 }
 
-function processJsBackendNode(id: string, code: string, input: any, finish: FinishFn, codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processJsBackendNode(id: string, code: string, input: any, finish: FinishFn, codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempId = `node_jsbackend_${uid}`;
@@ -714,7 +726,7 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
   const varNames = Object.keys(variables);
   const variableDeclarations = varNames.map(n => `let ${n} = __variables["${n}"];`).join('\n');
   const variableCapture = varNames.length > 0 ? `const __capturedVariables = { ${varNames.join(', ')} };\nfs.writeFileSync(${JSON.stringify(tempVariablesPath)}, JSON.stringify(__capturedVariables), 'utf8');` : '';
-  // Rewrite bare ESM imports → absolute file URLs so the script resolves
+  // Rewrite bare ESM imports â†’ absolute file URLs so the script resolves
   // packages even though it lives outside the server's node_modules tree.
   const userCode = rewriteBareEsmImports(code);
   const codeWithInput = `let output = "";\nconst input = ${JSON.stringify(input)};\nconst __variables = ${JSON.stringify(variables)};\nimport fs from 'fs';\n${variableDeclarations}\n${userCode}\n${variableCapture}\nfs.writeFileSync(${JSON.stringify(tempOutputPath)}, JSON.stringify(output), 'utf8');\n`;
@@ -732,8 +744,8 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
     timeout: JS_BACKEND_TIMEOUT_MS || undefined,
   });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempScriptPath);
     let outputValue: any = null;
@@ -751,7 +763,7 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
   child.on('exit', () => clearInterval(si));
 }
 
-function processPowershellNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processPowershellNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempPs1Path = path.join(INBOX, `node_ps_${uid}.ps1`);
@@ -771,8 +783,8 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', tempPs1Path], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempPs1Path);
     let outputValue: any = null;
@@ -791,7 +803,7 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
   child.on('exit', () => clearInterval(si));
 }
 
-function processPythonNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null): void {
+function processPythonNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
   const emitNodeId = flowNodeId || id;
   const uid = nowUid();
   const tempPyPath = path.join(INBOX, `node_python_${uid}.py`);
@@ -809,8 +821,8 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
   const child = spawn('python', [tempPyPath], { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
-  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId); });
-  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId); });
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
   child.on('close', (exitCode: number | null) => {
     runningProcesses.delete(id); safeUnlinkSync(tempPyPath); safeUnlinkSync(tempInputPath);
     let outputValue: any = null;
@@ -851,7 +863,7 @@ export function processJob(job: any): void {
   let execCwd = EXECUTION_DIR;
   try {
     // Only honour an ABSOLUTE basePath. A flow-node sub-session has a bogus
-    // relative flowPath (e.g. "Flow Session.or"), whose dirname is "." — that
+    // relative flowPath (e.g. "Flow Session.or"), whose dirname is "." â€” that
     // would resolve against process.cwd() instead of ORCHESTRATOR_EXECUTION_DIR
     // when running a node unitarily inside the sub-session tab (issue 5).
     if (job.basePath && path.isAbsolute(job.basePath) && fs.existsSync(job.basePath)) execCwd = job.basePath;
@@ -901,7 +913,7 @@ export function processJob(job: any): void {
   // assigned worker instead of running locally. JavaScript stays local because
   // it shares flowVariables in-process. Flow type stays here so that the
   // orchestrator parses the sub-graph and dispatches each inner script node.
-  const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright', 'shell', 'bash']);
+  const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'shell', 'bash']);
   if (job.workerId && REMOTE_TYPES.has(type)) {
     (async () => {
       try {
@@ -912,9 +924,9 @@ export function processJob(job: any): void {
         };
         const emitChan = job.execId || jobId;
         const emitNode = job.nodeId || jobId;
-        emitJobLog(emitChan, 'log', `[remote] dispatching ${type} node to worker ${job.workerId}`, emitNode);
+        emitJobLog(emitChan, 'log', `[remote] dispatching ${type} node to worker ${job.workerId}`, emitNode, job.parentScope || null);
         const { output, variables: workerVars } = await dispatchToWorker(job.workerId, remoteNode, emitChan, emitNode, job.artifacts);
-        emitJobLog(emitChan, 'log', `[remote] node ${emitNode} completed on worker`, emitNode);
+        emitJobLog(emitChan, 'log', `[remote] node ${emitNode} completed on worker`, emitNode, job.parentScope || null);
         finish({ output, log: null, error: null, variables: workerVars || {} });
       } catch (err: any) {
         finish({ output: null, log: null, error: `Worker dispatch failed: ${err.message}` });
@@ -938,24 +950,27 @@ export function processJob(job: any): void {
         // (set in flowExecutor.executeRegularNode); use it for SSE/log routing so
         // events reach the listener. Top-level flows use the flow job id directly.
         const ssePath = job.execId || jobId;
-        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || EXECUTION_DIR, effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts);
+        // Scope of the inner sub-graph = this flow node's own ancestor chain
+        // plus its own id. Top-level flow jobs have no nodeId → empty scope.
+        const innerScope = job.nodeId ? scopeKey(job.parentScope || '', job.nodeId) : (job.parentScope || '');
+        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || EXECUTION_DIR, effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts, innerScope);
         restore();
         const logMessages = logs.map(l => l.type === 'error' ? `ERROR: ${l.message}` : l.message).join('\n');
         finish({ output: result, log: logMessages || 'Successfully executed flow', error: null });
       } catch (err: any) { restore(); finish({ output: null, log: null, error: `Error executing flow: ${err.message}` }); }
     })();
   } else if (type === 'groovy') {
-    processGroovyNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
+    processGroovyNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else if (type === 'batch') {
-    processBatchNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
-  } else if (type === 'jsbackend' || type === 'playwright') {
-    processJsBackendNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
+    processBatchNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
+  } else if (type === 'jsbackend') {
+    processJsBackendNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else if (type === 'powershell') {
-    processPowershellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
+    processPowershellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else if (type === 'python') {
-    processPythonNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
+    processPythonNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else {
-    processJsNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null);
+    processJsNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   }
 }
 

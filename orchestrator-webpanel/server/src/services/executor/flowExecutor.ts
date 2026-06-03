@@ -1,4 +1,4 @@
-import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED } from './nodeExecutor';
+import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED, scopeKey, NODE_SCOPE_SEP } from './nodeExecutor';
 import { getCollection } from '../db/index';
 import { dispatchToWorker, isWorkerOnline } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
@@ -9,7 +9,7 @@ import { ChildProcess } from 'child_process';
 const EXECUTION_DIR = process.env.ORCHESTRATOR_EXECUTION_DIR || process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
 const KEEP_ARTIFACTS = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
 
-const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'playwright', 'shell', 'bash']);
+const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'shell', 'bash']);
 
 export function parseFlowContent(flowContent: string): any {
   let flow: any;
@@ -27,7 +27,7 @@ export function parseFlowContent(flowContent: string): any {
   return { flow, nodeMap, incomingMap, outgoingMap, roots };
 }
 
-async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>): Promise<any> {
+async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = ''): Promise<any> {
   let rawCode: string = node?.data?.code || '';
   let nodeType = node?.data?.type;
   // Effective artifacts for this node = parent artifacts + (for flowRef nodes)
@@ -135,9 +135,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
           timeout: timeout && timeout !== Infinity ? Math.ceil(timeout / 1000) : 0,
         },
       };
-      emitJobLog(jobId, 'log', `[remote] dispatching ${nodeType} node to worker ${workerId}`, nodeId);
+      emitJobLog(jobId, 'log', `[remote] dispatching ${nodeType} node to worker ${workerId}`, nodeId, parentScope);
       const { output, variables: workerVars } = await dispatchToWorker(workerId, remoteNode, jobId, nodeId, effectiveArtifacts);
-      emitJobLog(jobId, 'log', `[remote] node ${nodeId} completed on worker`, nodeId);
+      emitJobLog(jobId, 'log', `[remote] node ${nodeId} completed on worker`, nodeId, parentScope);
       // Merge variable mutations from the remote node back into the flow's shared dict.
       if (workerVars && typeof workerVars === 'object') Object.assign(flowVariables, workerVars);
       return { output, variables: workerVars || {} };
@@ -165,12 +165,12 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
     const { text, resolved, missing } = await resolveSecretsDetailed(rawCode, { workerId }, nodeType);
     resolvedCode = text;
     if (jobId && resolved.length > 0) {
-      emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId);
+      emitJobLog(jobId, 'log', `[secrets] resolved: ${resolved.join(', ')}`, nodeId, parentScope);
     }
     if (jobId && missing.length > 0) {
       emitJobLog(jobId, 'error',
         `[secrets] no secret found for: ${missing.map(m => `\`${m}\``).join(', ')} — create one in /admin or remove the placeholder`,
-        nodeId);
+        nodeId, parentScope);
     }
   }
 
@@ -187,9 +187,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
       const logs: string[] = [];
       const customConsole = {
-        log: (...args: any[]) => { const m = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'log', m, nodeId); },
-        warn: (...args: any[]) => { const m = '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'log', m, nodeId); },
-        error: (...args: any[]) => { const m = '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'error', m, nodeId); },
+        log: (...args: any[]) => { const m = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'log', m, nodeId, parentScope); },
+        warn: (...args: any[]) => { const m = '[WARN] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'log', m, nodeId, parentScope); },
+        error: (...args: any[]) => { const m = '[ERROR] ' + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '); logs.push(m); if (jobId) emitJobLog(jobId, 'error', m, nodeId, parentScope); },
       };
       const varNames = Object.keys(flowVariables);
       const varDeclarations = varNames.map(n => `let ${n} = __variables[${JSON.stringify(n)}];`).join('\n');
@@ -231,6 +231,10 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // the current node id so the SSE stream's parentNodeId field lets the UI
       // render an expandable group.
       parentNodeId: isFlowNode ? nodeId : parentNodeId,
+      // Ancestor flow-node chain of THIS node (its own scope prefix). For a flow
+      // node, processJob appends this node's id before running the sub-graph, so
+      // inner nodes are tagged `…<thisNodeId>`. Lets A.F1 and B.F1 stay distinct.
+      parentScope,
       // The real flow-graph node id (e.g. `node-1779129478624`). process*Node
       // tags every emitted log entry with this so the UI shows the node's
       // label (`Groovy`) instead of the throwaway transient job id, and so the
@@ -270,7 +274,19 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
             const flowsCol = getCollection('flows');
             const endTime = new Date().toISOString();
             const duration = new Date(endTime).getTime() - new Date(ne.startTime).getTime();
-            const nestedLogs = subLogs.filter((l: any) => !l.nodeId || ne.nodeIds.has(l.nodeId));
+            // Rebase scopes for the standalone flow2 execution row: inside the
+            // parent run these inner nodes were tagged `<A's full scope>…`, but
+            // in flow2's own view they are root-level, so strip that prefix.
+            const stripPrefix = scopeKey(parentScope, nodeId);
+            const rebaseScope = (s: string | null | undefined): string | null => {
+              if (!s) return s ?? null;
+              if (s === stripPrefix) return '';
+              if (s.startsWith(stripPrefix + NODE_SCOPE_SEP)) return s.slice(stripPrefix.length + NODE_SCOPE_SEP.length);
+              return s;
+            };
+            const nestedLogs = subLogs
+              .filter((l: any) => !l.nodeId || ne.nodeIds.has(l.nodeId))
+              .map((l: any) => ({ ...l, parentScope: rebaseScope(l.parentScope) }));
             const status = j.status === 'completed' ? 'SUCCESS' : j.status === 'stopped' ? 'KILLED' : 'FAILED';
             await execsCol.update({ _id: ne.execId }, { $set: {
               status, endTime, duration,
@@ -296,7 +312,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   });
 }
 
-export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>): Promise<any> {
+export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = ''): Promise<any> {
   const { flow, nodeMap, incomingMap, outgoingMap, roots } = tempFlow;
 
   const starter = flow.nodes.find((n: any) => n?.data?.isStarterNode);
@@ -427,11 +443,11 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         if (decisionTargets.length) {
           const targetLabel = decisionTargets.map(t => byId(t)?.data?.label || t).join(', ');
           const exprStr = matchedExpr ? ` [${matchedExpr}]` : '';
-          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel}${exprStr} → ${targetLabel}`, nodeId);
+          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel}${exprStr} → ${targetLabel}`, nodeId, parentScope);
         } else {
           const outs = outgoing(nodeId);
           const nextLabel = outs.length > 0 ? (byId(outs[0].target)?.data?.label || outs[0].target) : '(end)';
-          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel} no match → ${nextLabel}`, nodeId);
+          emitJobLog(jobId, 'flow', `[goto] ${gotoLabel} no match → ${nextLabel}`, nodeId, parentScope);
         }
       }
     } else if (node?.data?.type === 'variable') {
@@ -439,7 +455,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
       try { nodeResults[nodeId] = JSON.parse(rawValue); } catch { nodeResults[nodeId] = rawValue; }
     } else {
       if (jobId && node?.data?.type === 'flow') {
-        emitJobLog(jobId, 'flow', `[flow] ${node.data?.label || nodeId}`, nodeId);
+        emitJobLog(jobId, 'flow', `[flow] ${node.data?.label || nodeId}`, nodeId, parentScope);
       }
 
       // Error-handling policy for this node:
@@ -472,8 +488,8 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
             : backoff === 'linear' ? baseDelayMs * attempt
             : baseDelayMs;
           if (jobId) {
-            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" retry ${attempt}/${maxAttempts - 1} in ${Math.round(waitMs / 1000)}s`, nodeId);
-            emitNodeStatus(jobId, nodeId, 'retrying', { attempt, waitMs, parentNodeId });
+            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" retry ${attempt}/${maxAttempts - 1} in ${Math.round(waitMs / 1000)}s`, nodeId, parentScope);
+            emitNodeStatus(jobId, nodeId, 'retrying', { attempt, waitMs, parentNodeId, parentScope });
           }
           // Interruptible back-off: a kill during the wait aborts immediately.
           for (let waited = 0; waited < waitMs; waited += 200) {
@@ -483,16 +499,16 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
           if (killed()) return;
         }
 
-        if (jobId) emitNodeStatus(jobId, nodeId, attempt === 0 ? 'running' : 'retrying', { attempt, parentNodeId });
+        if (jobId) emitNodeStatus(jobId, nodeId, attempt === 0 ? 'running' : 'retrying', { attempt, parentNodeId, parentScope });
 
         // One input log per attempt: computeNodeRuns opens a new run on each
         // input log, so every retry becomes its own timeline segment (started
         // after the back-off wait, coloured by that attempt's own outcome).
-        if (jobId) emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId);
+        if (jobId) emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId, parentScope);
 
         try {
-          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts);
-          if (jobId) emitNodeStatus(jobId, nodeId, 'success', { attempt, parentNodeId });
+          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts, parentScope);
+          if (jobId) emitNodeStatus(jobId, nodeId, 'success', { attempt, parentNodeId, parentScope });
           break;
         } catch (err: any) {
           // A failure caused by the execution being killed isn't a real failure —
@@ -500,19 +516,19 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
           if (killed()) return;
           attempt++;
           if (attempt < maxAttempts) {
-            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message}`, nodeId);
+            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message}`, nodeId, parentScope);
             continue;
           }
           // No retries left (or none configured).
-          if (jobId) emitNodeStatus(jobId, nodeId, 'failed', { attempt, error: err.message, parentNodeId });
+          if (jobId) emitNodeStatus(jobId, nodeId, 'failed', { attempt, error: err.message, parentNodeId, parentScope });
           if (onError === 'continue') {
-            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message} — continuing`, nodeId);
+            if (jobId) emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed: ${err.message} — continuing`, nodeId, parentScope);
             res = { output: null, variables: {} };
             break;
           }
           if (jobId) {
             const suffix = maxAttempts > 1 ? ` after ${maxAttempts} attempts` : '';
-            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed${suffix}: ${err.message} — stopping flow`, nodeId);
+            emitJobLog(jobId, 'flow', `[FLOW] node "${nodeLabel}" failed${suffix}: ${err.message} — stopping flow`, nodeId, parentScope);
           }
           throw err;
         }
@@ -532,7 +548,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         let formatted: string;
         try { formatted = typeof outVal === 'string' ? outVal : JSON.stringify(outVal, null, 2); }
         catch { formatted = String(outVal); }
-        emitJobLog(jobId, 'output', formatted ?? 'null', nodeId);
+        emitJobLog(jobId, 'output', formatted ?? 'null', nodeId, parentScope);
       }
     }
 

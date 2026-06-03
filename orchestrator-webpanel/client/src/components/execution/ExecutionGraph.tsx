@@ -13,6 +13,7 @@ import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, Chev
 import { apiClient, getJwt } from '../../utils/apiClient';
 import { NODE_TYPES } from '../../constants/nodeTypes';
 import { formatDurationShort } from '../../utils/execTiming';
+import { scopeKey } from '../../utils/execScope';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 
 const HIDDEN_HANDLE: React.CSSProperties = {
@@ -383,14 +384,18 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
       let innerChildren: ExecutionNodeData['innerChildren'] = undefined;
       if (hasInner) {
-        innerChildren = innerByParent[n.id].map(child => ({
-          id: child.id,
-          label: child.data?.label ?? child.id,
-          type: child.data?.type,
-          status: nodeStatuses[child.id]?.status ?? 'pending',
-          attempt: nodeStatuses[child.id]?.attempt,
-          durationMs: nodeDurations?.[child.id] ?? null,
-        }));
+        innerChildren = innerByParent[n.id].map(child => {
+          // Inner nodes are scoped under this flow node (n is top-level here).
+          const childKey = scopeKey(n.id, child.id);
+          return {
+            id: child.id,
+            label: child.data?.label ?? child.id,
+            type: child.data?.type,
+            status: nodeStatuses[childKey]?.status ?? 'pending',
+            attempt: nodeStatuses[childKey]?.attempt,
+            durationMs: nodeDurations?.[childKey] ?? null,
+          };
+        });
         if (!nodeStatuses[n.id]) {
           status = aggregateStatus(innerChildren as any);
         }
@@ -483,9 +488,12 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
       try {
         const data = JSON.parse(evt.data);
         if (data.nodeId && data.status) {
+          // Key by node *instance* scope so A.F1 and B.F1 don't overwrite each
+          // other. Top-level nodes have no parentScope → key is just the id.
+          const key = scopeKey(data.parentScope, data.nodeId);
           setNodeStatuses(prev => ({
             ...prev,
-            [data.nodeId]: {
+            [key]: {
               status: data.status as NodeExecStatus,
               attempt: data.attempt,
               parentNodeId: data.parentNodeId ?? null,

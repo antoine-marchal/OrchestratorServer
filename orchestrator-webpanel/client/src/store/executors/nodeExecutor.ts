@@ -7,6 +7,7 @@ import { collectVariables, updateVariableNodes } from '../utils/variableUtils';
 import { useFlowLibraryStore } from '../flowLibraryStore';
 import { useSessionStore } from '../sessionStore';
 import { resolveFlowNodeContent } from '../flowNodeContent';
+import { NODE_SCOPE_SEP } from '../../utils/execScope';
 
 // Resolve the workerId for the current session's linked flow, if any.
 // Single-node executions and the local flow walker pass this through to the
@@ -286,6 +287,28 @@ async function executeFlowNode(
         ),
       });
 
+      // Append a console message tagged with the inner node's *instance* scope.
+      // The sub-flow ran server-side relative to its own root, so re-base every
+      // inner log under THIS flow node's id: a log from F1 inside flow node A
+      // becomes scope `A` + (server scope), keeping A.F1 and B.F1 distinct.
+      const pushScopedLog = (entry: StreamLogEntry) => {
+        const innerId = entry.nodeId || null;
+        const msgNodeId = innerId || nodeId;
+        const parentScope = innerId
+          ? (entry.parentScope ? `${nodeId}${NODE_SCOPE_SEP}${entry.parentScope}` : nodeId)
+          : undefined;
+        const fresh = sessionStore().getActiveFlowState()!;
+        updateFlowState({
+          consoleMessages: [...fresh.consoleMessages, {
+            nodeId: msgNodeId,
+            type: entry.type as ConsoleMessage['type'],
+            message: entry.message,
+            timestamp: Date.now(),
+            parentScope,
+          }],
+        });
+      };
+
       // Poll for job completion with streaming logs
       const jobResult = await apiClient.pollJobStatus(
         jobId,
@@ -293,7 +316,7 @@ async function executeFlowNode(
         500, // poll interval (faster for real-time feel)
         (logEntry: StreamLogEntry) => {
           if (logEntry.type === 'error') hasStreamedError = true;
-          addLog(logEntry.type as ConsoleMessage['type'], logEntry.message);
+          pushScopedLog(logEntry);
         }
       );
 

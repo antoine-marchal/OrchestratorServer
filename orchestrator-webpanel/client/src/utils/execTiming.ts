@@ -1,4 +1,5 @@
 import type { LogEntry } from '../types/flows';
+import { scopeKeyOf } from './execScope';
 
 export interface NodeTiming {
   start: number;   // ms epoch — first log seen for the node
@@ -12,9 +13,11 @@ export function computeNodeTimings(logs: LogEntry[]): Map<string, NodeTiming> {
   for (const l of logs) {
     if (!l.nodeId) continue;
     if (l.type === 'flow') continue; // marker — not part of node timing
-    const cur = m.get(l.nodeId);
+    // Key by node *instance* scope so A.F1 and B.F1 keep separate timings.
+    const key = scopeKeyOf(l);
+    const cur = m.get(key);
     if (!cur) {
-      m.set(l.nodeId, { start: l.timestamp, end: l.timestamp, hasError: l.type === 'error' });
+      m.set(key, { start: l.timestamp, end: l.timestamp, hasError: l.type === 'error' });
     } else {
       if (l.timestamp < cur.start) cur.start = l.timestamp;
       if (l.timestamp > cur.end) cur.end = l.timestamp;
@@ -50,8 +53,10 @@ export function computeNodeRuns(logs: LogEntry[]): Map<string, NodeRun[]> {
   };
 
   for (const l of sorted) {
-    const id = l.nodeId;
-    if (!id) continue;
+    if (!l.nodeId) continue;
+    // Per node *instance* (scope), so the same subflow node invoked from two
+    // parents (A.F1 / B.F1) opens its own runs instead of merging.
+    const id = scopeKeyOf(l);
     // `flow` marker entries never open or extend a run (they'd otherwise count
     // as a phantom run-opening event, making every executed flow node show up
     // as ×2). EXCEPTION: a per-node failure marker (`[FLOW] node "x" failed…`)

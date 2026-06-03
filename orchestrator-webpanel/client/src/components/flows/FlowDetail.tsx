@@ -38,6 +38,7 @@ import ExecutionGraph from '../execution/ExecutionGraph';
 import ExecutionNodeTree from '../execution/ExecutionNodeTree';
 import ExecutionTimeline from '../execution/ExecutionTimeline';
 import { lastNodeDurations, computeNodeRuns, type NodeRun } from '../../utils/execTiming';
+import { scopeKeyOf, scopeMatchesOrDescends, nodeIdOfScope, NODE_SCOPE_SEP } from '../../utils/execScope';
 import { ansiToHtml } from '../../utils/ansiToHtml';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
@@ -182,7 +183,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // once (goto loop / retry), each visit is a distinct instance; selecting one
   // scopes the log pane to that run's time window so the two A's in A->B->A->C
   // no longer collapse together.
-  const [selectedRun, setSelectedRun] = useState<{ nodeId: string; idx: number; start: number; end: number } | null>(null);
+  // `scope` is the full node-instance key (ancestor chain + id); `nodeId` is the
+  // bare id used to scope the run's log window.
+  const [selectedRun, setSelectedRun] = useState<{ scope: string; nodeId: string; idx: number; start: number; end: number } | null>(null);
   // Live per-node execution status (fed by the SSE stream inside ExecutionGraph)
   // so the node tree shows the same running/retrying/success/error colour code.
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, any>>({});
@@ -483,46 +486,29 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
             {(() => {
               const hasNodes = execNodes.length > 0;
-              // When the selection is a flow node, also surface logs from every
-              // descendant in its subgraph — walk the child→parent map upward
-              // and accept the log if `selectedNodeId` shows up anywhere in
-              // the chain.
-              const matchSelected = (logNodeId: string | null | undefined): boolean => {
-                if (!selectedNodeId) return true;
-                if (!logNodeId) return false;
-                if (logNodeId === selectedNodeId) return true;
-                let cur: string | undefined = logNodeId;
-                const seen = new Set<string>();
-                while (cur && parentMap.has(cur) && !seen.has(cur)) {
-                  seen.add(cur);
-                  const p = parentMap.get(cur)!;
-                  if (p === selectedNodeId) return true;
-                  cur = p;
-                }
-                return false;
-              };
+              // `selectedNodeId` is a node-instance scope key. Selecting a flow
+              // node surfaces logs from its whole sub-graph: a log matches when
+              // its own scope equals or descends from the selected scope. This
+              // keeps A.F1 distinct from B.F1 — selecting one shows only its logs.
               const nodeFilteredLogs = selectedNodeId
-                ? selectedExec.logs.filter(l => matchSelected(l.nodeId))
+                ? selectedExec.logs.filter(l => !!l.nodeId && scopeMatchesOrDescends(scopeKeyOf(l), selectedNodeId))
                 : selectedExec.logs;
-              // When a specific run-instance is selected, scope to that node's
-              // logs within the run's time window (issue 1).
+              // When a specific run-instance is selected, scope to that exact
+              // instance's logs within the run's time window (issue 1).
               const runFilteredLogs = selectedRun
-                ? nodeFilteredLogs.filter(l => l.nodeId === selectedRun.nodeId && l.timestamp >= selectedRun.start && l.timestamp <= selectedRun.end)
+                ? nodeFilteredLogs.filter(l => scopeKeyOf(l) === selectedRun.scope && l.timestamp >= selectedRun.start && l.timestamp <= selectedRun.end)
                 : nodeFilteredLogs;
               const typedLogs = hiddenTypes.size > 0
                 ? runFilteredLogs.filter(l => !hiddenTypes.has(l.type))
                 : runFilteredLogs;
-              // Hide entries whose ancestor flow-node is collapsed.
+              // Hide entries nested under a collapsed flow-node *instance*. The
+              // collapsed marker row itself (scope === c) stays visible.
               const visibleLogs = collapsedFlowNodes.size > 0
                 ? typedLogs.filter(l => {
                     if (!l.nodeId) return true;
-                    let cur = l.nodeId;
-                    const seen = new Set<string>();
-                    while (parentMap.has(cur) && !seen.has(cur)) {
-                      seen.add(cur);
-                      const parent = parentMap.get(cur)!;
-                      if (collapsedFlowNodes.has(parent)) return false;
-                      cur = parent;
+                    const k = scopeKeyOf(l);
+                    for (const c of collapsedFlowNodes) {
+                      if (k.startsWith(c + NODE_SCOPE_SEP)) return false;
                     }
                     return true;
                   })
@@ -578,12 +564,12 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                             statuses={nodeStatuses}
                             runsByNode={runsByNode}
                             selectedRun={selectedRun}
-                            onSelectRun={(nodeId, idx, run) => {
-                              if (selectedRun && selectedRun.nodeId === nodeId && selectedRun.idx === idx) {
+                            onSelectRun={(scope, nodeId, idx, run) => {
+                              if (selectedRun && selectedRun.scope === scope && selectedRun.idx === idx) {
                                 setSelectedRun(null);
                               } else {
-                                setSelectedNodeId(nodeId);
-                                setSelectedRun({ nodeId, idx, start: run.start, end: run.end });
+                                setSelectedNodeId(scope);
+                                setSelectedRun({ scope, nodeId, idx, start: run.start, end: run.end });
                               }
                             }}
                           />
@@ -601,10 +587,10 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                         {selectedNodeId ? (
                           <>
                             <span style={{ color: 'var(--text-3)' }}>Node:</span>
-                            <code style={{ color: 'var(--accent)' }}>{nodeNameMap.get(selectedNodeId) ?? selectedNodeId}</code>
+                            <code style={{ color: 'var(--accent)' }}>{nodeNameMap.get(nodeIdOfScope(selectedNodeId)) ?? nodeIdOfScope(selectedNodeId)}</code>
                             {selectedRun && (
                               <code style={{ color: 'var(--warn)' }}>
-                                · run {selectedRun.idx + 1}/{(runsByNode.get(selectedRun.nodeId) ?? []).length}
+                                · run {selectedRun.idx + 1}/{(runsByNode.get(selectedRun.scope) ?? []).length}
                               </code>
                             )}
                             <button
@@ -654,7 +640,8 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                             const nodeName = log.nodeId ? (nodeNameMap.get(log.nodeId) ?? log.nodeId) : null;
                             const depth = getNodeDepth(log.nodeId, parentMap);
                             const isFlowMarker = log.type === 'flow' && typeof log.message === 'string' && log.message.startsWith('[flow] ');
-                            const isCollapsed = isFlowMarker && !!log.nodeId && collapsedFlowNodes.has(log.nodeId);
+                            const logScope = scopeKeyOf(log);
+                            const isCollapsed = isFlowMarker && !!log.nodeId && collapsedFlowNodes.has(logScope);
                             return (
                               <div
                                 key={i}
@@ -690,7 +677,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                                     style={{ color: typeColor }}
                                     onClick={() => setCollapsedFlowNodes(prev => {
                                       const next = new Set(prev);
-                                      if (next.has(log.nodeId!)) next.delete(log.nodeId!); else next.add(log.nodeId!);
+                                      if (next.has(logScope)) next.delete(logScope); else next.add(logScope);
                                       return next;
                                     })}
                                   >

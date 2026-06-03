@@ -8,6 +8,12 @@ export interface ConsoleMessage {
   type: 'input' | 'output' | 'error' | 'log' | 'flow';
   message: string;
   timestamp: number;
+  /**
+   * Ancestor flow-node scope (SEP-joined) of the emitting node. Lets the same
+   * subflow node reached via two parents (A.F1 vs B.F1) stay distinct in the
+   * console. Absent ⇒ top-level node. See utils/execScope.ts.
+   */
+  parentScope?: string | null;
 }
 
 /**

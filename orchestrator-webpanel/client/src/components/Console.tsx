@@ -3,6 +3,7 @@ import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
 import { Terminal, X, Trash2, Maximize2, Minimize2, Clock, Download } from 'lucide-react';
 import { useTheme } from "../context/ThemeContext";
+import { NODE_SCOPE_SEP, scopeKeyOf } from '../utils/execScope';
 
 const Console: React.FC = () => {
   const { theme } = useTheme();
@@ -63,6 +64,14 @@ const Console: React.FC = () => {
   const getNodeLabel = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);
     return node?.data?.label || nodeId;
+  };
+
+  // Full instance label: prefix the ancestor flow-node labels so the same
+  // subflow node reached via two parents (A.F1 vs B.F1) reads distinctly,
+  // e.g. "A / F1" vs "B / F1".
+  const getScopedLabel = (msg: { nodeId: string; parentScope?: string | null }) => {
+    const chain = msg.parentScope ? msg.parentScope.split(NODE_SCOPE_SEP) : [];
+    return [...chain, msg.nodeId].map(getNodeLabel).join(' / ');
   };
 
   const handleExportLogs = () => {
@@ -130,10 +139,11 @@ const Console: React.FC = () => {
     for (const msg of messages) {
       const lastGroup = grouped[grouped.length - 1];
 
-      // Group if same nodeId, type, and timestamp within 100ms
+      // Group if same node *instance* (scope), type, and timestamp within 100ms
       if (
         lastGroup &&
         lastGroup.nodeId === msg.nodeId &&
+        (lastGroup.parentScope ?? null) === (msg.parentScope ?? null) &&
         lastGroup.type === msg.type &&
         Math.abs(lastGroup.timestamp - msg.timestamp) < 100
       ) {
@@ -355,8 +365,9 @@ const Console: React.FC = () => {
           return groupConsoleMessages(consoleMessages.filter(msg => visibleTypes.includes(msg.type))).map((msg, i) => {
           let runDivider: string | null = null;
           if (msg.type === 'input') {
-            runCount[msg.nodeId] = (runCount[msg.nodeId] || 0) + 1;
-            if (runCount[msg.nodeId] > 1) runDivider = `${getNodeLabel(msg.nodeId)} — run ${runCount[msg.nodeId]}`;
+            const k = scopeKeyOf(msg);
+            runCount[k] = (runCount[k] || 0) + 1;
+            if (runCount[k] > 1) runDivider = `${getScopedLabel(msg)} — run ${runCount[k]}`;
           }
           return (
           <React.Fragment key={i}>
@@ -380,7 +391,7 @@ const Console: React.FC = () => {
               }`}
           >
             <span className="text-gray-500 shrink-0 pr-2 select-none">
-              [{new Date(msg.timestamp).toLocaleTimeString()}] {getNodeLabel(msg.nodeId)}:
+              [{new Date(msg.timestamp).toLocaleTimeString()}] {getScopedLabel(msg)}:
             </span>
             <span
               className="whitespace-pre-wrap break-words min-w-0"

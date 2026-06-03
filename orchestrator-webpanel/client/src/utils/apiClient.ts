@@ -19,6 +19,8 @@ interface StreamLogEntry {
   type: 'log' | 'error' | 'output' | 'input' | 'flow';
   message: string;
   nodeId?: string | null;
+  /** Ancestor flow-node scope of the emitting node (see execScope.ts). */
+  parentScope?: string | null;
   timestamp: number;
 }
 

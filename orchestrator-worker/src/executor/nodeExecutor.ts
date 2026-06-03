@@ -459,28 +459,6 @@ async function runBatch(code: string, input: any, variables: Record<string, any>
   }
 }
 
-async function runPlaywright(code: string, input: any, _variables: Record<string, any>, timeoutMs: number, onLog?: LogStreamFn): Promise<NodeResult> {
-  const uid = nowUid();
-  const scriptPath = path.join(os.tmpdir(), `worker_pw_${uid}.js`);
-  const wrapped = `const { chromium } = require('playwright');
-const __input = ${JSON.stringify(input)};
-async function main(input) {
-${code}
-}
-main(__input).then(r => {
-  if (r !== undefined) process.stdout.write(JSON.stringify(r));
-  process.exit(0);
-}).catch(e => { console.error(e.message); process.exit(1); });
-`;
-  fs.writeFileSync(scriptPath, wrapped);
-  try {
-    const { exitCode, stdout, stderr } = await runProcess(NODE_EXEC_PATH, [scriptPath], { timeoutMs: timeoutMs || 120_000, onLog });
-    if (exitCode !== 0) throw new Error(stderr || `Process exited with code ${exitCode}`);
-    return { output: normalizeOutput(stdout), variables: {} };
-  } finally {
-    safeUnlink(scriptPath);
-  }
-}
 
 /* ============================
    Shell runner (Unix only)
@@ -541,8 +519,6 @@ export async function executeNode(node: any, onLog?: LogStreamFn): Promise<NodeR
       return runPowershell(code, input, variables, timeoutMs, onLog);
     case 'batch':
       return runBatch(code, input, variables, timeoutMs, onLog);
-    case 'playwright':
-      return runPlaywright(code, input, variables, timeoutMs, onLog);
     case 'shell':
     case 'bash':
       return runShell(code, input, variables, timeoutMs, onLog);

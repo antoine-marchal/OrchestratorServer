@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, GitBranch } from 'lucide-react';
 import type { FlowExecution, ExecutionStatus } from '../../types/flows';
 import { computeNodeRuns, formatDurationShort, type NodeRun } from '../../utils/execTiming';
+import { scopeKey } from '../../utils/execScope';
 import {
   NodeIcon, StatusIcon, RelationBadge, topologicalSort, buildRelations, isVisibleInTree,
   type NodeExecStatus,
@@ -146,23 +147,25 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
       selectable: false,
     }];
 
-    const pushNode = (n: any, depth: number, rel: Record<string, { preds: RelItem[]; succs: RelItem[] }>) => {
+    // `scopePrefix` is the ancestor flow-node chain; `id` below is the full
+    // node-instance scope so A.F1 and B.F1 get separate rows / runs / status.
+    const pushNode = (n: any, depth: number, rel: Record<string, { preds: RelItem[]; succs: RelItem[] }>, scopePrefix: string) => {
       const type = n?.data?.type;
-      const id: string = n.id;
+      const id: string = scopeKey(scopePrefix, n.id);
       const inner = type === 'flow' ? parseInner(n, libraryFlows) : { nodes: [], edges: [] };
       const isFlow = inner.nodes.length > 0;
 
       let segs = segsFor(id);
       if (segs.length === 0 && isFlow) {
         let s = Infinity, e = -Infinity, err = false;
-        for (const c of inner.nodes) for (const r of (runsByNode.get(c.id) ?? [])) { s = Math.min(s, r.start); e = Math.max(e, r.end); err = err || r.hasError; }
+        for (const c of inner.nodes) for (const r of (runsByNode.get(scopeKey(id, c.id)) ?? [])) { s = Math.min(s, r.start); e = Math.max(e, r.end); err = err || r.hasError; }
         if (e >= s) segs = [{ start: s, end: e, hasError: err, status: err ? 'failed' : (execDone ? 'success' : 'running') }];
       }
 
       const visibleInner = inner.nodes.filter(isVisibleInTree as any);
-      const r = rel[id] || { preds: [], succs: [] };
+      const r = rel[n.id] || { preds: [], succs: [] };
       rows.push({
-        id, label: nodeNameMap.get(id) || n?.data?.label || id, depth, type,
+        id, label: nodeNameMap.get(n.id) || n?.data?.label || n.id, depth, type,
         runs: segs, rowStatus: rowStatusFor(id, segs),
         preds: r.preds, succs: r.succs,
         isFlow, selectable: true, hasChildren: visibleInner.length > 0,
@@ -171,14 +174,14 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
       if (visibleInner.length > 0) {
         const childRel = buildRelations(inner.nodes as any, inner.edges as any);
         for (const c of topologicalSort(visibleInner as any, inner.edges as any)) {
-          pushNode(c, depth + 1, childRel as any);
+          pushNode(c, depth + 1, childRel as any, id);
         }
       }
     };
 
     // top-level, topologically ordered like the node tree
     for (const n of topologicalSort(nodes.filter(isVisibleInTree as any) as any, edges as any)) {
-      pushNode(n, 0, topRelations as any);
+      pushNode(n, 0, topRelations as any, '');
     }
 
     // Second pass: stamp parentId on rows whose depth > their preceding flow-node row.
