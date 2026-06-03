@@ -21,9 +21,10 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useUIStore } from '../store/uiStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';
 import { apiClient } from '../utils/apiClient';
-import { openFlowNodeEditor } from '../store/flowNodeContent';
+import { openFlowNodeEditor, makeFlowNode } from '../store/flowNodeContent';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
 import { useTheme } from '../context/ThemeContext';
@@ -31,9 +32,9 @@ import { NODE_TYPES } from '../constants/nodeTypes';
 import { getLayoutedElements } from '../utils/flowLayout';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import {
-  handleFlowNodeFromSession as flowNodeFromSessionHandler,
   handleFlowNodeFromFile as flowNodeFromFileHandler,
   handleFlowNodeFromLibrary as flowNodeFromLibraryHandler,
+  handleFlowNodeNewSession as flowNodeNewSessionHandler,
 } from '../utils/flowNodeHandlers';
 
 import CommentNode from './node/CommentNode';
@@ -339,12 +340,15 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
       if (n.data?.type !== 'goto') return;
       const conds = Array.isArray(n.data?.conditions) ? n.data.conditions : [];
       conds.forEach((c: any) => {
-        if (c?.forwardInput && c?.goto && nodeIds.has(c.goto)) {
-          const key = `${n.id}->${c.goto}`;
+        if (!c?.forwardInput) return;
+        const targets: string[] = (Array.isArray(c?.goto) ? c.goto : c?.goto ? [c.goto] : []);
+        targets.forEach((t) => {
+          if (!nodeIds.has(t)) return;
+          const key = `${n.id}->${t}`;
           const label = (c.expr ?? '').trim() || '(no expr)';
           if (!forwardLabels.has(key)) forwardLabels.set(key, []);
           forwardLabels.get(key)!.push(label);
-        }
+        });
       });
     });
 
@@ -610,17 +614,24 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
     setSelectedNodes(nodes.map((node) => node.id));
   }, []);
 
-  // Handle flow node creation from existing session (link directly to it)
+  // Handle flow node creation from an existing session — live OR closed. A
+  // closed session has no store entry, so reconstruct its snapshot from any flow
+  // node that still references it (avoids the "Session not found" error).
   const handleFlowNodeFromSession = useCallback(
     (sessionId: string, sessionName: string) => {
-      flowNodeFromSessionHandler({
-        sessionId,
-        sessionName,
-        position: flowNodeModal.position || { x: 100, y: 100 },
-        setNodes,
-      });
+      const position = flowNodeModal.position || { x: 100, y: 100 };
+      const live = useSessionStore.getState().getSession(sessionId);
+      let code: string;
+      if (live) {
+        code = JSON.stringify({ nodes: live.flowState.nodes, edges: live.flowState.edges });
+      } else {
+        const ref = nodes.find((n) => n.data?.linkedSessionId === sessionId && n.data?.code);
+        code = ref?.data?.code || JSON.stringify({ nodes: [], edges: [] });
+      }
+      const newNode = makeFlowNode({ label: sessionName, linkedSessionId: sessionId, code, position });
+      setNodes((nds) => [...nds, newNode]);
     },
-    [flowNodeModal.position, setNodes]
+    [flowNodeModal.position, setNodes, nodes]
   );
 
   // Handle flow node creation from file upload (create new session)
@@ -649,6 +660,71 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
     },
     [flowNodeModal.position, setNodes]
   );
+
+  // Create flow node from a brand-new empty session (create modal).
+  const handleFlowNodeNewSession = useCallback(() => {
+    flowNodeNewSessionHandler({
+      position: flowNodeModal.position || { x: 100, y: 100 },
+      setNodes,
+      parentFlowId: flowId,
+    });
+  }, [flowNodeModal.position, setNodes, flowId]);
+
+  // ---- Re-point an EXISTING flow node ("Modify Flow Node") — issue 3 ----
+  const repointNodeId = useUIStore((s) => s.repointNodeId);
+  const setRepointNodeId = useUIStore((s) => s.setRepointNodeId);
+  const repointNode = repointNodeId ? nodes.find((n) => n.id === repointNodeId) : null;
+
+  // Sub-flow sessions of this flow whose tab was closed — still reachable via the
+  // flow nodes that reference them, so they stay selectable in the modal.
+  const closedSessions = useMemo(() => {
+    const live = new Set(useSessionStore.getState().sessions.map((s) => s.id));
+    const seen = new Set<string>();
+    const out: Array<{ id: string; name: string }> = [];
+    for (const n of nodes) {
+      const sid = n.data?.type === 'flow' ? n.data?.linkedSessionId : null;
+      if (sid && !live.has(sid) && !seen.has(sid)) { seen.add(sid); out.push({ id: sid, name: n.data?.label || sid }); }
+    }
+    return out;
+  }, [nodes, repointNodeId]);
+
+  const repointSelectSession = useCallback((sid: string) => {
+    if (!repointNodeId) return;
+    const live = useSessionStore.getState().getSession(sid);
+    let code = '';
+    if (live) code = JSON.stringify({ nodes: live.flowState.nodes, edges: live.flowState.edges });
+    else { const ref = nodes.find((n) => n.data?.linkedSessionId === sid && n.data?.code); code = ref?.data?.code || ''; }
+    updateNodeData(repointNodeId, { linkedSessionId: sid, flowRef: undefined, code });
+    setRepointNodeId(null);
+  }, [repointNodeId, nodes, updateNodeData, setRepointNodeId]);
+
+  const repointSelectLibrary = useCallback((refFlowId: string) => {
+    if (!repointNodeId) return;
+    updateNodeData(repointNodeId, { flowRef: refFlowId, linkedSessionId: undefined, code: '' });
+    setRepointNodeId(null);
+  }, [repointNodeId, updateNodeData, setRepointNodeId]);
+
+  const repointUploadFile = useCallback(async (file: File) => {
+    if (!repointNodeId) return;
+    try {
+      const text = await file.text();
+      updateNodeData(repointNodeId, { code: text, linkedSessionId: undefined, flowRef: undefined });
+    } catch (e) {
+      alert(`Error reading flow file: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setRepointNodeId(null);
+  }, [repointNodeId, updateNodeData, setRepointNodeId]);
+
+  // Re-point an existing flow node to a brand-new empty session (modify modal).
+  const repointNewSession = useCallback(async () => {
+    if (!repointNodeId) return;
+    const store = useSessionStore.getState();
+    const originalSessionId = store.activeSessionId;
+    const sid = await store.createSession('Sub-flow', flowId); // switches active to new empty session
+    if (originalSessionId) store.switchSession(originalSessionId);
+    updateNodeData(repointNodeId, { linkedSessionId: sid, flowRef: undefined, code: JSON.stringify({ nodes: [], edges: [] }) });
+    setRepointNodeId(null);
+  }, [repointNodeId, flowId, updateNodeData, setRepointNodeId]);
 
   return (
     <div ref={wrapperRef} className="w-full h-full relative" style={{ height: embedded ? '100%' : 'calc(100vh - 46px)' }}>
@@ -748,7 +824,23 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
         onSelectSession={handleFlowNodeFromSession}
         onUploadFile={handleFlowNodeFromFile}
         onSelectLibraryFlow={handleFlowNodeFromLibrary}
+        onCreateNewSession={handleFlowNodeNewSession}
         flowId={flowId}
+        closedSessions={closedSessions}
+      />}
+
+      {/* Modify Flow Node modal — re-point an existing flow node (issue 3) */}
+      {!readOnly && <FlowNodeCreationModal
+        isOpen={!!repointNodeId}
+        mode="modify"
+        onClose={() => setRepointNodeId(null)}
+        onSelectSession={repointSelectSession}
+        onUploadFile={repointUploadFile}
+        onSelectLibraryFlow={repointSelectLibrary}
+        onCreateNewSession={repointNewSession}
+        flowId={flowId}
+        closedSessions={closedSessions}
+        currentLinkedSessionId={repointNode?.data?.linkedSessionId}
       />}
     </div>
   );

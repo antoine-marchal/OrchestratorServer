@@ -358,7 +358,11 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
   }
   if (!entryId) throw new Error('No valid entry point found.');
 
-  const gotoDecision: Record<string, string | null> = {};
+  // A goto condition's `goto` may be a single node id or an array of ids (issue 4).
+  const gotoTargets = (g: any): string[] =>
+    (Array.isArray(g) ? g : g ? [g] : []).filter((t: any) => typeof t === 'string' && t);
+
+  const gotoDecision: Record<string, string | string[] | null> = {};
   const nodeResults: Record<string, any> = {};
   const injectedInputs: Record<string, any> = {};
   const executed = new Set<string>();
@@ -370,7 +374,9 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
   const MAX_VISITS_PER_NODE = 1000;
   const MAX_STEPS = 1000;
 
-  const ensureExecuted = async (nodeId: string, force = false): Promise<void> => {
+  // `skipPreds`: a goto jump executes its target WITHOUT pulling in the
+  // target's graph predecessors (issue 2).
+  const ensureExecuted = async (nodeId: string, force = false, skipPreds = false): Promise<void> => {
     if (jobId) {
       const flowJob = jobs.get(jobId);
       if (flowJob && flowJob.stopRequested) return;
@@ -382,7 +388,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
     if (!node) return;
     executing.add(nodeId);
 
-    if (nodeId !== starterId) {
+    if (nodeId !== starterId && !skipPreds) {
       const preds = incoming(nodeId).map((e: any) => e.source);
       for (const p of preds) await ensureExecuted(p, false);
     }
@@ -404,21 +410,22 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
 
     if (node?.data?.type === 'goto') {
       const rules = Array.isArray(node?.data?.conditions) ? node.data.conditions : [];
-      let decision: string | null = null;
+      let decision: string | string[] | null = null;
       let forward = false;
       let matchedExpr: string | null = null;
       for (const r of rules) {
-        if (r?.expr && r?.goto && evalGotoExpr(r.expr, processedInputs, flowVariables)) {
+        if (r?.expr && gotoTargets(r?.goto).length && evalGotoExpr(r.expr, processedInputs, flowVariables)) {
           decision = r.goto; forward = !!r.forwardInput; matchedExpr = r.expr; break;
         }
       }
       gotoDecision[nodeId] = decision;
       nodeResults[nodeId] = processedInputs;
-      if (decision && forward) injectedInputs[decision] = processedInputs;
+      const decisionTargets = gotoTargets(decision);
+      if (decisionTargets.length && forward) for (const t of decisionTargets) injectedInputs[t] = processedInputs;
       if (jobId) {
         const gotoLabel = node.data?.label || nodeId;
-        if (decision) {
-          const targetLabel = byId(decision)?.data?.label || decision;
+        if (decisionTargets.length) {
+          const targetLabel = decisionTargets.map(t => byId(t)?.data?.label || t).join(', ');
           const exprStr = matchedExpr ? ` [${matchedExpr}]` : '';
           emitJobLog(jobId, 'flow', `[goto] ${gotoLabel}${exprStr} → ${targetLabel}`, nodeId);
         } else {
@@ -555,10 +562,13 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
     if (!n) return;
 
     if (n?.data?.type === 'goto') {
-      const jump = gotoDecision[nextId];
-      if (jump) {
-        await ensureExecuted(jump, true);
-        await stepTo(jump, budget);
+      const targets = gotoTargets(gotoDecision[nextId]);
+      if (targets.length) {
+        // skipPreds=true: a goto jump must not execute the target's predecessors (issue 2).
+        for (const t of targets) {
+          await ensureExecuted(t, true, true);
+          await stepTo(t, budget);
+        }
         return;
       }
       for (const e of outgoing(nextId)) await stepTo(e.target, budget);

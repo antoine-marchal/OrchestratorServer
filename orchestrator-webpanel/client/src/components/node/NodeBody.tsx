@@ -91,7 +91,15 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     const linkedSession = data.linkedSessionId
       ? sessions.find(s => s.id === data.linkedSessionId)
       : null;
-    const displayName = linkedSession?.name || data.label || 'Unlinked Flow';
+    // What the node points at. The session ID is the STABLE identity and is
+    // shown verbatim — it must not track the node's title (issue 3).
+    const kind = data.linkedSessionId ? 'session' : data.flowRef ? 'flowRef' : 'embedded';
+    const headerLabel = kind === 'session'
+      ? (linkedSession ? 'Linked Session' : 'Linked Session (closed)')
+      : kind === 'flowRef' ? 'Library Flow' : 'Flow';
+    const displayName = kind === 'session'
+      ? (linkedSession?.name || 'closed session')
+      : kind === 'flowRef' ? (data.flowRef as string) : (data.label || 'Unlinked Flow');
 
     return (
       <div
@@ -100,11 +108,16 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
         onMouseLeave={handleMouseLeave}
       >
         <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
-          {linkedSession ? 'Linked Session' : 'Flow'}
+          {headerLabel}
         </div>
         <div className="text-sm text-gray-400 space-y-2 relative">
           <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded p-2 border border-emerald-700/30">
             <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{displayName}</div>
+            {data.linkedSessionId && (
+              <div className="text-emerald-700/70 dark:text-emerald-400/60 text-[10px] font-mono truncate mt-0.5" title={data.linkedSessionId}>
+                id: {data.linkedSessionId}
+              </div>
+            )}
           </div>
           <div className="text-[10px] uppercase tracking-wider text-emerald-800 dark:text-emerald-400 font-medium">
             {data.executionTime !== undefined ? <>Output ({formatExecutionTime(data.executionTime)}): <br /></> : <>Output: <br /></>}
@@ -162,7 +175,9 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     const selectableTargets = nodes
       .filter(n => n.data?.type !== 'comment' && n.data?.type !== 'goto')
       .map(n => ({ id: n.id, label: n.data?.label || n.id }));
-    type Rule = { expr: string; goto: string; forwardInput?: boolean };
+    type Rule = { expr: string; goto: string | string[]; forwardInput?: boolean };
+    const asTargets = (g: string | string[] | undefined): string[] =>
+      (Array.isArray(g) ? g : g ? [g] : []).filter(Boolean);
     const [localConds, setLocalConds] = React.useState<Rule[]>(
       Array.isArray(data.conditions) ? data.conditions : []
     );
@@ -179,7 +194,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
     };
 
     const addCondition = () => {
-      commit([...localConds, { expr: '', goto: '', forwardInput: false }]);
+      commit([...localConds, { expr: '', goto: [], forwardInput: false }]);
     };
 
     const removeCondition = (idx: number) => {
@@ -215,9 +230,9 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                 onMouseLeave={handleMouseLeave}
               />
 
-              {/* Header row with 'Goto Node' label on the left and the forward toggle on the right */}
+              {/* Header row with 'Goto Node(s)' label on the left and the forward toggle on the right */}
               <div className="flex items-center justify-between">
-                <label className="text-[10px] text-gray-800 dark:text-gray-400">Goto Node</label>
+                <label className="text-[10px] text-gray-800 dark:text-gray-400">Goto Node(s)</label>
 
                 <label className="inline-flex items-center gap-2 text-[10px] text-gray-800 dark:text-gray-400">
                   <span>Forward input</span>
@@ -231,16 +246,28 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                 </label>
               </div>
 
+              {/* Multiple destinations: Ctrl/Cmd-click to select more than one.
+                  All selected targets execute when the condition matches (issue 4). */}
               <select
-                value={cond.goto}
-                onChange={(e) => updateLocal(i, { goto: e.target.value })}
+                multiple
+                value={asTargets(cond.goto)}
+                onChange={(e) => updateLocal(i, { goto: Array.from(e.target.selectedOptions, o => o.value) })}
+                size={Math.min(Math.max(selectableTargets.length, 2), 6)}
+                // Stop ReactFlow's drag/pan from swallowing the click so options
+                // are actually selectable with the mouse, and disable node drag
+                // while the cursor is over the list.
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
                 className="mt-1 w-full text-xs bg-gray-100 dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">{'(none selected)'}</option>
                 {selectableTargets.map(n => (
                   <option key={n.id} value={n.id}>{n.label}</option>
                 ))}
               </select>
+              <div className="text-[9px] text-gray-500 dark:text-gray-500">Ctrl/Cmd-click to target multiple nodes</div>
 
 
 

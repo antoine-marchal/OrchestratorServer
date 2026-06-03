@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload, List, GitBranch } from 'lucide-react';
+import { X, Upload, List, GitBranch, FilePlus } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';
 
@@ -9,7 +9,15 @@ interface FlowNodeCreationModalProps {
   onSelectSession: (sessionId: string, sessionName: string) => void;
   onUploadFile: (file: File) => void;
   onSelectLibraryFlow: (flowId: string, flowName: string) => void;
+  /** Create a brand-new empty session and link the node to it. */
+  onCreateNewSession?: () => void;
   flowId?: string;
+  /** 'modify' re-points an existing flow node; 'create' (default) adds a new one. */
+  mode?: 'create' | 'modify';
+  /** Sessions of THIS flow whose editor tab was closed (still selectable — issue 3). */
+  closedSessions?: Array<{ id: string; name: string }>;
+  /** The flow node's current link, to mark it in the list. */
+  currentLinkedSessionId?: string;
 }
 
 export default function FlowNodeCreationModal({
@@ -18,13 +26,24 @@ export default function FlowNodeCreationModal({
   onSelectSession,
   onUploadFile,
   onSelectLibraryFlow,
+  onCreateNewSession,
   flowId,
+  mode = 'create',
+  closedSessions = [],
+  currentLinkedSessionId,
 }: FlowNodeCreationModalProps) {
   const [selectedOption, setSelectedOption] = useState<'session' | 'library' | null>(null);
   const { sessions: allSessions, activeSessionId } = useSessionStore();
   const { flows } = useFlowLibraryStore();
-  const sessions = (flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions)
+  const liveSessions = (flowId ? allSessions.filter(session => session.linkedFlowId === flowId) : allSessions)
     .filter(session => session.id !== activeSessionId);
+  // Sub-flow sessions of this flow, live OR closed (issue 3). Closed sessions are
+  // reconstructed from the flow nodes that still reference them.
+  const liveIds = new Set(liveSessions.map(s => s.id));
+  const sessions: Array<{ id: string; name: string; nodes: number; edges: number; closed: boolean }> = [
+    ...liveSessions.map(s => ({ id: s.id, name: s.name, nodes: s.flowState.nodes.length, edges: s.flowState.edges.length, closed: false })),
+    ...closedSessions.filter(c => !liveIds.has(c.id)).map(c => ({ id: c.id, name: c.name, nodes: 0, edges: 0, closed: true })),
+  ];
 
   // Exclude the current flow from the library list to prevent circular references
   const libraryFlows = flows.filter(f => f.id !== flowId);
@@ -63,12 +82,17 @@ export default function FlowNodeCreationModal({
     onClose();
   };
 
+  const handleCreateNewSession = () => {
+    onCreateNewSession?.();
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, width: '100%', maxWidth: 440, margin: '0 16px' }}>
         <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
-            Create Flow Node
+            {mode === 'modify' ? 'Modify Flow Node' : 'Create Flow Node'}
           </h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
             <X size={16} />
@@ -78,6 +102,18 @@ export default function FlowNodeCreationModal({
         <div style={{ padding: 16 }}>
           {!selectedOption ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {onCreateNewSession && (
+                <button
+                  onClick={handleCreateNewSession}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', textAlign: 'left', color: 'var(--text)' }}
+                >
+                  <FilePlus size={18} style={{ color: 'var(--ok)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>Create New Session</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>Start an empty sub-flow session and link it</div>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setSelectedOption('library')}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', textAlign: 'left', color: 'var(--text)' }}
@@ -151,11 +187,15 @@ export default function FlowNodeCreationModal({
                     <button
                       key={session.id}
                       onClick={() => handleSessionSelect(session.id, session.name)}
-                      style={{ display: 'flex', flexDirection: 'column', padding: '8px 10px', background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 5, cursor: 'pointer', textAlign: 'left', color: 'var(--text)' }}
+                      style={{ display: 'flex', flexDirection: 'column', padding: '8px 10px', background: 'var(--bg-3)', border: `1px solid ${session.id === currentLinkedSessionId ? 'var(--ok)' : 'var(--border)'}`, borderRadius: 5, cursor: 'pointer', textAlign: 'left', color: 'var(--text)' }}
                     >
-                      <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{session.name}</div>
+                      <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                        {session.name}
+                        {session.closed && <span style={{ color: 'var(--warn)', marginLeft: 6, fontSize: 10 }}>(closed)</span>}
+                        {session.id === currentLinkedSessionId && <span style={{ color: 'var(--ok)', marginLeft: 6, fontSize: 10 }}>(current)</span>}
+                      </div>
                       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
-                        {session.flowState.nodes.length} nodes, {session.flowState.edges.length} edges
+                        {session.closed ? `id: ${session.id}` : `${session.nodes} nodes, ${session.edges} edges`}
                       </div>
                     </button>
                   ))

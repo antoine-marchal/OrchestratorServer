@@ -346,9 +346,28 @@ const Console: React.FC = () => {
         ref={consoleRef}
         className={`overflow-y-auto p-4 font-mono text-sm transition-all duration-200 ${fullscreen ? 'h-[calc(100vh-48px)]' : 'h-64'}`}
       >
-        {groupConsoleMessages(consoleMessages.filter(msg => visibleTypes.includes(msg.type))).map((msg, i) => (
+        {(() => {
+          // Track how many times each node has opened a run (an `input` log
+          // starts a run). The 2nd+ input for a node marks a new instance, so we
+          // render a divider — the two A's in A->B->A->C stay visually separate
+          // even though they share one node id (issue 1).
+          const runCount: Record<string, number> = {};
+          return groupConsoleMessages(consoleMessages.filter(msg => visibleTypes.includes(msg.type))).map((msg, i) => {
+          let runDivider: string | null = null;
+          if (msg.type === 'input') {
+            runCount[msg.nodeId] = (runCount[msg.nodeId] || 0) + 1;
+            if (runCount[msg.nodeId] > 1) runDivider = `${getNodeLabel(msg.nodeId)} — run ${runCount[msg.nodeId]}`;
+          }
+          return (
+          <React.Fragment key={i}>
+          {runDivider && (
+            <div className="my-1 flex items-center gap-2 select-none" style={{ color: 'var(--text-mute, #9aa4b2)' }}>
+              <span className="flex-1 border-t border-gray-300 dark:border-gray-700" />
+              <span className="text-[10px] uppercase tracking-wider">{runDivider}</span>
+              <span className="flex-1 border-t border-gray-300 dark:border-gray-700" />
+            </div>
+          )}
           <div
-            key={i}
             className={`mb-2 flex ${msg.type === 'error'
                 ? 'text-red-600 dark:text-red-400'
                 : msg.type === 'input'
@@ -370,7 +389,10 @@ const Console: React.FC = () => {
               }}
             />
           </div>
-        ))}
+          </React.Fragment>
+          );
+          });
+        })()}
       </div>
     </div>
   );

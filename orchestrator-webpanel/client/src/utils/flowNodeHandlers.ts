@@ -55,6 +55,31 @@ export const handleFlowNodeFromSession = ({
   setNodes((nds) => [...nds, newNode]);
 };
 
+export interface FlowNodeNewSessionParams {
+  position: { x: number; y: number };
+  setNodes: (update: (nodes: Node[]) => Node[]) => void;
+  parentFlowId?: string;
+}
+
+// Create a brand-new empty editor session and add a flow node linked to it.
+// The node lands in the CURRENT flow; the new (empty) session is created in this
+// flow's scope so it shows up in the session pickers (issue 3 follow-up).
+export const handleFlowNodeNewSession = async ({
+  position,
+  setNodes,
+  parentFlowId,
+}: FlowNodeNewSessionParams) => {
+  const store = useSessionStore.getState();
+  const originalSessionId = store.activeSessionId;
+  const name = 'Sub-flow';
+  const sessionId = await store.createSession(name, parentFlowId); // switches active to the new empty session
+  const code = JSON.stringify({ nodes: [], edges: [] });
+  const newNode = makeFlowNode({ label: name, linkedSessionId: sessionId, code, position });
+  // Re-focus the originating flow and drop the node into it.
+  if (originalSessionId) store.switchSession(originalSessionId);
+  setNodes((nds) => [...nds, newNode]);
+};
+
 export const handleFlowNodeFromFile = async ({
   file,
   position,

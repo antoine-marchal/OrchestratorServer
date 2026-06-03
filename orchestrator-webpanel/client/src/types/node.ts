@@ -16,11 +16,11 @@ export interface NodeData {
   
   //Add Goto-specific fields
   conditions?: Array<{
-    expr: string;        // JS expression, e.g. "input.value < 50"
-    goto: string;        // nodeId to jump to
+    expr: string;            // JS expression, e.g. "input.value < 50"
+    goto: string | string[]; // nodeId(s) to jump to — single target or an array
     forwardInput?: boolean;
   }>;
-  gotoDecision?: string | null; // transient decision during "run entire flow"
+  gotoDecision?: string | string[] | null; // transient decision during "run entire flow"
   
   // Linked session for editing flow nodes
   linkedSessionId?: string;

@@ -447,20 +447,23 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
       const rules = Array.isArray(n.data?.conditions) ? n.data.conditions : [];
       for (let i = 0; i < rules.length; i++) {
         const r = rules[i];
-        if (!r?.goto || !visibleNodeIds.has(r.goto)) continue;
-        gotoEdges.push({
-          id: `goto:${n.id}:${i}:${r.goto}`,
-          source: n.id,
-          target: r.goto,
-          type: 'smoothstep',
-          animated: false,
-          style: { stroke: 'var(--text-mute)', strokeWidth: 1, strokeDasharray: '4 3', opacity: 0.55 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--text-mute)', width: 12, height: 12 },
-          label: r.expr ? (r.expr.length > 24 ? r.expr.slice(0, 22) + '…' : r.expr) : undefined,
-          labelStyle: { fontSize: 9, fill: 'var(--text-3)', fontFamily: 'var(--font-mono)' },
-          labelBgStyle: { fill: 'var(--bg-2)' },
-          labelBgPadding: [3, 2] as [number, number],
-        });
+        const targets: string[] = (Array.isArray(r?.goto) ? r.goto : r?.goto ? [r.goto] : []);
+        for (const t of targets) {
+          if (!visibleNodeIds.has(t)) continue;
+          gotoEdges.push({
+            id: `goto:${n.id}:${i}:${t}`,
+            source: n.id,
+            target: t,
+            type: 'smoothstep',
+            animated: false,
+            style: { stroke: 'var(--text-mute)', strokeWidth: 1, strokeDasharray: '4 3', opacity: 0.55 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--text-mute)', width: 12, height: 12 },
+            label: r.expr ? (r.expr.length > 24 ? r.expr.slice(0, 22) + '…' : r.expr) : undefined,
+            labelStyle: { fontSize: 9, fill: 'var(--text-3)', fontFamily: 'var(--font-mono)' },
+            labelBgStyle: { fill: 'var(--bg-2)' },
+            labelBgPadding: [3, 2] as [number, number],
+          });
+        }
       }
     }
 

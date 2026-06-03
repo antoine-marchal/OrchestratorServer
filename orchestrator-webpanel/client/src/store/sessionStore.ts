@@ -89,23 +89,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     // Sessions are JWT-based — nothing to invalidate server-side.
 
-    // Remove the session and cleanup linkedSessionId references in other sessions
-    const updatedSessions = state.sessions
-      .filter(s => s.id !== sessionId)
-      .map(s => ({
-        ...s,
-        flowState: {
-          ...s.flowState,
-          // Remove linkedSessionId from flow nodes that referenced the closed session
-          nodes: s.flowState.nodes.map(node => {
-            if (node.data?.linkedSessionId === sessionId) {
-              const { linkedSessionId, ...restData } = node.data;
-              return { ...node, data: restData };
-            }
-            return node;
-          }),
-        },
-      }));
+    // Flush the latest sub-flow snapshot into every flow node that points at
+    // this session BEFORE removing it, so closing a tab never loses edits
+    // (the debounced sync may not have fired yet) — issue 3.
+    get().syncToLinkedFlowNodes(sessionId);
+
+    // Remove the session. We deliberately KEEP `linkedSessionId` on referencing
+    // flow nodes: closing a tab must NOT desolidarize flow nodes that share a
+    // sub-flow (issue 3). The live content lives on in their `code` snapshot
+    // (just synced above); re-opening any of them recreates the SAME session id
+    // (see openFlowNodeEditor) so they all re-link together.
+    const updatedSessions = get().sessions.filter(s => s.id !== sessionId);
 
     let newActiveSessionId = state.activeSessionId;
 

@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { Node, Edge } from 'reactflow';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
+import { formatDurationShort, type NodeRun } from '../../utils/execTiming';
+
+export interface SelectedRun { nodeId: string; idx: number; start: number; end: number }
 
 const HIDDEN_TYPES = new Set(['comment', 'variable']);
 export const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || '');
@@ -120,9 +123,12 @@ interface NodeItemProps {
   onSelect: (id: string | null) => void;
   relations: Record<string, NodeRelations>;
   statuses: Record<string, NodeExecStatus | undefined>;
+  runsByNode?: Map<string, NodeRun[]>;
+  selectedRun?: SelectedRun | null;
+  onSelectRun?: (nodeId: string, idx: number, run: NodeRun) => void;
 }
 
-function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }: NodeItemProps) {
+function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses, runsByNode, selectedRun, onSelectRun }: NodeItemProps) {
   const [expanded, setExpanded] = useState(true);
   const type = node.data?.type || 'javascript';
   const isFlow = type === 'flow';
@@ -155,6 +161,10 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
   );
 
   const rel = relations[node.id] || { preds: [], succs: [] };
+  // Run instances of this node (issue 1). >1 means the node was revisited
+  // (goto loop) or retried, and each visit is a separable instance.
+  const runs = runsByNode?.get(node.id) ?? [];
+  const multiRun = runs.length > 1 && !(isFlow && childNodes.length > 0);
 
   return (
     <div>
@@ -177,10 +187,37 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
         )}
         <NodeIcon type={type} />
         <span className="truncate flex-1 ml-1">{node.data?.label || node.id}</span>
+        {multiRun && (
+          <span
+            className="flex-shrink-0 text-[10px] leading-none px-1 py-0.5 rounded"
+            style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}
+            title={`${runs.length} run instances`}
+          >×{runs.length}</span>
+        )}
         <RelationBadge direction="in" items={rel.preds} />
         <RelationBadge direction="out" items={rel.succs} />
         <StatusIcon status={status} />
       </div>
+      {/* Per-instance run rows: one selectable child per visit (issue 1). */}
+      {multiRun && runs.map((run, idx) => {
+        const runSelected = !!selectedRun && selectedRun.nodeId === node.id && selectedRun.idx === idx;
+        return (
+          <div
+            key={`${node.id}#${idx}`}
+            className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm text-[11px] select-none
+              ${runSelected ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-400'}`}
+            style={{ paddingLeft: `${8 + (depth + 1) * 14}px` }}
+            onClick={(e) => { e.stopPropagation(); onSelectRun?.(node.id, idx, run); }}
+          >
+            <span className="w-3 h-3 flex-shrink-0" />
+            <StatusIcon status={run.hasError ? 'failed' : 'success'} />
+            <span className="truncate flex-1 ml-1">run {idx + 1}</span>
+            <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+              {formatDurationShort(run.end - run.start)}
+            </span>
+          </div>
+        );
+      })}
       {isFlow && expanded && childNodes.length > 0 && (
         <div>
           {topologicalSort(childNodes, childEdges).filter(isVisibleInTree).map((child: Node) => (
@@ -192,6 +229,9 @@ function NodeItemView({ node, depth, selectedId, onSelect, relations, statuses }
               onSelect={onSelect}
               relations={childRelations}
               statuses={statuses}
+              runsByNode={runsByNode}
+              selectedRun={selectedRun}
+              onSelectRun={onSelectRun}
             />
           ))}
         </div>
@@ -207,9 +247,13 @@ interface ExecutionNodeTreeProps {
   onSelect: (id: string | null) => void;
   /** Optional per-node status overlay (running/success/failed/etc.). */
   statuses?: Record<string, NodeExecStatus | undefined>;
+  /** Per-node run instances (issue 1) — renders ×N badge + selectable run rows. */
+  runsByNode?: Map<string, NodeRun[]>;
+  selectedRun?: SelectedRun | null;
+  onSelectRun?: (nodeId: string, idx: number, run: NodeRun) => void;
 }
 
-const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, selectedId, onSelect, statuses = {} }) => {
+const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, selectedId, onSelect, statuses = {}, runsByNode, selectedRun, onSelectRun }) => {
   const relations = useMemo(() => buildRelations(nodes, edges), [nodes, edges]);
   const visible = useMemo(() => topologicalSort(nodes, edges).filter(isVisibleInTree), [nodes, edges]);
 
@@ -240,6 +284,9 @@ const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, sel
             onSelect={onSelect}
             relations={relations}
             statuses={statuses}
+            runsByNode={runsByNode}
+            selectedRun={selectedRun}
+            onSelectRun={onSelectRun}
           />
         ))
       )}

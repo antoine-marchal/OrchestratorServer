@@ -18,11 +18,13 @@ import {
   ChevronsRight,
   RotateCw,
   Square,
-  CornerRightDown
+  CornerRightDown,
+  Link2
 } from 'lucide-react';
 import { NodeData } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
+import { useUIStore } from '../../store/uiStore';
 import { openFlowNodeEditor } from '../../store/flowNodeContent';
 import { pathUtils } from '../../utils/pathUtils';
 interface NodeHeaderProps {
@@ -68,6 +70,10 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
     const { navigateTo } = await openFlowNodeEditor({ id: nodeId, data }, sessionStore.activeSessionId);
     if (navigateTo) navigate(navigateTo);
   };
+
+  // Re-point a flow node at a different sub-flow AFTER creation (issue 3):
+  // opens the "Modify Flow Node" modal (same UI as Create Flow Node).
+  const setRepointNodeId = useUIStore(s => s.setRepointNodeId);
   return (
     <div className="p-4 border-b border-gray-700 dark:border-gray-300">
       <div className="flex items-center justify-between">
@@ -138,6 +144,15 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
               title={data.linkedSessionId ? "Switch to linked session" : "Create session from flow content"}
             >
               <Edit2 className="w-4 h-4 text-blue-500" />
+            </button>
+          )}
+          {data.type === 'flow' && (
+            <button
+              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+              onClick={() => setRepointNodeId(nodeId)}
+              title="Modify flow node — re-point to another session or flow"
+            >
+              <Link2 className="w-4 h-4 text-emerald-500" />
             </button>
           )}
           {data.type !== 'goto' && (

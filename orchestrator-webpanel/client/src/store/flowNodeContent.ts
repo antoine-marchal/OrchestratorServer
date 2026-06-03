@@ -1,6 +1,7 @@
 import { Node, Edge } from 'reactflow';
 import { useSessionStore } from './sessionStore';
 import { useFlowLibraryStore } from './flowLibraryStore';
+import { createDefaultFlowState } from './types';
 
 /**
  * Single home for everything about a `flow` node's reference to a sub-flow.
@@ -115,11 +116,8 @@ export async function openFlowNodeEditor(
     return {};
   }
 
-  // No (live) link — create a session hydrated from the embedded snapshot.
   const sessionName = data.label || 'Flow Session';
   const parentFlowId = store.getActiveSession()?.linkedFlowId;
-  const originalSessionId = currentSessionId ?? store.activeSessionId;
-  const newSessionId = await store.createSession(sessionName, parentFlowId); // switches active
 
   let parsed: { nodes: Node[]; edges: Edge[] } | null = null;
   if (typeof data.code === 'string' && data.code.trim()) {
@@ -130,6 +128,43 @@ export async function openFlowNodeEditor(
       console.error('Failed to parse flow content:', e);
     }
   }
+
+  // The node carries a linkedSessionId whose session no longer exists (e.g. the
+  // tab was closed). Recreate the session under the SAME id so EVERY other flow
+  // node that shared this sub-flow re-links to it automatically — closing a tab
+  // must not desolidarize shared flow nodes (issue 3).
+  if (data.linkedSessionId) {
+    const sid = data.linkedSessionId;
+    useSessionStore.setState(state => ({
+      sessions: [
+        ...state.sessions,
+        {
+          id: sid,
+          name: sessionName,
+          flowState: {
+            ...createDefaultFlowState(),
+            nodes: (parsed?.nodes || []).map(n => ({
+              ...n,
+              data: { ...n.data, output: undefined, executionTime: undefined },
+            })),
+            edges: parsed?.edges || [],
+            flowPath: `${sessionName}.or`,
+          },
+          createdAt: Date.now(),
+          lastActivity: Date.now(),
+          ...(parentFlowId ? { linkedFlowId: parentFlowId } : {}),
+        },
+      ],
+      activeSessionId: sid,
+    }));
+    store.saveSessions();
+    return {};
+  }
+
+  // No link at all — create a fresh session hydrated from the embedded snapshot
+  // and link it back to THIS node (the originating flow node).
+  const originalSessionId = currentSessionId ?? store.activeSessionId;
+  const newSessionId = await store.createSession(sessionName, parentFlowId); // switches active
 
   store.updateActiveFlowState({
     nodes: (parsed?.nodes || []).map(n => ({

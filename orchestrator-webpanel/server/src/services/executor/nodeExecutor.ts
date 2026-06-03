@@ -850,8 +850,12 @@ export function processJob(job: any): void {
 
   let execCwd = EXECUTION_DIR;
   try {
-    if (job.basePath && fs.existsSync(job.basePath)) execCwd = job.basePath;
-    else if (codeFilePath && fs.existsSync(path.dirname(codeFilePath))) execCwd = path.dirname(codeFilePath);
+    // Only honour an ABSOLUTE basePath. A flow-node sub-session has a bogus
+    // relative flowPath (e.g. "Flow Session.or"), whose dirname is "." — that
+    // would resolve against process.cwd() instead of ORCHESTRATOR_EXECUTION_DIR
+    // when running a node unitarily inside the sub-session tab (issue 5).
+    if (job.basePath && path.isAbsolute(job.basePath) && fs.existsSync(job.basePath)) execCwd = job.basePath;
+    else if (codeFilePath && path.isAbsolute(codeFilePath) && fs.existsSync(path.dirname(codeFilePath))) execCwd = path.dirname(codeFilePath);
   } catch { }
   if (!fs.existsSync(execCwd)) { try { fs.mkdirSync(execCwd, { recursive: true }); } catch { execCwd = WORK_DIR; } }
 

@@ -37,7 +37,7 @@ import { EditorLayout } from '../editor/EditorLayout';
 import ExecutionGraph from '../execution/ExecutionGraph';
 import ExecutionNodeTree from '../execution/ExecutionNodeTree';
 import ExecutionTimeline from '../execution/ExecutionTimeline';
-import { lastNodeDurations } from '../../utils/execTiming';
+import { lastNodeDurations, computeNodeRuns, type NodeRun } from '../../utils/execTiming';
 import { ansiToHtml } from '../../utils/ansiToHtml';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
@@ -178,6 +178,11 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // to entries with `nodeId === selectedNodeId`. Toggle off by clicking the
   // same node again or hitting "clear".
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // A specific run-instance of a node (issue 1). When a node executes more than
+  // once (goto loop / retry), each visit is a distinct instance; selecting one
+  // scopes the log pane to that run's time window so the two A's in A->B->A->C
+  // no longer collapse together.
+  const [selectedRun, setSelectedRun] = useState<{ nodeId: string; idx: number; start: number; end: number } | null>(null);
   // Live per-node execution status (fed by the SSE stream inside ExecutionGraph)
   // so the node tree shows the same running/retrying/success/error colour code.
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, any>>({});
@@ -194,6 +199,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // carry stale selections from a different flow snapshot.
   useEffect(() => {
     setSelectedNodeId(null);
+    setSelectedRun(null);
     setCollapsedFlowNodes(new Set());
   }, [selectedId]);
 
@@ -243,6 +249,14 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // (The timeline panel derives its own per-run segments from the log stream.)
   const nodeDurations = useMemo(
     () => (selectedExec ? lastNodeDurations(selectedExec.logs) : {}),
+    [selectedExec?.id, selectedExec?.logs],
+  );
+
+  // Per-node run instances derived from the log stream (input markers open a new
+  // run; see computeNodeRuns). Drives the node tree's per-instance children and
+  // the ×N badge so revisited nodes are separable (issue 1).
+  const runsByNode = useMemo(
+    () => (selectedExec ? computeNodeRuns(selectedExec.logs) : new Map<string, NodeRun[]>()),
     [selectedExec?.id, selectedExec?.logs],
   );
 
@@ -490,9 +504,14 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               const nodeFilteredLogs = selectedNodeId
                 ? selectedExec.logs.filter(l => matchSelected(l.nodeId))
                 : selectedExec.logs;
-              const typedLogs = hiddenTypes.size > 0
-                ? nodeFilteredLogs.filter(l => !hiddenTypes.has(l.type))
+              // When a specific run-instance is selected, scope to that node's
+              // logs within the run's time window (issue 1).
+              const runFilteredLogs = selectedRun
+                ? nodeFilteredLogs.filter(l => l.nodeId === selectedRun.nodeId && l.timestamp >= selectedRun.start && l.timestamp <= selectedRun.end)
                 : nodeFilteredLogs;
+              const typedLogs = hiddenTypes.size > 0
+                ? runFilteredLogs.filter(l => !hiddenTypes.has(l.type))
+                : runFilteredLogs;
               // Hide entries whose ancestor flow-node is collapsed.
               const visibleLogs = collapsedFlowNodes.size > 0
                 ? typedLogs.filter(l => {
@@ -555,8 +574,18 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                             nodes={execNodes}
                             edges={execEdges}
                             selectedId={selectedNodeId}
-                            onSelect={setSelectedNodeId}
+                            onSelect={(id) => { setSelectedNodeId(id); setSelectedRun(null); }}
                             statuses={nodeStatuses}
+                            runsByNode={runsByNode}
+                            selectedRun={selectedRun}
+                            onSelectRun={(nodeId, idx, run) => {
+                              if (selectedRun && selectedRun.nodeId === nodeId && selectedRun.idx === idx) {
+                                setSelectedRun(null);
+                              } else {
+                                setSelectedNodeId(nodeId);
+                                setSelectedRun({ nodeId, idx, start: run.start, end: run.end });
+                              }
+                            }}
                           />
                         </div>
                         <ResizeHandleV width={nodeTreeWidth} setWidth={setNodeTreeWidth} />
@@ -573,8 +602,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                           <>
                             <span style={{ color: 'var(--text-3)' }}>Node:</span>
                             <code style={{ color: 'var(--accent)' }}>{nodeNameMap.get(selectedNodeId) ?? selectedNodeId}</code>
+                            {selectedRun && (
+                              <code style={{ color: 'var(--warn)' }}>
+                                · run {selectedRun.idx + 1}/{(runsByNode.get(selectedRun.nodeId) ?? []).length}
+                              </code>
+                            )}
                             <button
-                              onClick={() => setSelectedNodeId(null)}
+                              onClick={() => { setSelectedNodeId(null); setSelectedRun(null); }}
                               style={{ color: 'var(--text-3)', background: 'none', border: '1px solid var(--border)', cursor: 'pointer', fontSize: 10, padding: '0px 5px', borderRadius: 3 }}
                             >clear</button>
                           </>

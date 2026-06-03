@@ -146,7 +146,15 @@ export async function executeFlow(
   const MAX_VISITS_PER_NODE = 1000;
   const MAX_STEPS = 1000;
 
-  const ensureExecuted = async (nodeId: string, force = false): Promise<void> => {
+  // Normalize a goto rule's `goto` field (string | string[]) into a target id
+  // array. Empty strings filtered out.
+  const gotoTargets = (g: any): string[] =>
+    (Array.isArray(g) ? g : g ? [g] : []).filter((t: any) => typeof t === 'string' && t);
+
+  // `skipPreds`: when a goto jumps to a target we execute the target WITHOUT
+  // recursively executing its graph predecessors — jumping to D in
+  // `A->Goto(D)` plus `B->C->D->E` must NOT run B and C (issue 2).
+  const ensureExecuted = async (nodeId: string, force = false, skipPreds = false): Promise<void> => {
     if (executing.has(nodeId)) return;
     if (executed.has(nodeId) && !force) return;
 
@@ -155,9 +163,11 @@ export async function executeFlow(
 
     executing.add(nodeId);
 
-    // predecessors first
-    const preds = incoming(nodeId).map(e => e.source);
-    for (const p of preds) await ensureExecuted(p, false);
+    // predecessors first (skipped for goto jump targets)
+    if (!skipPreds) {
+      const preds = incoming(nodeId).map(e => e.source);
+      for (const p of preds) await ensureExecuted(p, false);
+    }
 
     if (node.data?.type === 'goto') {
       // 1) If a previous goto forwarded an input, prefer it
@@ -198,7 +208,8 @@ export async function executeFlow(
 
       // 3) Evaluate rules and capture per-rule forward flag
       const rules = Array.isArray(node.data?.conditions) ? node.data.conditions : [];
-      let decision: string | null = null;
+      // A condition may target a single node OR an array of nodes (issue 4).
+      let decision: string | string[] | null = null;
       let forward = false;
 
       // Collect variables from all Variable nodes for condition evaluation
@@ -206,7 +217,7 @@ export async function executeFlow(
       const gotoVariables = collectVariables(activeFlowState.nodes);
 
       for (const r of rules) {
-        if (r?.expr && r?.goto) {
+        if (r?.expr && gotoTargets(r?.goto).length) {
           if (evalGotoExpr(r.expr, processedInputs, gotoVariables)) {
             decision = r.goto;
             forward = !!r.forwardInput; // per-condition forwarding
@@ -223,12 +234,13 @@ export async function executeFlow(
         ),
       });
 
-      // 5) If the matched rule says so, forward the input to the jump target
-      if (decision && forward) {
+      // 5) If the matched rule says so, forward the input to ALL jump targets
+      const decisionTargets = gotoTargets(decision);
+      if (decisionTargets.length && forward) {
         activeFlowState = sessionStore().getActiveFlowState()!;
         updateFlowState({
           nodes: activeFlowState.nodes.map(n =>
-            n.id === decision ? { ...n, data: { ...n.data, _injectedInput: processedInputs } } : n
+            decisionTargets.includes(n.id) ? { ...n, data: { ...n.data, _injectedInput: processedInputs } } : n
           ),
         });
       }
@@ -318,12 +330,16 @@ export async function executeFlow(
     if (!n) return;
 
     if (n.data?.type === 'goto') {
-      const decision = n.data.gotoDecision;
+      const targets = gotoTargets(n.data.gotoDecision);
 
-      if (decision) {
-        // Re-run the jump target so loops and cross-branch jumps recompute
-        await ensureExecuted(decision, true);
-        await stepTo(decision, stepBudget);
+      if (targets.length) {
+        // Re-run each jump target so loops and cross-branch jumps recompute.
+        // skipPreds=true: a goto jump must not drag in the target's graph
+        // predecessors (issue 2).
+        for (const t of targets) {
+          await ensureExecuted(t, true, true);
+          await stepTo(t, stepBudget);
+        }
         return;
       }
 
