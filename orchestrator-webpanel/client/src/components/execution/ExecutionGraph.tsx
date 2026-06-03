@@ -298,22 +298,38 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
   const rfInstance = useRef<ReactFlowInstance | null>(null);
+  // Cache of built rf-nodes by id + content signature. Status/duration updates
+  // arrive in bursts (SSE + 3s poll); rebuilding every node object each burst
+  // makes ReactFlow re-mount/re-measure the whole graph, and an interrupted
+  // measure can leave some nodes unpainted until something forces them to
+  // re-render (e.g. selecting one). Reusing the SAME object reference for nodes
+  // whose visible state is unchanged keeps them mounted and painted from the
+  // start. See `nodeSig` below for what counts as a change.
+  const nodeCache = useRef<Map<string, { sig: string; node: any }>>(new Map());
 
   useEffect(() => {
     setNodeStatuses({});
     setExpanded({});
+    nodeCache.current.clear();
   }, [executionId]);
 
-  // Re-fit the viewport whenever the *set* of nodes changes (switching execution,
-  // or the flow definition arriving late on a deep link). Without this, ReactFlow
-  // keeps the previous pan/zoom and part of a larger graph stays off-screen — the
-  // classic "I don't see all the nodes" after opening a cron/trigger execution.
-  const nodeIdKey = useMemo(() => rfNodes.map(n => n.id).join('|'), [rfNodes]);
+  // Re-fit the viewport whenever the node set OR the layout extent changes —
+  // switching execution, the flow definition arriving late on a deep link, or a
+  // flow node being expanded (which grows the graph). Without this, ReactFlow
+  // keeps the previous pan/zoom and part of a larger graph stays off-screen —
+  // the classic "I don't see all the nodes" after opening a cron/trigger run.
+  // The fit signature includes each node's position so expansion re-fits too.
+  const fitKey = useMemo(
+    () => rfNodes.map(n => `${n.id}@${Math.round(n.position?.x ?? 0)},${Math.round(n.position?.y ?? 0)}`).join('|'),
+    [rfNodes],
+  );
   useEffect(() => {
     if (!rfInstance.current || rfNodes.length === 0) return;
-    const id = requestAnimationFrame(() => rfInstance.current?.fitView({ padding: 0.18 }));
+    // minZoom mirrors the ReactFlow prop below so fitView can shrink far enough
+    // to bring every node (including un-executed peripheral branches) on-screen.
+    const id = requestAnimationFrame(() => rfInstance.current?.fitView({ padding: 0.18, minZoom: 0.05 }));
     return () => cancelAnimationFrame(id);
-  }, [nodeIdKey]);
+  }, [fitKey]);
 
   // Track every flow library entry so a flowRef-style flow node (whose `code`
   // is empty and `flowRef` points at another flow by id) can still expand to
@@ -402,10 +418,11 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
       }
 
       const nodeId = n.id;
-      return {
+      const position = computedPositions.get(nodeId) ?? { x: i * 264, y: 0 };
+      const built = {
         id: nodeId,
         type: 'execution',
-        position: computedPositions.get(nodeId) ?? { x: i * 264, y: 0 },
+        position,
         data: {
           ...n.data,
           type: n.data?.type,
@@ -425,7 +442,26 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         } as ExecutionNodeData,
         draggable: false,
       };
+
+      // Everything that affects how the node renders. Callbacks are excluded —
+      // they're re-created each pass but behave identically, and the only
+      // selection case that needs a fresh closure (clicking the *selected* node
+      // to deselect) already changes `isSelected`, busting the cache.
+      const sig = JSON.stringify([
+        position.x, position.y, status, attempt ?? null,
+        nodeDurations?.[nodeId] ?? null, selectedNodeId === nodeId,
+        !!expanded[nodeId], hasInner,
+        innerChildren?.map(c => [c.id, c.status, c.attempt ?? null, c.durationMs ?? null]) ?? null,
+        n.data?.label ?? null, n.data?.type ?? null,
+      ]);
+      const cached = nodeCache.current.get(nodeId);
+      if (cached && cached.sig === sig) return cached.node;
+      nodeCache.current.set(nodeId, { sig, node: built });
+      return built;
     });
+    // Drop cache entries for nodes no longer present (execution switch).
+    const liveIds = new Set(mapped.map(m => m.id));
+    for (const id of [...nodeCache.current.keys()]) if (!liveIds.has(id)) nodeCache.current.delete(id);
     setRfNodes(mapped);
   }, [visibleNodes, nodeStatuses, expanded, innerByParent, computedPositions, selectedNodeId, nodeDurations]);
 
@@ -526,7 +562,8 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
         onInit={inst => { rfInstance.current = inst; }}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ padding: 0.18 }}
+        fitViewOptions={{ padding: 0.18, minZoom: 0.05 }}
+        minZoom={0.05}
         nodesDraggable={false}
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}

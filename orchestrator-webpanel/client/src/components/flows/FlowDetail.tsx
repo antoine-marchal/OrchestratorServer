@@ -248,6 +248,15 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     [selectedExec, flow.edges],
   );
 
+  // Stable identity for the graph's flow definition. Without this the inline
+  // object was new on every render (the exec list polls every 3s, SSE pushes
+  // status constantly), forcing ExecutionGraph to rebuild its whole node set
+  // each time — which is what made some nodes intermittently not paint.
+  const graphDefinition = useMemo(
+    () => ({ nodes: execNodes, edges: execEdges }),
+    [execNodes, execEdges],
+  );
+
   // Per-node duration (ms) of the LATEST run — fed to the execution graph badge.
   // (The timeline panel derives its own per-run segments from the log stream.)
   const nodeDurations = useMemo(
@@ -525,7 +534,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                       <div style={{ height: graphHeight, background: 'var(--bg-2)' }}>
                         <ExecutionGraph
                           executionId={selectedExec.id}
-                          flowDefinition={{ nodes: execNodes, edges: execEdges }}
+                          flowDefinition={graphDefinition}
                           selectedNodeId={selectedNodeId}
                           onNodeSelect={id => setSelectedNodeId(id)}
                           onStatusesChange={setNodeStatuses}
