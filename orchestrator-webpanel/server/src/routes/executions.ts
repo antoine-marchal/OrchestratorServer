@@ -46,8 +46,14 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// Bulk clear (all executions, or all for one flow). Destructive and global —
+// admins only. Operators/viewers must delete executions individually via
+// DELETE /:id (operators only their own).
 router.delete('/', async (req: Request, res: Response) => {
   try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins can clear execution history' } }) as any;
+    }
     const execsCol = getCollection('executions');
     const flowsCol = getCollection('flows');
     const flowId = req.query.flowId ? String(req.query.flowId) : null;
@@ -68,6 +74,49 @@ router.delete('/', async (req: Request, res: Response) => {
     }
 
     res.json({ deleted: removed });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Delete a single execution. Admins may delete any; operators may delete only
+// executions they themselves triggered (exec.triggeredUser === their login);
+// viewers may delete none. Cron/api/event runs have triggeredUser=null, so only
+// an admin can remove those.
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const execsCol = getCollection('executions');
+    const flowsCol = getCollection('flows');
+    const exec = await execsCol.findOne({ _id: req.params.id });
+    if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } }) as any;
+
+    const role = req.user?.role;
+    const isAdmin = role === 'admin';
+    const isAuthor = !!req.user?.login && exec.triggeredUser === req.user.login;
+    if (!isAdmin && !(role === 'operator' && isAuthor)) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'You can only delete executions you triggered' } }) as any;
+    }
+
+    // Don't yank a running execution out from under the executor — kill first.
+    if (exec.status === 'RUNNING') {
+      return res.status(409).json({ error: { code: 'CONFLICT', message: 'Cannot delete a running execution — kill it first' } }) as any;
+    }
+
+    if (exec.jobId) jobLogBuffers.delete(exec.jobId);
+    await execsCol.remove({ _id: exec._id });
+
+    // If the flow's lastExecution pointer referenced this row, repoint it to the
+    // most recent surviving execution for that flow (or null when none remain).
+    const flow = await flowsCol.findOne({ _id: exec.flowId });
+    if (flow && flow.lastExecution && flow.lastExecution.id === exec._id) {
+      const [latest] = await execsCol.find({ flowId: exec.flowId }, { sort: { startTime: -1 }, limit: 1 });
+      const lastExecution = latest
+        ? { id: latest._id, status: latest.status, startTime: latest.startTime, endTime: latest.endTime, duration: latest.duration }
+        : null;
+      await flowsCol.update({ _id: exec.flowId }, { $set: { lastExecution } });
+    }
+
+    res.json({ deleted: 1 });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }

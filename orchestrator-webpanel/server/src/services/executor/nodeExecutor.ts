@@ -5,6 +5,17 @@ import os from 'os';
 import { createRequire } from 'module';
 import kill from 'tree-kill';
 
+// Build a single shell command line from an executable + args.
+// `spawn(cmd, args, { shell: true })` is deprecated (Node DEP0190): the args
+// array is concatenated into the shell line unescaped. We keep shell:true (it
+// gives us Windows PATH/PATHEXT resolution for `python`/`java`/`powershell`)
+// but pass one pre-quoted string instead, which also fixes paths with spaces.
+function toShellCommand(cmd: string, args: string[]): string {
+  const quote = (a: string) =>
+    a === '' || /[\s"&|<>^()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a;
+  return [cmd, ...args].map(quote).join(' ');
+}
+
 // Resolve a bare ESM specifier (e.g. `playwright`) to an absolute file URL
 // using every node_modules anchor we know about. Node's ESM resolver walks
 // up only from the script directory, so scripts written to <WORK_DIR>/inbox
@@ -649,7 +660,7 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
   try { fs.writeFileSync(tempGroovyPath, groovyCode, 'utf8'); }
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
 
-  const child = spawn('java', ['-jar', resolveGroovyJar(), tempGroovyPath, 'lib'], { cwd: execCwd, shell: true });
+  const child = spawn(toShellCommand('java', ['-jar', resolveGroovyJar(), tempGroovyPath, 'lib']), { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
   child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
   child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
@@ -781,7 +792,10 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
   const psCode = `${variableLoading}\n$env:INPUT="${inputVar}"\n$env:OUTPUT="${tempOutputPath}"\n${code}\n${variableCapture}\n`;
   try { fs.writeFileSync(tempPs1Path, psCode, 'utf8'); }
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
-  const child = spawn('powershell', ['-ExecutionPolicy', 'Bypass', '-File', tempPs1Path], { cwd: execCwd, shell: true });
+  // Match the worker: real PowerShell Core (`pwsh`) off Windows, Windows
+  // PowerShell on Windows, and run non-interactively so a prompt can't hang.
+  const psExe = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
+  const child = spawn(toShellCommand(psExe, ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tempPs1Path]), { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
   child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
   child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
@@ -819,7 +833,7 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
   const pythonCode = `import json\nwith open('${ip}', 'r') as __f:\n    input = json.load(__f)\nwith open('${vp}', 'r') as __f:\n    __variables = json.load(__f)\n${variableLoading}\noutput = None\n${code}\n${variableCapture}\nwith open('${op}', 'w') as __f:\n    json.dump(output, __f)\n`;
   try { fs.writeFileSync(tempPyPath, pythonCode, 'utf8'); }
   catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
-  const child = spawn('python', [tempPyPath], { cwd: execCwd, shell: true });
+  const child = spawn(toShellCommand('python', [tempPyPath]), { cwd: execCwd, shell: true });
   let stdout = '', stderr = '';
   child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
   child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
@@ -835,6 +849,46 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
     finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: modifiedVariables });
   });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempPyPath); safeUnlinkSync(tempInputPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
+  registerProcess(id, child);
+  const si = setInterval(() => { if (shouldStopJob(id, jobId)) { clearInterval(si); terminateProcess(id); cleanupStopSignal(id); finish({ output: null, log: 'Process terminated', error: 'Process terminated by user', variables: {} }); } }, STOP_CHECK_INTERVAL_MS);
+  child.on('exit', () => clearInterval(si));
+}
+
+function processShellNode(id: string, code: string, input: any, finish: FinishFn, _codeFilePath: string | null, execCwd: string, variables: Record<string, any> = {}, jobId: string | null = null, flowNodeId: string | null = null, flowNodeScope: string | null = null): void {
+  const emitNodeId = flowNodeId || id;
+  // Mirrors the worker's runShell: Unix-only; on Windows use Powershell/Batch.
+  if (process.platform === 'win32') {
+    finish({ output: null, log: null, error: 'Shell nodes are not supported on Windows — use Powershell or Batch instead', variables: {} });
+    return;
+  }
+  const uid = nowUid();
+  const tempShPath = path.join(INBOX, `node_sh_${uid}.sh`);
+  const tempOutputPath = path.join(INBOX, `node_sh_${uid}.output`);
+
+  const varExports = Object.entries(variables)
+    .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+    .map(([name, val]) => `export ${name}=${JSON.stringify(String(val))}`)
+    .join('\n');
+  const shellCode = `#!/usr/bin/env bash\nset -e\n${varExports}\nexport INPUT=${JSON.stringify(String(input ?? ''))}\nexport OUTPUT=${JSON.stringify(tempOutputPath)}\n${code}\n`;
+
+  try { fs.writeFileSync(tempShPath, shellCode, 'utf8'); }
+  catch (err: any) { finish({ output: null, log: null, error: err.message, variables: {} }); return; }
+  try { fs.chmodSync(tempShPath, '755'); } catch { }
+
+  const child = spawn('bash', [tempShPath], { cwd: execCwd, shell: false });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', (d: Buffer) => { const t = d.toString(); stdout += t; if (jobId) emitJobLog(jobId, 'log', t, emitNodeId, flowNodeScope); });
+  child.stderr.on('data', (d: Buffer) => { const t = d.toString(); stderr += t; if (jobId) emitJobLog(jobId, 'error', t, emitNodeId, flowNodeScope); });
+  child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempShPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
+  child.on('close', (exitCode: number | null) => {
+    runningProcesses.delete(id); safeUnlinkSync(tempShPath);
+    let outputValue: any = null;
+    try { if (fs.existsSync(tempOutputPath)) { outputValue = fs.readFileSync(tempOutputPath, 'utf8').trim(); safeUnlinkSync(tempOutputPath); } } catch { }
+    if (!outputValue && stdout) outputValue = stdout.trim();
+    if (typeof outputValue === 'string') { try { outputValue = JSON.parse(outputValue); } catch { } }
+    outputValue = normalizeOutput(outputValue);
+    finish({ log: stdout.trim() || null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '')).trim() || null, output: outputValue, variables: {} });
+  });
   registerProcess(id, child);
   const si = setInterval(() => { if (shouldStopJob(id, jobId)) { clearInterval(si); terminateProcess(id); cleanupStopSignal(id); finish({ output: null, log: 'Process terminated', error: 'Process terminated by user', variables: {} }); } }, STOP_CHECK_INTERVAL_MS);
   child.on('exit', () => clearInterval(si));
@@ -969,6 +1023,8 @@ export function processJob(job: any): void {
     processPowershellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else if (type === 'python') {
     processPythonNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
+  } else if (type === 'shell' || type === 'bash') {
+    processShellNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   } else {
     processJsNode(jobId, code, job.input, finish, codeFilePath, execCwd, vars, job.execId || jobId, job.nodeId || null, job.parentScope || null);
   }

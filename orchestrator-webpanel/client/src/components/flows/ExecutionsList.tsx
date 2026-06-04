@@ -31,8 +31,14 @@ const CHIP_LABELS: Record<string, string> = {
 
 const ExecutionsList: React.FC = () => {
   const navigate = useNavigate();
-  const { executions, killExecution, clearExecutions, syncBackendExecutions, executeFlow } = useFlowLibraryStore();
-  const { canEdit } = useAuth();
+  const { executions, killExecution, clearExecutions, deleteExecution, syncBackendExecutions, executeFlow } = useFlowLibraryStore();
+  const { canEdit, isAdmin, role, login } = useAuth();
+
+  // Who may delete a single execution: admins delete any; operators delete only
+  // the ones they triggered (exec.triggeredUser === their login). Mirrors the
+  // server-side rule in routes/executions.ts.
+  const canDeleteExec = (exec: { triggeredUser?: string | null; status: ExecutionStatus }) =>
+    exec.status !== 'RUNNING' && (isAdmin || (role === 'operator' && !!login && exec.triggeredUser === login));
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ExecutionStatus | 'ALL'>('ALL');
@@ -40,6 +46,15 @@ const ExecutionsList: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [rerunningId, setRerunningId] = useState<string | null>(null);
+
+  const handleDelete = async (execId: string) => {
+    if (!confirm('Delete this execution? This cannot be undone.')) return;
+    try {
+      await deleteExecution(execId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
 
   const handleRerun = async (flowId: string, fromId: string) => {
     setRerunningId(fromId);
@@ -98,7 +113,7 @@ const ExecutionsList: React.FC = () => {
           </span>
         </div>
         <div className="tc-toolbar">
-          {canEdit && (
+          {isAdmin && (
             <button
               className={`tc-btn${clearConfirm ? ' danger' : ''}`}
               onClick={() => {
@@ -238,6 +253,15 @@ const ExecutionsList: React.FC = () => {
                             title="Re-run flow"
                           >
                             {rerunningId === exec.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          </button>
+                        )}
+                        {canDeleteExec(exec) && (
+                          <button
+                            className="tc-icon-btn danger"
+                            onClick={() => handleDelete(exec.id)}
+                            title="Delete execution"
+                          >
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </div>

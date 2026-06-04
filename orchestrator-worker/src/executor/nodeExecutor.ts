@@ -5,6 +5,18 @@ import os from 'os';
 import { createRequire } from 'module';
 import kill from 'tree-kill';
 
+// Build a single shell command line from an executable + args.
+// `spawn(cmd, args, { shell: true })` is deprecated (Node DEP0190): the args
+// array is concatenated into the shell line unescaped. When we need a shell
+// (Windows PATH/PATHEXT lookup of `python`/`java`/`powershell`) we pass one
+// pre-quoted string instead, which also fixes paths containing spaces.
+// Mirrors server's nodeExecutor.toShellCommand.
+function toShellCommand(cmd: string, args: string[]): string {
+  const quote = (a: string) =>
+    a === '' || /[\s"&|<>^()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a;
+  return [cmd, ...args].map(quote).join(' ');
+}
+
 // Resolve a bare module specifier (e.g. `playwright`) to an absolute file URL,
 // trying every node_modules anchor we know about. Node ESM walks up only from
 // the script's directory, so scripts written to WORK_DIR/inbox can't resolve
@@ -188,11 +200,18 @@ interface RunOpts {
 
 function runProcess(cmd: string, args: string[], opts: RunOpts): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, {
-      cwd: opts.cwd || EXECUTION_DIR,
-      env: { ...process.env, ...opts.env },
-      shell: opts.shell ?? false,
-    });
+    const useShell = opts.shell ?? false;
+    const child = useShell
+      ? spawn(toShellCommand(cmd, args), {
+          cwd: opts.cwd || EXECUTION_DIR,
+          env: { ...process.env, ...opts.env },
+          shell: true,
+        })
+      : spawn(cmd, args, {
+          cwd: opts.cwd || EXECUTION_DIR,
+          env: { ...process.env, ...opts.env },
+          shell: false,
+        });
 
     let stdout = '';
     let stderr = '';

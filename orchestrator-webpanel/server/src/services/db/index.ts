@@ -77,6 +77,64 @@ class MongoCollection implements ICollection {
 
 /* ─── NeDB wrapper ───────────────────────────────────────────────────────── */
 
+/*
+ * NeDB forbids field names that contain '.' or start with '$' — even in nested
+ * *data* values (see @seald-io/nedb lib/model.js checkKey). Node outputs are
+ * arbitrary, so a payload like {"M26.1": 1} crashes the datastore on write.
+ * We transparently escape offending keys before persisting and restore them on
+ * read using fullwidth substitutes (U+FF0E '．', U+FF04 '＄'). Mongo is left
+ * untouched: it accepts these keys natively.
+ */
+const NEDB_DOT = '．';
+const NEDB_DOLLAR = '＄';
+
+function escapeKey(k: string): string {
+  let r = k.replace(/\./g, NEDB_DOT);
+  if (r.startsWith('$')) r = NEDB_DOLLAR + r.slice(1);
+  return r;
+}
+
+function unescapeKey(k: string): string {
+  let r = k;
+  if (r.startsWith(NEDB_DOLLAR)) r = '$' + r.slice(1);
+  return r.replace(new RegExp(NEDB_DOT, 'g'), '.');
+}
+
+function mapKeysDeep(value: any, fn: (k: string) => string): any {
+  if (Array.isArray(value)) return value.map((v) => mapKeysDeep(v, fn));
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) out[fn(k)] = mapKeysDeep(v, fn);
+    return out;
+  }
+  return value;
+}
+
+const escapeDoc = (doc: any) => mapKeysDeep(doc, escapeKey);
+const unescapeDoc = (doc: any) => mapKeysDeep(doc, unescapeKey);
+
+/*
+ * Updates carry modifier operators ($set, $unset, …) at the top level whose
+ * immediate keys are field *paths* — those must stay intact. Only the values
+ * being written are arbitrary data, so we escape just those.
+ */
+function escapeUpdate(update: any): any {
+  if (!update || typeof update !== 'object') return update;
+  const ops = Object.keys(update).filter((k) => k.startsWith('$'));
+  if (ops.length === 0) return escapeDoc(update); // full-document replacement
+  const out: any = {};
+  for (const [op, val] of Object.entries(update)) {
+    if (op === '$unset' || !val || typeof val !== 'object' || Array.isArray(val)) {
+      out[op] = val; // $unset values are flags; field paths preserved
+      continue;
+    }
+    const inner: any = {};
+    for (const [field, fv] of Object.entries(val)) inner[field] = escapeDoc(fv);
+    out[op] = inner;
+  }
+  return out;
+}
+
 function promisify<T>(fn: Function, ...args: any[]): Promise<T> {
   return new Promise((resolve, reject) => {
     fn(...args, (err: any, result: T) => {
@@ -95,21 +153,23 @@ class NeDBCollection implements ICollection {
       if (options.sort) cursor = cursor.sort(options.sort);
       if (options.skip) cursor = cursor.skip(options.skip);
       if (options.limit) cursor = cursor.limit(options.limit);
-      cursor.exec((err: any, docs: any[]) => err ? reject(err) : resolve(docs));
+      cursor.exec((err: any, docs: any[]) => err ? reject(err) : resolve(docs.map(unescapeDoc)));
     });
   }
 
-  findOne(query: object): Promise<any | null> {
-    return promisify(this.ds.findOne.bind(this.ds), query);
+  async findOne(query: object): Promise<any | null> {
+    const doc = await promisify<any>(this.ds.findOne.bind(this.ds), query);
+    return doc ? unescapeDoc(doc) : null;
   }
 
-  insert(doc: object): Promise<any> {
-    return promisify(this.ds.insert.bind(this.ds), doc);
+  async insert(doc: object): Promise<any> {
+    const saved = await promisify<any>(this.ds.insert.bind(this.ds), escapeDoc(doc));
+    return unescapeDoc(saved);
   }
 
   update(query: object, update: object, options: object = {}): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.ds.update(query, update, options, (err: any, n: number) => {
+      this.ds.update(query, escapeUpdate(update), options, (err: any, n: number) => {
         if (err) reject(err); else resolve(n);
       });
     });

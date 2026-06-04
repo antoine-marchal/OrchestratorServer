@@ -11,6 +11,21 @@ const KEEP_ARTIFACTS = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
 
 const REMOTE_TYPES = new Set(['powershell', 'batch', 'python', 'groovy', 'jsbackend', 'shell', 'bash']);
 
+// How the server schedules top-level flow executions. Mirrors the worker's
+// WORKER_EXECUTION_MODE (see orchestrator-worker/src/agent.ts):
+//   'parallel'   (default) — every triggered flow run starts immediately, so
+//                 multiple flow executions run concurrently in-process.
+//   'sequential' — flow runs are serialized: each waits for the previous one to
+//                 finish before its job is dispatched. Within a single flow,
+//                 node traversal is already sequential (DFS) regardless of mode.
+const SERVER_EXECUTION_MODE: 'parallel' | 'sequential' =
+  (process.env.SERVER_EXECUTION_MODE || 'parallel').toLowerCase() === 'sequential' ? 'sequential' : 'parallel';
+
+// Promise chain used to serialize flow executions in sequential mode. Each new
+// run is appended; it only starts once the previous link resolves. `.catch`
+// keeps the chain alive even if a link ever rejects.
+let executionChain: Promise<void> = Promise.resolve();
+
 export function parseFlowContent(flowContent: string): any {
   let flow: any;
   try { flow = JSON.parse(flowContent); } catch (e: any) { throw new Error(`Invalid JSON in flow content: ${e.message}`); }
@@ -696,11 +711,14 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   jobs.set(jobId, job);
   await execsCol.update({ _id: executionId }, { $set: { jobId } });
 
+  // Start the job and resolve once it reaches a terminal state. In sequential
+  // mode this promise is what the next queued flow waits on.
+  const runFlow = (): Promise<void> => new Promise<void>((resolveRun) => {
   setTimeout(() => processJob(job), 0);
 
   const monitor = setInterval(async () => {
     const j = jobs.get(jobId);
-    if (!j) { clearInterval(monitor); return; }
+    if (!j) { clearInterval(monitor); resolveRun(); return; }
     if (!['completed', 'failed', 'stopped'].includes(j.status)) return;
     clearInterval(monitor);
 
@@ -756,7 +774,16 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
       executionNodeStatuses.delete(jobId);
       executionNodeStatuses.delete(executionId);
     }, 60_000);
+    resolveRun();
   }, 1000);
+  });
+
+  // Sequential: queue behind any in-flight run. Parallel: fire immediately.
+  if (SERVER_EXECUTION_MODE === 'sequential') {
+    executionChain = executionChain.catch(() => {}).then(runFlow);
+  } else {
+    runFlow();
+  }
 
   return executionId;
 }

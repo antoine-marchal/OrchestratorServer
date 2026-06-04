@@ -94,6 +94,7 @@ interface FlowLibraryState {
   killExecution: (execId: string) => Promise<void>;
   renameExecution: (execId: string, displayName: string) => void;
   clearExecutions: (flowId?: string) => Promise<void>;
+  deleteExecution: (execId: string) => Promise<void>;
   resumePolling: () => void;
 
   startScheduler: () => void;
@@ -393,6 +394,32 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         persistFlows(getFlows().map(f => f.id === flowId ? { ...f, lastExecution: null } : f));
       } else {
         persistFlows(getFlows().map(f => ({ ...f, lastExecution: null })));
+      }
+    },
+
+    deleteExecution: async (execId) => {
+      const exec = getExecs().find(e => e.id === execId);
+      if (!exec) return;
+      // Backend is authoritative: it enforces the role/author rules and may
+      // reject with 403 (not your execution) or 409 (still running). Let the
+      // error propagate so the caller can surface it; only touch local state
+      // once the server confirms the delete.
+      await apiClient.delete(`/api/v1/executions/${encodeURIComponent(execId)}`);
+      stopPoll(execId);
+      const remaining = getExecs().filter(e => e.id !== execId);
+      persistExecs(remaining);
+
+      // Repoint the flow's lastExecution if it pointed at the deleted row.
+      const flow = getFlows().find(f => f.id === exec.flowId);
+      if (flow && flow.lastExecution && flow.lastExecution.id === execId) {
+        const latest = remaining
+          .filter(e => e.flowId === exec.flowId)
+          .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())[0];
+        persistFlows(getFlows().map(f => f.id === exec.flowId
+          ? { ...f, lastExecution: latest
+              ? { id: latest.id, status: latest.status, startTime: latest.startTime, endTime: latest.endTime, duration: latest.duration }
+              : null }
+          : f));
       }
     },
 

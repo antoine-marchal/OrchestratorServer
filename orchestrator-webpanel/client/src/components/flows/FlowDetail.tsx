@@ -165,9 +165,24 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   onSelectExec,
 }) => {
   const flowId = flow.id;
-  const { executions, killExecution, clearExecutions, renameExecution, syncBackendExecutions, flows } = useFlowLibraryStore();
-  const { canEdit } = useAuth();
+  const { executions, killExecution, clearExecutions, deleteExecution, renameExecution, syncBackendExecutions, flows } = useFlowLibraryStore();
+  const { canEdit, isAdmin, role, login } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
+
+  // Admins delete any execution; operators only ones they triggered. Mirrors
+  // the server rule in routes/executions.ts.
+  const canDeleteExec = (exec: { triggeredUser?: string | null; status: string }) =>
+    exec.status !== 'RUNNING' && (isAdmin || (role === 'operator' && !!login && exec.triggeredUser === login));
+
+  const handleDeleteExec = async (execId: string) => {
+    if (!confirm('Delete this execution? This cannot be undone.')) return;
+    try {
+      await deleteExecution(execId);
+      if (selectedId === execId) setSelectedId(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
   const [showGraph, setShowGraph] = useState(true);
   const [showTimeline, setShowTimeline] = useState(false);
   const [graphHeight, setGraphHeight] = useState(280);
@@ -380,7 +395,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
-            {canEdit && (
+            {isAdmin && (
               <button
                 onClick={() => {
                   if (!clearConfirm) {
@@ -416,14 +431,25 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
           >
             <div className="flex items-center justify-between mb-1">
               <StatusBadge status={exec.status} size="sm" />
-              {exec.status === 'RUNNING' && canEdit && (
-                <button
-                  onClick={e => { e.stopPropagation(); killExecution(exec.id); }}
-                  className="tc-btn danger" style={{ height: 22, padding: '0 8px', fontSize: 11 }}
-                >
-                  <StopCircle className="w-3 h-3" />Kill
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {exec.status === 'RUNNING' && canEdit && (
+                  <button
+                    onClick={e => { e.stopPropagation(); killExecution(exec.id); }}
+                    className="tc-btn danger" style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+                  >
+                    <StopCircle className="w-3 h-3" />Kill
+                  </button>
+                )}
+                {canDeleteExec(exec) && (
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDeleteExec(exec.id); }}
+                    className="tc-icon-btn danger" title="Delete execution"
+                    style={{ height: 22, padding: '0 6px' }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
             <p className="font-mono text-xs mt-1 truncate" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{exec.displayName || `${exec.id.slice(0, 16)}...`}</p>
             <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
