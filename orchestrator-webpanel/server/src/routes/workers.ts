@@ -14,6 +14,11 @@ const router = Router();
 // Override via WORKER_ONLINE_THRESHOLD_MS.
 export const ONLINE_THRESHOLD_MS = parseInt(process.env.WORKER_ONLINE_THRESHOLD_MS || '30000');
 
+// Hard timeout for a single worker job dispatch (rejects the awaiter if the
+// worker never reports a result). Expressed in minutes; override via
+// DISPATCH_TIMEOUT_MIN.
+export const DISPATCH_TIMEOUT_MS = parseInt(process.env.DISPATCH_TIMEOUT_MIN || '5', 10) * 60 * 1000;
+
 export function isWorkerOnline(lastSeenAt: string | undefined): boolean {
   return !!lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
 }
@@ -323,11 +328,11 @@ export async function dispatchToWorker(workerId: string, node: any, executionId:
 
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
-    // Poll for: parent execution killed, or the 5-minute hard timeout.
+    // Poll for: parent execution killed, or the hard dispatch timeout.
     const watch = setInterval(() => {
       const parent = jobs.get(executionId);
       const isKilled = !!(parent && parent.stopRequested);
-      const isTimedOut = Date.now() - startedAt > 5 * 60 * 1000;
+      const isTimedOut = Date.now() - startedAt > DISPATCH_TIMEOUT_MS;
       if (!isKilled && !isTimedOut) return;
       clearInterval(watch);
       const pending = pendingWorkerJobs.get(jobId);
