@@ -111,6 +111,22 @@ interface RelationsFile {
 
 const RELATIONS = 'relations.json';
 
+// Top-level tree names the materializer owns and regenerates from the flow doc
+// on every save. Anything else a user adds to the cloned repo (a .gitignore,
+// README, docs/ folder, …) is NOT managed here and must be carried across saves
+// instead of being clobbered — see readPreservedRootEntries / flowToTree.
+export const MANAGED_ROOT_NAMES = new Set<string>(['nodes', 'sessions', 'artifacts', RELATIONS]);
+
+// Read the non-managed top-level entries from an existing tree so a regenerated
+// save can re-attach them. Entries reference already-persisted objects, so no
+// new objects need building.
+export async function readPreservedRootEntries(flowId: string, treeSha: string | null): Promise<TreeEntry[]> {
+  if (!treeSha) return [];
+  const root = await getObject(flowId, treeSha);
+  if (!root || root.objectType !== 'tree') return [];
+  return parseTree(root.data).filter((e) => !MANAGED_ROOT_NAMES.has(e.name));
+}
+
 interface Graph {
   name?: string;
   namespace?: string;
@@ -208,7 +224,10 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
 
 // Build the full set of git objects representing a flow's current state and
 // return the root tree sha. Pure — caller persists the returned objects.
-export function flowToTree(flow: FlowLike): TreeBuildResult {
+// `preservedEntries` carries non-managed top-level files/folders forward from a
+// prior tree (e.g. a pushed .gitignore) so a regenerated save doesn't erase
+// them; they reference already-persisted objects, so nothing extra is built.
+export function flowToTree(flow: FlowLike, preservedEntries: TreeEntry[] = []): TreeBuildResult {
   const collected = new Map<string, BuiltObject>();
   const add = (o: BuiltObject) => collected.set(o.sha, o);
   const entries = buildLevel(
@@ -222,6 +241,11 @@ export function flowToTree(flow: FlowLike): TreeBuildResult {
     },
     add,
   );
+  // Re-attach preserved entries, but never let them shadow a managed name.
+  const managedNames = new Set(entries.map((e) => e.name));
+  for (const e of preservedEntries) {
+    if (!MANAGED_ROOT_NAMES.has(e.name) && !managedNames.has(e.name)) entries.push(e);
+  }
   const root = buildTree(entries);
   add(root);
   return { rootSha: root.sha, objects: [...collected.values()] };

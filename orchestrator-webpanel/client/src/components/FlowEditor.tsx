@@ -180,10 +180,13 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
     try {
       const cleanNodes = (getNodes() as any[]).map((n) => {
         const c = JSON.parse(JSON.stringify(n));
+        // Drop transient React Flow UI state so manual snapshots don't bake in
+        // selection/drag/measure noise (keeps git diffs to real edits).
+        delete c.selected; delete c.dragging; delete c.resizing; delete c.positionAbsolute;
         if (c?.data) { delete c.data.executionStatus; delete c.data.executionAttempt; }
         return c;
       });
-      const cleanEdges = getEdges();
+      const cleanEdges = (getEdges() as any[]).map((e) => { const c = { ...e }; delete (c as any).selected; return c; });
       // Await the persist so the snapshot below sees the latest graph.
       await apiClient.put(`/api/v1/flows/${flowId}`, { nodes: cleanNodes, edges: cleanEdges });
       // Keep the local library mirror in sync (drives the version-diff view).

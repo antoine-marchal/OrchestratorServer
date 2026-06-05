@@ -756,13 +756,25 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   );
 };
 
-// Stable string fingerprint of a graph, ignoring transient run overlays, so we
-// can tell whether the editor session matches the server definition.
+// React Flow tags nodes/edges with transient UI state — selection, drag,
+// measured size — that is NOT graph content. Selecting or dragging-highlighting
+// a node must not count as an edit, otherwise autosave fires (and even persists
+// `selected: true`) on every click. Strip it everywhere we fingerprint or save.
+const stripNode = (n: any) => {
+  const { selected, dragging, resizing, positionAbsolute, ...rest } = n;
+  return { ...rest, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } };
+};
+const stripEdge = (e: any) => {
+  const { selected, ...rest } = e;
+  return rest;
+};
+export const sanitizeNodesForSave = (nodes: any[]): any[] => (nodes || []).map(stripNode);
+export const sanitizeEdgesForSave = (edges: any[]): any[] => (edges || []).map(stripEdge);
+
+// Stable string fingerprint of a graph, ignoring transient run overlays + UI
+// state, so we can tell whether the editor session matches the server def.
 const normContent = (nodes: any[], edges: any[]): string =>
-  JSON.stringify({
-    nodes: (nodes || []).map(n => ({ ...n, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } })),
-    edges: edges || [],
-  });
+  JSON.stringify({ nodes: sanitizeNodesForSave(nodes), edges: sanitizeEdgesForSave(edges) });
 
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();
@@ -853,18 +865,25 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     const canonical = getCanonicalSession(flow.id);
     if (!canonical || canonical.id !== activeSessionId) return;
 
+    // Skip work entirely when nothing the server cares about changed — e.g. the
+    // edit was a selection/drag-highlight. This is the main guard against the
+    // "saves on every click" churn: no fingerprint change => no timer, no PUT.
+    const fingerprint = normContent(nodes, edges);
+    if (fingerprint === lastSyncedRef.current) return;
+
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
-      // Don't persist transient run overlays (live status / attempt counters).
-      const cleanNodes = nodes.map(n => ({ ...n, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } }));
-      lastSyncedRef.current = normContent(cleanNodes, edges);
-      updateFlow(flow.id, { nodes: cleanNodes, edges });
+      // Persist sanitized content only (no transient UI/run state).
+      const cleanNodes = sanitizeNodesForSave(nodes);
+      const cleanEdges = sanitizeEdgesForSave(edges);
+      lastSyncedRef.current = normContent(cleanNodes, cleanEdges);
+      updateFlow(flow.id, { nodes: cleanNodes, edges: cleanEdges });
       setSaveState('saved');
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => setSaveState('idle'), 2000);
     }, 800);
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
-  }, [nodes, edges, sessions, activeSessionId]);
+  }, [nodes, edges, activeSessionId]);
 
   const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -1032,11 +1051,7 @@ const FlowDetail: React.FC = () => {
       const canonical = activeTab === 'edit' ? useSessionStore.getState().getCanonicalSession(id) : null;
       if (canonical) {
         const fs = canonical.flowState;
-        const cleanNodes = (fs.nodes || []).map(n => ({
-          ...n,
-          data: { ...n.data, executionStatus: undefined, executionAttempt: undefined },
-        }));
-        await updateFlow(id, { nodes: cleanNodes, edges: fs.edges || [] });
+        await updateFlow(id, { nodes: sanitizeNodesForSave(fs.nodes || []), edges: sanitizeEdgesForSave(fs.edges || []) });
       }
       const execId = await executeFlow(id);
       const p = new URLSearchParams(searchParams);

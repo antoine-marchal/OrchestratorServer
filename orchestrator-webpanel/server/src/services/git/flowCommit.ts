@@ -1,6 +1,6 @@
 import { getCollection } from '../db/index';
 import { buildCommit, parseCommit } from './gitObjects';
-import { flowToTree, treeToFlowFields, nodeContentSignature, type NodeSignature } from './flowMaterialize';
+import { flowToTree, treeToFlowFields, nodeContentSignature, readPreservedRootEntries, type NodeSignature } from './flowMaterialize';
 import {
   getObject,
   putObject,
@@ -109,7 +109,10 @@ export async function commitFlowState(
   const headCommit = await getCommit(flowId, headSha);
   const prevTree = headCommit?.tree ?? null;
 
-  const { rootSha, objects } = flowToTree(flow);
+  // Carry any user-added top-level files (e.g. a pushed .gitignore / docs) from
+  // the current HEAD tree forward so this regenerated save doesn't erase them.
+  const preserved = await readPreservedRootEntries(flowId, prevTree);
+  const { rootSha, objects } = flowToTree(flow, preserved);
   if (rootSha === prevTree) return null; // nothing changed
 
   await persistObjects(flowId, objects);
