@@ -41,6 +41,7 @@ function mapServerFlow(f: any): OrchestratorFlow {
     description: f.description || '',
     workerId: f.workerId || '',
     owner: f.owner || undefined,
+    activeBranch: f.activeBranch || 'main',
     nodes: f.nodes || [],
     edges: f.edges || [],
     artifacts: f.artifacts || [],
@@ -60,6 +61,7 @@ function mapServerExec(e: any): FlowExecution {
     namespace: e.namespace || 'default',
     workerId: e.workerId || '',
     workerName: e.workerName || '',
+    branch: e.branch || undefined,
     jobId: e.jobId || '',
     status: e.status as ExecutionStatus,
     triggeredBy: e.triggeredBy || 'manual',
@@ -327,6 +329,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         namespace: flow.namespace,
         workerId: flow.workerId || '',
         workerName: '',
+        branch: flow.activeBranch || 'main',
         jobId: '',
         status: 'RUNNING',
         triggeredBy,
@@ -480,6 +483,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
               error: bExec.error,
               workerId: bExec.workerId || '',
               workerName: bExec.workerName || '',
+              branch: bExec.branch || prev.branch,
             };
             if (Array.isArray(bExec.nodes) && bExec.nodes.length) patch.nodes = bExec.nodes;
             if (Array.isArray(bExec.edges) && bExec.edges.length) patch.edges = bExec.edges;

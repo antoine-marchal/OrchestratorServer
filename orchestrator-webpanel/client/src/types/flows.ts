@@ -14,6 +14,8 @@ export interface OrchestratorFlow {
   description: string;
   workerId: string;
   owner?: string;
+  // Active git branch whose HEAD the executor runs. Defaults to 'main'.
+  activeBranch?: string;
   nodes: any[];
   edges: any[];
   artifacts?: FlowArtifact[];
@@ -50,6 +52,8 @@ export interface FlowExecution {
   namespace: string;
   workerId: string;
   workerName: string;
+  // Git branch the run was executed from (recorded at execution time).
+  branch?: string;
   jobId: string;
   status: ExecutionStatus;
   triggeredBy: 'manual' | 'schedule';

@@ -124,6 +124,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
           error: null,
           nodeStatuses: {},
           flowCommit: nestedCommit,
+          branch: referencedFlow.activeBranch || 'main',
           ...nestedGraph,
           parentExecutionId: jobId || null,
           parentNodeId: nodeId,
@@ -639,6 +640,8 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   // be made (keeps older / git-less flows working).
   const flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
   const graphSnapshot = flowCommit ? {} : { nodes: flow.nodes || [], edges: flow.edges || [] };
+  // Record which git branch this run executed from.
+  const branch = flow.activeBranch || 'main';
 
   // Resolve worker before inserting the execution so we can store the name.
   let resolvedWorkerId: string | null = null;
@@ -655,7 +658,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
         _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
         status: 'FAILED', triggeredBy, triggeredUser: triggeredUser || null, startTime, endTime, duration, jobId: null,
         workerId: flow.workerId, workerName: w?.name || null,
-        output: null, error: reason, nodeStatuses: {}, flowCommit, ...graphSnapshot,
+        output: null, error: reason, nodeStatuses: {}, flowCommit, branch, ...graphSnapshot,
       };
       await execsCol.insert(failedExec);
       await saveExecutionLogs(executionId, [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }]);
@@ -684,6 +687,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     error: null,
     nodeStatuses: {},
     flowCommit,
+    branch,
     ...graphSnapshot,
   };
 

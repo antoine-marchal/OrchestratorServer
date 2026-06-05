@@ -6,7 +6,8 @@ import {
   Download, Upload, Copy, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
-import { useServerWorkers } from '../../hooks/useServerWorkers';
+import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
+import BranchSelect from './BranchSelect';
 import StatusBadge from './StatusBadge';
 import CreateFlowModal from './CreateFlowModal';
 import ScheduleModal from './ScheduleModal';
@@ -62,7 +63,7 @@ const FlowsList: React.FC = () => {
   const navigate = useNavigate();
   const { flows, loaded, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
-  const { canEdit, isViewer, role, isAdmin } = useAuth();
+  const { canEdit, isViewer, role, login, isAdmin } = useAuth();
   const [users, setUsers] = useState<Array<{ _id: string; login: string; role: string }>>([]);
   useEffect(() => {
     if (!canEdit) return;
@@ -462,37 +463,55 @@ const FlowsList: React.FC = () => {
                         </span>
                       ) : (
                         (() => {
-                          const grouped = serverWorkers.reduce((acc, w) => {
+                          // Only workers the user may run on (plus the assigned one).
+                          const usableWorkers = serverWorkers.filter(w => canUseWorker(w, role, login) || w._id === flow.workerId);
+                          const grouped = usableWorkers.reduce((acc, w) => {
                             const g = w.group || '';
                             (acc[g] = acc[g] || []).push(w);
                             return acc;
-                          }, {} as Record<string, typeof serverWorkers>);
+                          }, {} as Record<string, typeof usableWorkers>);
                           const ungrouped = grouped[''] || [];
                           const namedGroups = Object.keys(grouped).filter(k => k !== '').sort();
                           return (
-                            <select
-                              className="tc-worker-select"
-                              value={flow.workerId || ''}
-                              onClick={e => e.stopPropagation()}
-                              onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
-                              title="Assign worker (server)"
-                            >
-                              <option value="">Server (default)</option>
-                              {ungrouped.map(w => (
-                                <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                                  {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                                </option>
-                              ))}
-                              {namedGroups.map(g => (
-                                <optgroup key={g} label={g}>
-                                  {(grouped[g] || []).map(w => (
-                                    <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                                      {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              ))}
-                            </select>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <select
+                                className="tc-worker-select"
+                                value={flow.workerId || ''}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
+                                title="Assign worker (server)"
+                              >
+                                <option value="">Server (default)</option>
+                                {ungrouped.map(w => (
+                                  <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                    {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                  </option>
+                                ))}
+                                {namedGroups.map(g => (
+                                  <optgroup key={g} label={g}>
+                                    {(grouped[g] || []).map(w => (
+                                      <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                        {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                ))}
+                              </select>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Active git branch">
+                                <GitBranch size={12} style={{ color: 'var(--text-3)' }} />
+                                <BranchSelect
+                                  flowId={flow.id}
+                                  activeBranch={flow.activeBranch}
+                                  onChanged={() => loadAll()}
+                                  style={{
+                                    height: 26, padding: '0 6px', borderRadius: 5,
+                                    background: 'var(--bg-2)', color: 'var(--text)',
+                                    border: '1px solid var(--border)', fontSize: 11,
+                                    fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 120,
+                                  }}
+                                />
+                              </div>
+                            </div>
                           );
                         })()
                       )}

@@ -30,6 +30,8 @@ export interface Execution {
   // reconstructs nodes/edges from it instead of the doc embedding the graph.
   // `nodes`/`edges` may still be inlined as a fallback for git-less flows.
   flowCommit?: string | null;
+  // Git branch this run executed from (flow.activeBranch at trigger time).
+  branch?: string;
   nodes?: any[];
   edges?: any[];
 }

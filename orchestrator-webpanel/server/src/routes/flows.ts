@@ -3,6 +3,7 @@ import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
 import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
+import { canUserUseWorker } from './workers';
 import {
   commitFlowState,
   listCommits,
@@ -98,6 +99,14 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
   try {
     const ownerError = await validateOwnerLogin(req.body?.owner);
     if (ownerError) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: ownerError } }) as any;
+    // Don't let a user assign a worker they're forbidden from — selecting a
+    // worker in a flow requires access to it (see canUserUseWorker).
+    if (req.body?.workerId) {
+      const worker = await getCollection('workers').findOne({ _id: req.body.workerId });
+      if (worker && !canUserUseWorker((req as any).user, worker)) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to use worker "${worker.name}"` } }) as any;
+      }
+    }
     const col = getCollection('flows');
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
@@ -241,6 +250,14 @@ router.post('/:id/execute', async (req: Request, res: Response) => {
     const col = getCollection('flows');
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    // Accessibility gate: a flow pinned to a worker the user is forbidden from
+    // cannot be executed by them (mirrors hiding it in the editor's picker).
+    if (flow.workerId) {
+      const worker = await getCollection('workers').findOne({ _id: flow.workerId });
+      if (worker && !canUserUseWorker(user, worker)) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to run flows on worker "${worker.name}"` } }) as any;
+      }
+    }
     const triggeredUser: string | undefined = (req as any).user?.login;
     const executionId = await executeOrchestratorFlow(req.params.id, 'manual', triggeredUser);
     res.json({ executionId, message: 'Execution started' });

@@ -6,8 +6,37 @@ import { authMiddleware } from '../middleware/auth';
 import { emitJobLog, jobs } from '../services/executor/nodeExecutor';
 import { extractSecretNames, resolveSecretValues } from './secrets';
 import { putArtifacts, getArtifactBase64 } from '../services/executor/artifactStore';
+import type { WorkerAccess } from '../services/db/models/Worker';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
+
+// Whether `user` may select & execute on `worker` given its accessibility
+// policy. No policy → open to everyone. Admins always retain access. Single
+// source of truth shared by the flow execute gate and the worker list.
+export function canUserUseWorker(user: { role?: string; login?: string } | null | undefined, worker: any): boolean {
+  const access: WorkerAccess | null | undefined = worker?.access;
+  if (!access || (access.mode !== 'allow' && access.mode !== 'deny')) return true;
+  const role = user?.role || '';
+  if (role === 'admin') return true;
+  const login = (user?.login || '').toLowerCase();
+  const roles = Array.isArray(access.roles) ? access.roles : [];
+  const users = Array.isArray(access.users) ? access.users.map(u => String(u).toLowerCase()) : [];
+  const matched = roles.includes(role) || users.includes(login);
+  return access.mode === 'allow' ? matched : !matched;
+}
+
+// Coerce a raw access payload into a stored policy, or null to clear it.
+function normalizeAccess(raw: any): WorkerAccess | null {
+  if (raw == null) return null;
+  const mode = raw.mode === 'deny' ? 'deny' : raw.mode === 'allow' ? 'allow' : null;
+  if (!mode) return null;
+  const roles = Array.isArray(raw.roles) ? raw.roles.filter((r: any) => typeof r === 'string') : [];
+  const users = Array.isArray(raw.users)
+    ? raw.users.filter((u: any) => typeof u === 'string').map((u: string) => u.toLowerCase())
+    : [];
+  return { mode, roles, users };
+}
 
 // Worker counts as online if its last heartbeat/poll is within this window.
 // Single source of truth — flowExecutor imports this for its pre-dispatch
@@ -295,12 +324,36 @@ router.get('/', authMiddleware, async (_req: Request, res: Response) => {
   res.json(result);
 });
 
-// UI — update worker group (JWT auth required)
+// UI — apply an access policy to every worker in a group (admin only). Lets an
+// admin manage accessibility for a whole group in one shot. `__ungrouped__`
+// targets workers with no group. Body: { access: WorkerAccess | null }.
+router.patch('/groups/:group/access', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('workers');
+    const access = normalizeAccess(req.body.access);
+    const targetGroup = req.params.group === '__ungrouped__' ? '' : req.params.group;
+    const all = await col.find({});
+    const matches = all.filter((w: any) => (w.group || '') === targetGroup);
+    for (const w of matches) await col.update({ _id: w._id }, { $set: { access } });
+    res.json({ updated: matches.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// UI — update worker group / access policy (JWT auth required; access changes
+// are admin-only).
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const col = getCollection('workers');
     const updates: any = {};
     if (req.body.group !== undefined) updates.group = req.body.group;
+    if (req.body.access !== undefined) {
+      if ((req as any).user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Only admins can change worker access' }) as any;
+      }
+      updates.access = normalizeAccess(req.body.access);
+    }
     if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' }) as any;
     await col.update({ _id: req.params.id }, { $set: updates });
     const w = await col.findOne({ _id: req.params.id });

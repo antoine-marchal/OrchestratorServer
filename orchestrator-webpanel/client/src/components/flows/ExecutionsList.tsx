@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, RefreshCw, Trash2, Eye, Play, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, Trash2, Eye, Play, Loader2, GitBranch } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import StatusBadge from './StatusBadge';
 import ExecIdCell from './ExecIdCell';
@@ -185,6 +185,7 @@ const ExecutionsList: React.FC = () => {
                 <th>Flow</th>
                 <th>Status</th>
                 <th>Worker</th>
+                <th>Branch</th>
                 <th>Trigger</th>
                 <th>Started</th>
                 <th>Duration</th>
@@ -216,6 +217,11 @@ const ExecutionsList: React.FC = () => {
                     <td>
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: exec.workerName ? 'var(--text-2)' : 'var(--text-3)' }}>
                         {exec.workerName || 'server'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontFamily: 'var(--font-mono)', fontSize: 11, color: exec.branch ? 'var(--accent)' : 'var(--text-3)' }}>
+                        {exec.branch ? <><GitBranch size={11} />{exec.branch}</> : '—'}
                       </span>
                     </td>
                     <td>

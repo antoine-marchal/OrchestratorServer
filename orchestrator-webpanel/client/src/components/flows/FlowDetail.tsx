@@ -25,7 +25,8 @@ import {
   X,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
-import { useServerWorkers } from '../../hooks/useServerWorkers';
+import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
+import BranchSelect from './BranchSelect';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { apiClient } from '../../utils/apiClient';
@@ -188,6 +189,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const [graphHeight, setGraphHeight] = useState(280);
   const [timelineHeight, setTimelineHeight] = useState(240);
   const [nodeTreeWidth, setNodeTreeWidth] = useState(220);
+  const [execListWidth, setExecListWidth] = useState(320);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Selected node id from the structure tree — when set, log pane filters
@@ -389,7 +391,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
   return (
     <div className="h-full flex overflow-hidden">
-      <div className="w-80 flex-shrink-0 border-r overflow-auto" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex-shrink-0 overflow-auto" style={{ width: execListWidth, borderColor: 'var(--border)' }}>
         <div className="sticky top-0 z-10 px-3 py-2 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <button
@@ -457,8 +459,8 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                 )}
               </div>
             </div>
-            <p className="font-mono text-xs mt-1 truncate" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{exec.displayName || `${exec.id.slice(0, 16)}...`}</p>
-            <div className="flex items-center gap-2 mt-1 text-xs" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+            <p className="font-mono text-xs mt-1 truncate" style={{ color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 500 }}>{exec.displayName || `${exec.id.slice(0, 16)}...`}</p>
+            <div className="flex items-center mt-1 text-xs" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap', columnGap: 6, rowGap: 2 }}>
               <span>{formatRelative(exec.startTime)}</span>
               <span>·</span>
               <span>{formatDuration(exec.duration)}</span>
@@ -468,10 +470,20 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               <span style={{ color: exec.workerName ? 'var(--text-2)' : 'var(--text-3)' }}>
                 {exec.workerName || 'server'}
               </span>
+              {exec.branch && (
+                <>
+                  <span>·</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: 'var(--accent)' }}>
+                    <GitBranch size={10} />{exec.branch}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         ))}
       </div>
+
+      <ResizeHandleV width={execListWidth} setWidth={setExecListWidth} />
 
       <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
         {selectedExec ? (
@@ -983,7 +995,7 @@ const FlowDetail: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { flows, deleteFlow, executeFlow, updateFlow } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
-  const { canEdit, isViewer, isAdmin, canManageSchedules } = useAuth();
+  const { canEdit, isViewer, isAdmin, canManageSchedules, role, login } = useAuth();
 
   const rawTabParam = searchParams.get('tab');
   const tabParam: TabId = !isViewer && rawTabParam === 'edit' ? 'edit' : 'executions';
@@ -1236,11 +1248,14 @@ const FlowDetail: React.FC = () => {
               </button>
             )}
             {canEditThisFlow && (() => {
-              const grouped = serverWorkers.reduce((acc, w) => {
+              // Only workers the user may run on (plus the currently-assigned one
+              // so the select still reflects reality). See canUseWorker.
+              const usableWorkers = serverWorkers.filter(w => canUseWorker(w, role, login) || w._id === flow.workerId);
+              const grouped = usableWorkers.reduce((acc, w) => {
                 const g = w.group || '';
                 (acc[g] = acc[g] || []).push(w);
                 return acc;
-              }, {} as Record<string, typeof serverWorkers>);
+              }, {} as Record<string, typeof usableWorkers>);
               const ungrouped = grouped[''] || [];
               const namedGroups = Object.keys(grouped).filter(k => k !== '').sort();
               return (
@@ -1273,6 +1288,22 @@ const FlowDetail: React.FC = () => {
                 </select>
               );
             })()}
+            {canEditThisFlow && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Active git branch">
+                <GitBranch size={13} style={{ color: 'var(--text-3)' }} />
+                <BranchSelect
+                  flowId={flow.id}
+                  activeBranch={flow.activeBranch}
+                  onChanged={() => useFlowLibraryStore.getState().loadAll()}
+                  style={{
+                    height: 28, padding: '0 8px', borderRadius: 6,
+                    background: 'var(--bg-2)', color: 'var(--text)',
+                    border: '1px solid var(--border)', fontSize: 12,
+                    fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 160,
+                  }}
+                />
+              </div>
+            )}
             {canEdit && (
               <button
                 onClick={handleExecute}

@@ -1,9 +1,109 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Server, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X } from 'lucide-react';
+import { Server, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, Lock, Shield } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useAuth } from '../../hooks/useAuth';
 
 type WorkerPlatform = 'win32' | 'linux' | 'darwin' | 'unknown';
+
+const ROLES = ['admin', 'operator', 'viewer'];
+
+interface WorkerAccess {
+  mode: 'allow' | 'deny';
+  roles: string[];
+  users: string[];
+}
+
+// Human summary of a worker's access policy for the card meta line.
+function accessSummary(access?: WorkerAccess | null): string {
+  if (!access || (access.mode !== 'allow' && access.mode !== 'deny')) return 'everyone';
+  const parts = [...(access.roles || []), ...(access.users || [])];
+  const who = parts.length ? parts.join(', ') : '(nobody listed)';
+  return access.mode === 'allow' ? `only ${who}` : `all except ${who}`;
+}
+
+// Inline allow/deny policy editor. mode 'open' clears the policy (access=null).
+const AccessEditor: React.FC<{
+  access?: WorkerAccess | null;
+  userLogins: string[];
+  onSave: (access: WorkerAccess | null) => void;
+  onCancel: () => void;
+  title: string;
+}> = ({ access, userLogins, onSave, onCancel, title }) => {
+  const [mode, setMode] = useState<'open' | 'allow' | 'deny'>(access?.mode ?? 'open');
+  const [roles, setRoles] = useState<Set<string>>(new Set(access?.roles ?? []));
+  const [users, setUsers] = useState<Set<string>>(new Set(access?.users ?? []));
+
+  const toggle = (set: Set<string>, val: string, setter: (s: Set<string>) => void) => {
+    const next = new Set(set);
+    if (next.has(val)) next.delete(val); else next.add(val);
+    setter(next);
+  };
+
+  const save = () => {
+    if (mode === 'open') { onSave(null); return; }
+    onSave({ mode, roles: [...roles], users: [...users] });
+  };
+
+  return (
+    <div style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, padding: 12, marginTop: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <Shield size={12} style={{ color: 'var(--accent)' }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>{title}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: mode === 'open' ? 0 : 10 }}>
+        {(['open', 'allow', 'deny'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={mode === m ? 'tc-btn primary' : 'tc-btn ghost'}
+            style={{ height: 24, padding: '0 10px', fontSize: 11 }}
+          >
+            {m === 'open' ? 'Open to all' : m === 'allow' ? 'Allow only' : 'Forbid'}
+          </button>
+        ))}
+      </div>
+      {mode !== 'open' && (
+        <>
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 4, textTransform: 'uppercase' }}>Roles</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {ROLES.map(r => (
+                <button
+                  key={r}
+                  onClick={() => toggle(roles, r, setRoles)}
+                  className={roles.has(r) ? 'tc-btn primary' : 'tc-btn ghost'}
+                  style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+                >
+                  {roles.has(r) ? <Check size={10} /> : null} {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 4, textTransform: 'uppercase' }}>Users</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxHeight: 96, overflowY: 'auto' }}>
+              {userLogins.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>no users</span>}
+              {userLogins.map(u => (
+                <button
+                  key={u}
+                  onClick={() => toggle(users, u, setUsers)}
+                  className={users.has(u) ? 'tc-btn primary' : 'tc-btn ghost'}
+                  style={{ height: 22, padding: '0 8px', fontSize: 11 }}
+                >
+                  {users.has(u) ? <Check size={10} /> : null} {u}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 10 }}>
+        <button onClick={onCancel} className="tc-btn ghost" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>Cancel</button>
+        <button onClick={save} className="tc-btn primary" style={{ height: 24, padding: '0 12px', fontSize: 11 }}>Save</button>
+      </div>
+    </div>
+  );
+};
 
 const PLATFORM_LABEL: Record<WorkerPlatform, string> = {
   win32: 'Windows',
@@ -28,17 +128,22 @@ interface RemoteWorker {
   registeredAt: string;
   assignedUserId?: string;
   group?: string;
+  access?: WorkerAccess | null;
 }
 
 const WorkerCard: React.FC<{
   worker: RemoteWorker;
   removing: string | null;
   canDelete: boolean;
+  isAdmin: boolean;
+  userLogins: string[];
   onRemove: (id: string) => void;
   onGroupChange: (id: string, group: string) => void;
-}> = ({ worker: w, removing, canDelete, onRemove, onGroupChange }) => {
+  onAccessChange: (id: string, access: WorkerAccess | null) => void;
+}> = ({ worker: w, removing, canDelete, isAdmin, userLogins, onRemove, onGroupChange, onAccessChange }) => {
   const [editingGroup, setEditingGroup] = useState(false);
   const [groupVal, setGroupVal] = useState(w.group || '');
+  const [editingAccess, setEditingAccess] = useState(false);
 
   const saveGroup = () => {
     onGroupChange(w._id, groupVal.trim());
@@ -104,7 +209,27 @@ const WorkerCard: React.FC<{
               </>
             )}
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className="kv-label">// access</span>
+            <span className="kv-val" style={{ fontFamily: 'var(--font-mono)', color: w.access ? 'var(--accent)' : 'var(--text-3)' }}>
+              {accessSummary(w.access)}
+            </span>
+            {isAdmin && (
+              <button onClick={() => setEditingAccess(v => !v)} title="Edit accessibility" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0 }}>
+                <Lock size={10} />
+              </button>
+            )}
+          </div>
         </div>
+        {editingAccess && (
+          <AccessEditor
+            access={w.access}
+            userLogins={userLogins}
+            title={`Accessibility · ${w.name}`}
+            onCancel={() => setEditingAccess(false)}
+            onSave={(access) => { onAccessChange(w._id, access); setEditingAccess(false); }}
+          />
+        )}
       </div>
 
       {canDelete && (
@@ -129,7 +254,9 @@ const WorkersPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const { canDeleteWorker } = useAuth();
+  const [userLogins, setUserLogins] = useState<string[]>([]);
+  const [groupAccessKey, setGroupAccessKey] = useState<string | null>(null);
+  const { canDeleteWorker, isAdmin } = useAuth();
 
   const load = useCallback(async () => {
     try {
@@ -148,6 +275,35 @@ const WorkersPanel: React.FC = () => {
     const interval = setInterval(load, 10_000);
     return () => clearInterval(interval);
   }, [load]);
+
+  // User logins for the access-policy picker (admin only).
+  useEffect(() => {
+    if (!isAdmin) return;
+    apiClient.get('/api/v1/users').then((data: any) => {
+      const list = Array.isArray(data) ? data : [];
+      setUserLogins(list.map((u: any) => u.login).filter(Boolean));
+    }).catch(() => { /* non-fatal */ });
+  }, [isAdmin]);
+
+  const handleAccessChange = async (id: string, access: WorkerAccess | null) => {
+    try {
+      await apiClient.patch(`/api/v1/workers/${id}`, { access });
+      setWorkers(prev => prev.map(w => w._id === id ? { ...w, access } : w));
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to update access');
+    }
+  };
+
+  const handleGroupAccess = async (groupKey: string, access: WorkerAccess | null) => {
+    const seg = groupKey === '' ? '__ungrouped__' : encodeURIComponent(groupKey);
+    try {
+      await apiClient.patch(`/api/v1/workers/groups/${seg}/access`, { access });
+      setGroupAccessKey(null);
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to update group access');
+    }
+  };
 
   const handleRemove = async (id: string) => {
     setRemoving(id);
@@ -252,14 +408,37 @@ const WorkersPanel: React.FC = () => {
             return (
               <div key={groupKey || '__ungrouped__'}>
                 {hasGroup && (
-                  <button
-                    onClick={() => toggleGroup(groupKey)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 12, marginBottom: 6, padding: 0 }}
-                  >
-                    {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-                    <span style={{ color: 'var(--accent)' }}>[{groupKey}]</span>
-                    <span style={{ color: 'var(--text-3)' }}>{groupWorkers.length} worker{groupWorkers.length !== 1 ? 's' : ''}</span>
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <button
+                      onClick={() => toggleGroup(groupKey)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-2)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: 0 }}
+                    >
+                      {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                      <span style={{ color: 'var(--accent)' }}>[{groupKey}]</span>
+                      <span style={{ color: 'var(--text-3)' }}>{groupWorkers.length} worker{groupWorkers.length !== 1 ? 's' : ''}</span>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setGroupAccessKey(groupAccessKey === groupKey ? null : groupKey)}
+                        className="tc-btn ghost"
+                        style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
+                        title="Set accessibility for all workers in this group"
+                      >
+                        <Shield size={11} /> Group access
+                      </button>
+                    )}
+                  </div>
+                )}
+                {hasGroup && isAdmin && groupAccessKey === groupKey && (
+                  <div style={{ marginBottom: 8, maxWidth: 420 }}>
+                    <AccessEditor
+                      access={groupWorkers[0]?.access}
+                      userLogins={userLogins}
+                      title={`Apply to all in [${groupKey}]`}
+                      onCancel={() => setGroupAccessKey(null)}
+                      onSave={(access) => handleGroupAccess(groupKey, access)}
+                    />
+                  </div>
                 )}
                 {!isCollapsed && (
                   <div className="flex flex-col gap-3">
@@ -269,8 +448,11 @@ const WorkersPanel: React.FC = () => {
                         worker={w}
                         removing={removing}
                         canDelete={canDeleteWorker}
+                        isAdmin={isAdmin}
+                        userLogins={userLogins}
                         onRemove={handleRemove}
                         onGroupChange={handleGroupChange}
+                        onAccessChange={handleAccessChange}
                       />
                     ))}
                   </div>

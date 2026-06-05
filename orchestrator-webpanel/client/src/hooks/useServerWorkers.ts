@@ -1,6 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiClient } from '../utils/apiClient';
 
+export interface WorkerAccess {
+  mode: 'allow' | 'deny';
+  roles: string[];
+  users: string[];
+}
+
 export interface ServerWorker {
   _id: string;
   name: string;
@@ -10,6 +16,24 @@ export interface ServerWorker {
   registeredAt: string;
   assignedUserId?: string;
   group?: string;
+  access?: WorkerAccess | null;
+}
+
+// Mirror of canUserUseWorker in server/routes/workers.ts. No policy → open.
+// Admins always retain access. Used to filter worker pickers so a user never
+// sees a worker they couldn't run on anyway.
+export function canUseWorker(
+  worker: { access?: WorkerAccess | null } | undefined | null,
+  role: string,
+  login: string,
+): boolean {
+  const access = worker?.access;
+  if (!access || (access.mode !== 'allow' && access.mode !== 'deny')) return true;
+  if (role === 'admin') return true;
+  const roles = Array.isArray(access.roles) ? access.roles : [];
+  const users = Array.isArray(access.users) ? access.users.map(u => String(u).toLowerCase()) : [];
+  const matched = roles.includes(role) || users.includes((login || '').toLowerCase());
+  return access.mode === 'allow' ? matched : !matched;
 }
 
 // UI-relevant fields only. lastSeenAt ticks every heartbeat and would force a

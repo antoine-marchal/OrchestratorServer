@@ -40,6 +40,15 @@ async function authenticateApiKey(login: string, rawKey: string): Promise<GitUse
     const apiKey = (user.apiKeys || []).find((k: any) => k.keyHash === keyHash);
     if (!apiKey) continue;
     if (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date()) continue;
+    // Record usage so the admin "last used" metric reflects git operations.
+    // The JWT path does this in middleware/auth.ts; git auth runs here instead,
+    // so without this an API key used only for `git push/clone` shows "never used".
+    try {
+      const updatedKeys = (user.apiKeys || []).map((k: any) =>
+        k.id === apiKey.id ? { ...k, lastUsedAt: new Date().toISOString() } : k,
+      );
+      await users.update({ _id: user._id }, { $set: { apiKeys: updatedKeys } });
+    } catch { /* usage stamp is best-effort — never block auth on it */ }
     return { _id: user._id, login: user.login, role: user.role };
   }
   return null;
