@@ -42,6 +42,7 @@ function mapServerFlow(f: any): OrchestratorFlow {
     workerId: f.workerId || '',
     owner: f.owner || undefined,
     activeBranch: f.activeBranch || 'main',
+    variants: Array.isArray(f.variants) ? f.variants : [],
     nodes: f.nodes || [],
     edges: f.edges || [],
     artifacts: f.artifacts || [],
@@ -92,7 +93,7 @@ interface FlowLibraryState {
   deleteFlow: (id: string) => void;
   syncWorkerFlows: () => Promise<number>;
 
-  executeFlow: (flowId: string, triggeredBy?: 'manual' | 'schedule') => Promise<string>;
+  executeFlow: (flowId: string, triggeredBy?: 'manual' | 'schedule', overrides?: { workerId?: string | null; branch?: string }) => Promise<string>;
   killExecution: (execId: string) => Promise<void>;
   renameExecution: (execId: string, displayName: string) => void;
   clearExecutions: (flowId?: string) => Promise<void>;
@@ -300,6 +301,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         workerId: updated.workerId || '',
         artifacts: updated.artifacts || [],
         owner: updated.owner,
+        variants: updated.variants || [],
       }).then(() => undefined).catch(err => { console.error(err); });
     },
 
@@ -314,22 +316,26 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       return 0;
     },
 
-    executeFlow: async (flowId, triggeredBy = 'manual') => {
+    executeFlow: async (flowId, triggeredBy = 'manual', overrides) => {
       const flow = getFlows().find(f => f.id === flowId);
       if (!flow) throw new Error('Flow not found');
 
-      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/execute`, { triggeredBy });
+      const body: any = { triggeredBy };
+      if (overrides && Object.prototype.hasOwnProperty.call(overrides, 'workerId')) body.workerId = overrides.workerId || '';
+      if (overrides?.branch) body.branch = overrides.branch;
+      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/execute`, body);
       const executionId: string = data.executionId;
 
+      const ovWorkerId = overrides && Object.prototype.hasOwnProperty.call(overrides, 'workerId') ? (overrides.workerId || '') : (flow.workerId || '');
       const storedUser = (() => { try { return JSON.parse(localStorage.getItem('orchestrator_user') || '{}'); } catch { return {}; } })();
       const exec: FlowExecution = {
         id: executionId,
         flowId,
         flowName: flow.name,
         namespace: flow.namespace,
-        workerId: flow.workerId || '',
+        workerId: ovWorkerId,
         workerName: '',
-        branch: flow.activeBranch || 'main',
+        branch: overrides?.branch || flow.activeBranch || 'main',
         jobId: '',
         status: 'RUNNING',
         triggeredBy,

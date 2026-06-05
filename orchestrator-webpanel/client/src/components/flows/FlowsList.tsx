@@ -4,6 +4,7 @@ import {
   Plus, Play, Pencil, Trash2, Clock, Search,
   GitBranch, Loader2, AlertTriangle,
   Download, Upload, Copy, ChevronDown, ChevronRight,
+  CornerDownRight,
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
@@ -12,6 +13,7 @@ import StatusBadge from './StatusBadge';
 import CreateFlowModal from './CreateFlowModal';
 import ScheduleModal from './ScheduleModal';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
+import type { FlowVariant } from '../../types/flows';
 import { useAuth } from '../../hooks/useAuth';
 import { apiClient } from '../../utils/apiClient';
 
@@ -61,7 +63,7 @@ function exportFlowFile(flow: OrchestratorFlow) {
 
 const FlowsList: React.FC = () => {
   const navigate = useNavigate();
-  const { flows, loaded, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
+  const { flows, executions, loaded, createFlow, deleteFlow, executeFlow, updateFlow, syncBackendExecutions, loadAll } = useFlowLibraryStore();
   const { workers: serverWorkers } = useServerWorkers();
   const { canEdit, isViewer, role, login, isAdmin } = useAuth();
   const [users, setUsers] = useState<Array<{ _id: string; login: string; role: string }>>([]);
@@ -116,7 +118,69 @@ const FlowsList: React.FC = () => {
   const [renameNsValue, setRenameNsValue] = useState('');
   const [renamingOwnerId, setRenamingOwnerId] = useState<string | null>(null);
   const [collapsedNamespaces, setCollapsedNamespaces] = useState<Set<string>>(new Set());
+  const [scheduleVariant, setScheduleVariant] = useState<{ flow: OrchestratorFlow; variant: FlowVariant } | null>(null);
+  // Cron schedules keyed by flowId, so each row (flow or subrow) can show the
+  // schedule proper to its own worker/branch config. Admin-only endpoint.
+  const [schedulesByFlow, setSchedulesByFlow] = useState<Record<string, any[]>>({});
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const reloadSchedules = useCallback(() => {
+    if (!isAdmin) return;
+    apiClient.get('/api/v1/schedules').then((data: any) => {
+      const rows: any[] = data?.schedules || [];
+      const byFlow: Record<string, any[]> = {};
+      for (const s of rows) (byFlow[s.flowId] = byFlow[s.flowId] || []).push(s);
+      setSchedulesByFlow(byFlow);
+    }).catch(() => { /* non-fatal */ });
+  }, [isAdmin]);
+  useEffect(() => { reloadSchedules(); }, [reloadSchedules]);
+
+  // Most-recent execution matching a specific worker/branch config.
+  const lastExecFor = useCallback((flowId: string, workerId: string, branch: string) => {
+    let best: typeof executions[number] | null = null;
+    for (const e of executions) {
+      if (e.flowId !== flowId) continue;
+      if ((e.workerId || '') !== (workerId || '')) continue;
+      if ((e.branch || 'main') !== (branch || 'main')) continue;
+      if (!best || new Date(e.startTime).getTime() > new Date(best.startTime).getTime()) best = e;
+    }
+    return best;
+  }, [executions]);
+
+  // Cron schedule row for a flow config: flow-level (variantId absent) or a
+  // specific variant. Returns the cron row or null.
+  const scheduleFor = useCallback((flowId: string, variantId: string | null) => {
+    const rows = schedulesByFlow[flowId] || [];
+    return rows.find((s: any) => s.type === 'cron' && (variantId ? s.variantId === variantId : !s.variantId)) || null;
+  }, [schedulesByFlow]);
+
+  const genVariantId = () => `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  const addVariant = useCallback((flow: OrchestratorFlow) => {
+    const v: FlowVariant = { id: genVariantId(), workerId: flow.workerId || '', branch: flow.activeBranch || 'main' };
+    updateFlow(flow.id, { variants: [...(flow.variants || []), v] });
+  }, [updateFlow]);
+
+  const patchVariant = useCallback((flow: OrchestratorFlow, variantId: string, patch: Partial<FlowVariant>) => {
+    updateFlow(flow.id, { variants: (flow.variants || []).map(v => v.id === variantId ? { ...v, ...patch } : v) });
+  }, [updateFlow]);
+
+  const removeVariant = useCallback((flow: OrchestratorFlow, variantId: string) => {
+    updateFlow(flow.id, { variants: (flow.variants || []).filter(v => v.id !== variantId) });
+  }, [updateFlow]);
+
+  const executeVariant = useCallback(async (flow: OrchestratorFlow, variant: FlowVariant) => {
+    const key = `${flow.id}:${variant.id}`;
+    setRunningIds(prev => new Set(prev).add(key));
+    try {
+      const execId = await executeFlow(flow.id, 'manual', { workerId: variant.workerId, branch: variant.branch });
+      navigate(`/flows/${flow.id}?tab=executions&exec=${execId}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Execution failed');
+    } finally {
+      setRunningIds(prev => { const s = new Set(prev); s.delete(key); return s; });
+    }
+  }, [executeFlow, navigate]);
 
   const toggleNamespace = useCallback((ns: string) => {
     setCollapsedNamespaces(prev => {
@@ -212,11 +276,21 @@ const FlowsList: React.FC = () => {
 
   const handleDuplicate = useCallback((flow: OrchestratorFlow, e: React.MouseEvent) => {
     e.stopPropagation();
+    // If the duplicating user can't use the source flow's worker, drop the
+    // assignment: server (local) is always authorized. Falls through to the
+    // first authorized online worker only if some future policy forbids server.
+    let dupWorkerId = flow.workerId || '';
+    if (dupWorkerId) {
+      const srcWorker = serverWorkers.find(w => w._id === dupWorkerId);
+      if (!srcWorker || !canUseWorker(srcWorker, role, login)) {
+        dupWorkerId = '';
+      }
+    }
     const duplicate = createFlow({
       name: `${flow.name} copy`,
       namespace: flow.namespace,
       description: flow.description,
-      workerId: flow.workerId,
+      workerId: dupWorkerId,
     });
     updateFlow(duplicate.id, {
       nodes: JSON.parse(JSON.stringify(flow.nodes || [])),
@@ -341,6 +415,7 @@ const FlowsList: React.FC = () => {
             <thead>
               <tr>
                 <th>Flow</th>
+                <th>Branch</th>
                 <th>Worker</th>
                 <th>Last Execution</th>
                 <th>Duration</th>
@@ -359,7 +434,7 @@ const FlowsList: React.FC = () => {
                     onClick={() => toggleNamespace(ns)}
                     style={{ cursor: 'pointer', background: 'var(--surface-2)' }}
                   >
-                    <td colSpan={6} style={{ padding: '8px 14px' }}>
+                    <td colSpan={7} style={{ padding: '8px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
                         {isCollapsed ? <ChevronRight size={13} style={{ color: 'var(--text-3)' }} /> : <ChevronDown size={13} style={{ color: 'var(--text-3)' }} />}
                         <span style={{ color: 'var(--accent)' }}>[{ns}]</span>
@@ -369,9 +444,11 @@ const FlowsList: React.FC = () => {
                   </tr>
                 );
                 if (isCollapsed) return [header];
-                const rows = nsFlows.map(flow => {
+                const rows = nsFlows.flatMap(flow => {
                 const canRun = true;
-                return (
+                const variants = flow.variants || [];
+                const subUsableWorkers = serverWorkers.filter(w => canUseWorker(w, role, login));
+                const mainRow = (
                   <tr key={flow.id} onClick={() => navigate(`/flows/${flow.id}?tab=executions`)}>
                     <td>
                       <div className="tc-flow-cell">
@@ -457,6 +534,27 @@ const FlowsList: React.FC = () => {
                     </td>
 
                     <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Active git branch">
+                        <GitBranch size={12} style={{ color: 'var(--text-3)' }} />
+                        {canEditFlow(flow) ? (
+                          <BranchSelect
+                            flowId={flow.id}
+                            activeBranch={flow.activeBranch}
+                            onChanged={() => loadAll()}
+                            style={{
+                              height: 26, padding: '0 6px', borderRadius: 5,
+                              background: 'var(--bg-2)', color: 'var(--text)',
+                              border: '1px solid var(--border)', fontSize: 11,
+                              fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 130,
+                            }}
+                          />
+                        ) : (
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{flow.activeBranch || 'main'}</span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td>
                       {!canEditFlow(flow) ? (
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-3)' }}>
                           {serverWorkers.find(w => w._id === flow.workerId)?.name ?? 'Server (default)'}
@@ -473,79 +571,70 @@ const FlowsList: React.FC = () => {
                           const ungrouped = grouped[''] || [];
                           const namedGroups = Object.keys(grouped).filter(k => k !== '').sort();
                           return (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <select
-                                className="tc-worker-select"
-                                value={flow.workerId || ''}
-                                onClick={e => e.stopPropagation()}
-                                onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
-                                title="Assign worker (server)"
-                              >
-                                <option value="">Server (default)</option>
-                                {ungrouped.map(w => (
-                                  <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                                    {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                                  </option>
-                                ))}
-                                {namedGroups.map(g => (
-                                  <optgroup key={g} label={g}>
-                                    {(grouped[g] || []).map(w => (
-                                      <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
-                                        {w.name}{w.status !== 'online' ? ' · offline' : ''}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                ))}
-                              </select>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Active git branch">
-                                <GitBranch size={12} style={{ color: 'var(--text-3)' }} />
-                                <BranchSelect
-                                  flowId={flow.id}
-                                  activeBranch={flow.activeBranch}
-                                  onChanged={() => loadAll()}
-                                  style={{
-                                    height: 26, padding: '0 6px', borderRadius: 5,
-                                    background: 'var(--bg-2)', color: 'var(--text)',
-                                    border: '1px solid var(--border)', fontSize: 11,
-                                    fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 120,
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <select
+                              className="tc-worker-select"
+                              value={flow.workerId || ''}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => { e.stopPropagation(); updateFlow(flow.id, { workerId: e.target.value }); }}
+                              title="Assign worker (server)"
+                            >
+                              <option value="">Server (default)</option>
+                              {ungrouped.map(w => (
+                                <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                  {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                </option>
+                              ))}
+                              {namedGroups.map(g => (
+                                <optgroup key={g} label={g}>
+                                  {(grouped[g] || []).map(w => (
+                                    <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                      {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
                           );
                         })()
                       )}
                     </td>
 
-                    <td>
-                      {flow.lastExecution ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <StatusBadge status={flow.lastExecution.status} />
-                          <span className="tc-reltime">{formatRelativeTime(flow.lastExecution.startTime)}</span>
-                        </div>
-                      ) : (
-                        <span className="tc-dash">—</span>
-                      )}
-                    </td>
-
-                    <td>
-                      <span className="tc-duration">
-                        {formatDuration(flow.lastExecution?.duration ?? null)}
-                      </span>
-                    </td>
-
-                    <td>
-                      {flow.schedule ? (
-                        <span className="tc-sched-pill">
-                          <span className={`tc-sched-dot${flow.schedule.enabled ? '' : ' disabled'}`} />
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>
-                            {flow.schedule.cron}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="tc-dash">—</span>
-                      )}
-                    </td>
+                    {(() => {
+                      const le = lastExecFor(flow.id, flow.workerId || '', flow.activeBranch || 'main');
+                      const sched = scheduleFor(flow.id, null);
+                      return (
+                        <>
+                          <td>
+                            {le ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <StatusBadge status={le.status} />
+                                <span className="tc-reltime">{formatRelativeTime(le.startTime)}</span>
+                              </div>
+                            ) : (
+                              <span className="tc-dash">—</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className="tc-duration">{formatDuration(le?.duration ?? null)}</span>
+                          </td>
+                          <td>
+                            {sched ? (
+                              <span className="tc-sched-pill">
+                                <span className={`tc-sched-dot${sched.enabled ? '' : ' disabled'}`} />
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>{sched.cronExpr}</span>
+                              </span>
+                            ) : flow.schedule ? (
+                              <span className="tc-sched-pill">
+                                <span className={`tc-sched-dot${flow.schedule.enabled ? '' : ' disabled'}`} />
+                                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>{flow.schedule.cron}</span>
+                              </span>
+                            ) : (
+                              <span className="tc-dash">—</span>
+                            )}
+                          </td>
+                        </>
+                      );
+                    })()}
 
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
@@ -557,6 +646,15 @@ const FlowsList: React.FC = () => {
                             title="Execute flow"
                           >
                             {runningIds.has(flow.id) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                          </button>
+                        )}
+                        {canEditFlow(flow) && (
+                          <button
+                            className="tc-icon-btn"
+                            onClick={e => { e.stopPropagation(); addVariant(flow); }}
+                            title="Add subrow (variant)"
+                          >
+                            <Plus size={14} />
                           </button>
                         )}
                         {canEditFlow(flow) && (
@@ -606,6 +704,122 @@ const FlowsList: React.FC = () => {
                     </td>
                   </tr>
                 );
+                const subRows = [
+                  ...variants.map(variant => {
+                    const runKey = `${flow.id}:${variant.id}`;
+                    const editable = canEditFlow(flow);
+                    const le = lastExecFor(flow.id, variant.workerId || '', variant.branch || 'main');
+                    const sched = scheduleFor(flow.id, variant.id);
+                    return (
+                      <tr key={runKey} onClick={e => e.stopPropagation()}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 30 }}>
+                            <CornerDownRight size={13} style={{ color: 'var(--text-3)' }} />
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)' }}>variant</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }} title="Subrow git branch">
+                            <GitBranch size={12} style={{ color: 'var(--text-3)' }} />
+                            {editable ? (
+                              <BranchSelect
+                                flowId={flow.id}
+                                activeBranch={variant.branch}
+                                onSelect={b => patchVariant(flow, variant.id, { branch: b })}
+                                style={{
+                                  height: 26, padding: '0 6px', borderRadius: 5,
+                                  background: 'var(--bg-2)', color: 'var(--text)',
+                                  border: '1px solid var(--border)', fontSize: 11,
+                                  fontFamily: 'var(--font-mono)', cursor: 'pointer', maxWidth: 130,
+                                }}
+                              />
+                            ) : (
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent)' }}>{variant.branch}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          {editable ? (
+                            <select
+                              className="tc-worker-select"
+                              value={variant.workerId || ''}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => { e.stopPropagation(); patchVariant(flow, variant.id, { workerId: e.target.value }); }}
+                              title="Subrow worker"
+                            >
+                              <option value="">Server (default)</option>
+                              {subUsableWorkers.map(w => (
+                                <option key={w._id} value={w._id} disabled={w.status !== 'online'}>
+                                  {w.name}{w.status !== 'online' ? ' · offline' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-3)' }}>
+                              {serverWorkers.find(w => w._id === variant.workerId)?.name ?? 'Server (default)'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {le ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <StatusBadge status={le.status} />
+                              <span className="tc-reltime">{formatRelativeTime(le.startTime)}</span>
+                            </div>
+                          ) : (
+                            <span className="tc-dash">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="tc-duration">{formatDuration(le?.duration ?? null)}</span>
+                        </td>
+                        <td>
+                          {sched ? (
+                            <span className="tc-sched-pill">
+                              <span className={`tc-sched-dot${sched.enabled ? '' : ' disabled'}`} />
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>{sched.cronExpr}</span>
+                            </span>
+                          ) : (
+                            <span className="tc-dash">—</span>
+                          )}
+                        </td>
+                        <td onClick={e => e.stopPropagation()}>
+                          <div className="tc-row-actions">
+                            {!isViewer && (
+                              <button
+                                className="tc-icon-btn"
+                                disabled={runningIds.has(runKey)}
+                                onClick={e => { e.stopPropagation(); executeVariant(flow, variant); }}
+                                title="Execute subrow"
+                              >
+                                {runningIds.has(runKey) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                              </button>
+                            )}
+                            {isAdmin && editable && (
+                              <button
+                                className="tc-icon-btn"
+                                onClick={e => { e.stopPropagation(); setScheduleVariant({ flow, variant }); }}
+                                title="Schedule / API trigger for this subrow"
+                              >
+                                <Clock size={14} />
+                              </button>
+                            )}
+                            {editable && (
+                              <button
+                                className="tc-icon-btn danger"
+                                onClick={e => { e.stopPropagation(); removeVariant(flow, variant.id); }}
+                                title="Remove subrow"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }),
+                ].filter(Boolean);
+                return [mainRow, ...subRows];
                 });
                 return [header, ...rows];
               })}
@@ -618,8 +832,16 @@ const FlowsList: React.FC = () => {
       {scheduleFlow && (
         <ScheduleModal
           flow={scheduleFlow}
-          onClose={() => setScheduleFlow(null)}
+          onClose={() => { setScheduleFlow(null); reloadSchedules(); }}
           onSave={handleScheduleSave}
+        />
+      )}
+      {scheduleVariant && (
+        <ScheduleModal
+          flow={scheduleVariant.flow}
+          variant={scheduleVariant.variant}
+          onClose={() => { setScheduleVariant(null); reloadSchedules(); }}
+          onSave={async () => { reloadSchedules(); }}
         />
       )}
     </div>

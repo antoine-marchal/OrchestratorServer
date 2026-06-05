@@ -116,7 +116,7 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
       await col.insert(flow);
     } else {
       const updates: any = { updatedAt: now };
-      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts', 'owner']) {
+      for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts', 'owner', 'variants']) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
       }
       await col.update({ _id: req.params.id }, { $set: updates });
@@ -250,16 +250,29 @@ router.post('/:id/execute', async (req: Request, res: Response) => {
     const col = getCollection('flows');
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
-    // Accessibility gate: a flow pinned to a worker the user is forbidden from
-    // cannot be executed by them (mirrors hiding it in the editor's picker).
-    if (flow.workerId) {
-      const worker = await getCollection('workers').findOne({ _id: flow.workerId });
+    // Optional per-run overrides (subrow variants): a different worker and/or
+    // branch than the flow defaults.
+    const hasWorkerOverride = Object.prototype.hasOwnProperty.call(req.body || {}, 'workerId');
+    let overrides: { workerId?: string; branch?: string } | undefined;
+    if (hasWorkerOverride || req.body?.branch) {
+      overrides = {};
+      // Only set workerId when explicitly overridden — otherwise the executor
+      // keeps the flow's own worker (an undefined-valued key would still count
+      // as an override and wrongly force local execution).
+      if (hasWorkerOverride) overrides.workerId = req.body.workerId || '';
+      if (req.body?.branch) overrides.branch = req.body.branch;
+    }
+    // Accessibility gate: the worker this run will actually use (override or the
+    // flow's own) must be permitted for the user.
+    const effectiveWorkerId = hasWorkerOverride ? (req.body.workerId || '') : flow.workerId;
+    if (effectiveWorkerId) {
+      const worker = await getCollection('workers').findOne({ _id: effectiveWorkerId });
       if (worker && !canUserUseWorker(user, worker)) {
         return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to run flows on worker "${worker.name}"` } }) as any;
       }
     }
     const triggeredUser: string | undefined = (req as any).user?.login;
-    const executionId = await executeOrchestratorFlow(req.params.id, 'manual', triggeredUser);
+    const executionId = await executeOrchestratorFlow(req.params.id, 'manual', triggeredUser, overrides);
     res.json({ executionId, message: 'Execution started' });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
@@ -280,7 +293,9 @@ router.put('/:id/schedule', async (req: Request, res: Response) => {
     // Mirror into the schedules collection — that's what cronScheduler watches.
     // Without this the cron only fires after the next server restart (the
     // startup migration mirrors flow.schedule once). Upsert + (un)register now.
-    let sched = await schedulesCol.findOne({ flowId: req.params.id, type: 'cron' });
+    // Only the flow-level cron (variant crons carry a variantId and are managed
+    // separately per subrow) — never hijack a variant's schedule row.
+    let sched = await schedulesCol.findOne({ flowId: req.params.id, type: 'cron', variantId: { $exists: false } });
     if (sched) {
       await schedulesCol.update({ _id: sched._id }, { $set: { cronExpr: cron, timezone, enabled, label: cron, updatedAt: now } });
       sched = { ...sched, cronExpr: cron, timezone, enabled };

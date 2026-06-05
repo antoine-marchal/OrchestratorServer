@@ -56,11 +56,12 @@ const ExecutionsList: React.FC = () => {
     }
   };
 
-  const handleRerun = async (flowId: string, fromId: string) => {
-    setRerunningId(fromId);
+  const handleRerun = async (exec: { id: string; flowId: string; workerId?: string; branch?: string }) => {
+    setRerunningId(exec.id);
     try {
-      const execId = await executeFlow(flowId);
-      navigate(`/flows/${flowId}?tab=executions&exec=${execId}`);
+      // Re-run the same flow on the same worker + branch the original used.
+      const execId = await executeFlow(exec.flowId, 'manual', { workerId: exec.workerId || '', branch: exec.branch });
+      navigate(`/flows/${exec.flowId}?tab=executions&exec=${execId}`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Execution failed');
     } finally {
@@ -254,9 +255,9 @@ const ExecutionsList: React.FC = () => {
                         {exec.status !== 'RUNNING' && canEdit && (
                           <button
                             className="tc-icon-btn"
-                            onClick={() => handleRerun(exec.flowId, exec.id)}
+                            onClick={() => handleRerun(exec)}
                             disabled={rerunningId === exec.id}
-                            title="Re-run flow"
+                            title="Re-run (same worker & branch)"
                           >
                             {rerunningId === exec.id ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
                           </button>

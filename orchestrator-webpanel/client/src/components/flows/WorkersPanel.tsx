@@ -5,23 +5,25 @@ import { useAuth } from '../../hooks/useAuth';
 
 type WorkerPlatform = 'win32' | 'linux' | 'darwin' | 'unknown';
 
-const ROLES = ['admin', 'operator', 'viewer'];
-
 interface WorkerAccess {
   mode: 'allow' | 'deny';
   roles: string[];
   users: string[];
 }
 
-// Human summary of a worker's access policy for the card meta line.
+// Human summary of a worker's access policy for the card meta line. Admins
+// always have access and viewers never run flows, so only operator logins are
+// meaningful — roles are not surfaced.
 function accessSummary(access?: WorkerAccess | null): string {
   if (!access || (access.mode !== 'allow' && access.mode !== 'deny')) return 'everyone';
-  const parts = [...(access.roles || []), ...(access.users || [])];
+  const parts = [...(access.users || [])];
   const who = parts.length ? parts.join(', ') : '(nobody listed)';
   return access.mode === 'allow' ? `only ${who}` : `all except ${who}`;
 }
 
-// Inline allow/deny policy editor. mode 'open' clears the policy (access=null).
+// Inline allow/forbid policy editor. mode 'open' clears the policy (access=null).
+// Only operator users are selectable: admins can always run, viewers never can,
+// and operator is the only role for which access is a real decision.
 const AccessEditor: React.FC<{
   access?: WorkerAccess | null;
   userLogins: string[];
@@ -30,7 +32,6 @@ const AccessEditor: React.FC<{
   title: string;
 }> = ({ access, userLogins, onSave, onCancel, title }) => {
   const [mode, setMode] = useState<'open' | 'allow' | 'deny'>(access?.mode ?? 'open');
-  const [roles, setRoles] = useState<Set<string>>(new Set(access?.roles ?? []));
   const [users, setUsers] = useState<Set<string>>(new Set(access?.users ?? []));
 
   const toggle = (set: Set<string>, val: string, setter: (s: Set<string>) => void) => {
@@ -41,65 +42,58 @@ const AccessEditor: React.FC<{
 
   const save = () => {
     if (mode === 'open') { onSave(null); return; }
-    onSave({ mode, roles: [...roles], users: [...users] });
+    onSave({ mode, roles: [], users: [...users] });
   };
 
+  const forbidAllOperators = () => { setMode('deny'); setUsers(new Set(userLogins)); };
+
+  // White-card chip styling — the editor renders on a white background, so
+  // button text must stay dark for contrast.
+  const chip = (active: boolean): React.CSSProperties => ({
+    height: 24, padding: '0 10px', fontSize: 11, borderRadius: 6, cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    border: `1px solid ${active ? '#2563eb' : '#cbd5e1'}`,
+    background: active ? '#2563eb' : '#fff',
+    color: active ? '#fff' : '#1f2937',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+  });
+
   return (
-    <div style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 6, padding: 12, marginTop: 8 }}>
+    <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 6, padding: 12, marginTop: 8, color: '#1f2937' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <Shield size={12} style={{ color: 'var(--accent)' }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-2)' }}>{title}</span>
+        <Shield size={12} style={{ color: '#2563eb' }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#374151' }}>{title}</span>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: mode === 'open' ? 0 : 10 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
         {(['open', 'allow', 'deny'] as const).map(m => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={mode === m ? 'tc-btn primary' : 'tc-btn ghost'}
-            style={{ height: 24, padding: '0 10px', fontSize: 11 }}
-          >
+          <button key={m} onClick={() => setMode(m)} style={chip(mode === m)}>
             {m === 'open' ? 'Open to all' : m === 'allow' ? 'Allow only' : 'Forbid'}
           </button>
         ))}
+        <button
+          onClick={forbidAllOperators}
+          style={{ ...chip(mode === 'deny' && userLogins.length > 0 && userLogins.every(u => users.has(u))), border: '1px solid #dc2626', color: (mode === 'deny' && userLogins.length > 0 && userLogins.every(u => users.has(u))) ? '#fff' : '#dc2626', background: (mode === 'deny' && userLogins.length > 0 && userLogins.every(u => users.has(u))) ? '#dc2626' : '#fff' }}
+          title="Forbid every operator"
+        >
+          Forbid all operators
+        </button>
       </div>
       {mode !== 'open' && (
-        <>
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 4, textTransform: 'uppercase' }}>Roles</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {ROLES.map(r => (
-                <button
-                  key={r}
-                  onClick={() => toggle(roles, r, setRoles)}
-                  className={roles.has(r) ? 'tc-btn primary' : 'tc-btn ghost'}
-                  style={{ height: 22, padding: '0 8px', fontSize: 11 }}
-                >
-                  {roles.has(r) ? <Check size={10} /> : null} {r}
-                </button>
-              ))}
-            </div>
+        <div>
+          <div style={{ fontSize: 10, color: '#6b7280', fontFamily: 'var(--font-mono)', marginBottom: 4, textTransform: 'uppercase' }}>Operators</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxHeight: 96, overflowY: 'auto' }}>
+            {userLogins.length === 0 && <span style={{ fontSize: 11, color: '#9ca3af' }}>no operators</span>}
+            {userLogins.map(u => (
+              <button key={u} onClick={() => toggle(users, u, setUsers)} style={chip(users.has(u))}>
+                {users.has(u) ? <Check size={10} /> : null} {u}
+              </button>
+            ))}
           </div>
-          <div>
-            <div style={{ fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', marginBottom: 4, textTransform: 'uppercase' }}>Users</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', maxHeight: 96, overflowY: 'auto' }}>
-              {userLogins.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-mute)' }}>no users</span>}
-              {userLogins.map(u => (
-                <button
-                  key={u}
-                  onClick={() => toggle(users, u, setUsers)}
-                  className={users.has(u) ? 'tc-btn primary' : 'tc-btn ghost'}
-                  style={{ height: 22, padding: '0 8px', fontSize: 11 }}
-                >
-                  {users.has(u) ? <Check size={10} /> : null} {u}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
+        </div>
       )}
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 10 }}>
-        <button onClick={onCancel} className="tc-btn ghost" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>Cancel</button>
-        <button onClick={save} className="tc-btn primary" style={{ height: 24, padding: '0 12px', fontSize: 11 }}>Save</button>
+        <button onClick={onCancel} style={chip(false)}>Cancel</button>
+        <button onClick={save} style={chip(true)}>Save</button>
       </div>
     </div>
   );
@@ -276,12 +270,13 @@ const WorkersPanel: React.FC = () => {
     return () => clearInterval(interval);
   }, [load]);
 
-  // User logins for the access-policy picker (admin only).
+  // Operator logins for the access-policy picker (admin only). Admins always
+  // have access and viewers never run flows, so only operators are listed.
   useEffect(() => {
     if (!isAdmin) return;
     apiClient.get('/api/v1/users').then((data: any) => {
       const list = Array.isArray(data) ? data : [];
-      setUserLogins(list.map((u: any) => u.login).filter(Boolean));
+      setUserLogins(list.filter((u: any) => u.role === 'operator').map((u: any) => u.login).filter(Boolean));
     }).catch(() => { /* non-fatal */ });
   }, [isAdmin]);
 

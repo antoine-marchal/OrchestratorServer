@@ -2,7 +2,8 @@ import cron from 'node-cron';
 import { getCollection } from '../db/index';
 import { Schedule } from '../db/models/Schedule';
 
-type ExecuteFlowFn = (flowId: string, triggeredBy: string) => Promise<string | null>;
+type ExecuteOverrides = { workerId?: string | null; branch?: string };
+type ExecuteFlowFn = (flowId: string, triggeredBy: string, triggeredUser?: string, overrides?: ExecuteOverrides) => Promise<string | null>;
 
 const tasks = new Map<string, cron.ScheduledTask>();
 let _executeFlow: ExecuteFlowFn | null = null;
@@ -40,7 +41,19 @@ export function register(schedule: Schedule): void {
     if (!_executeFlow) return;
     console.log(`[Cron] Firing schedule ${schedule._id} for flow ${schedule.flowId}`);
     try {
-      await _executeFlow(schedule.flowId, 'cron');
+      // Variant schedules carry a worker/branch override; flow-level ones don't.
+      let ov: ExecuteOverrides | undefined;
+      const variantId = (schedule as any).variantId;
+      if (variantId) {
+        // The subrow may have been deleted by someone who couldn't remove the
+        // schedule row (schedule mgmt is admin-only). Skip rather than fire a
+        // ghost run; best-effort unregister so it stops ticking.
+        const flow = await getCollection('flows').findOne({ _id: schedule.flowId });
+        const exists = flow && Array.isArray(flow.variants) && flow.variants.some((v: any) => v.id === variantId);
+        if (!exists) { unregister(schedule._id); return; }
+        ov = { workerId: (schedule as any).workerId ?? '', branch: (schedule as any).branch };
+      }
+      await _executeFlow(schedule.flowId, 'cron', undefined, ov);
       const schedules = getCollection('schedules');
       await schedules.update({ _id: schedule._id }, { $set: { lastFiredAt: new Date().toISOString() } });
     } catch (err) {

@@ -2,7 +2,8 @@ import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, c
 import { getCollection } from '../db/index';
 import { dispatchToWorker, isWorkerOnline } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
-import { snapshotFlowForExecution } from '../git/flowCommit';
+import { snapshotFlowForExecution, flowFieldsAtCommit, branchRef } from '../git/flowCommit';
+import { getRef } from '../git/gitStore';
 import { saveExecutionLogs } from './executionLogs';
 import { eventBus } from '../scheduler/eventBus';
 import kill from 'tree-kill';
@@ -622,7 +623,14 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
    Orchestrator flow execution (library)
    ============================ */
 
-export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string): Promise<string | null> {
+// `overrides` lets a caller run the flow with a different worker and/or git
+// branch than the flow's defaults — used by per-flow "subrow" variants and
+// their schedules. `workerId: ''` means run locally; omitting the key keeps the
+// flow's own worker. A `branch` other than the active one is reconstructed from
+// that branch's git HEAD without disturbing the live flow doc.
+export interface ExecuteOverrides { workerId?: string | null; branch?: string }
+
+export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string, overrides?: ExecuteOverrides): Promise<string | null> {
   const flowsCol = getCollection('flows');
   const execsCol = getCollection('executions');
 
@@ -638,17 +646,46 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   // nodes+edges in the execution row. The detail endpoint reconstructs the graph
   // from this sha on demand. Falls back to inlining the graph if no commit could
   // be made (keeps older / git-less flows working).
-  const flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
-  const graphSnapshot = flowCommit ? {} : { nodes: flow.nodes || [], edges: flow.edges || [] };
-  // Record which git branch this run executed from.
-  const branch = flow.activeBranch || 'main';
+  // Branch this run executes from — the flow's active branch unless a variant
+  // override points elsewhere. The graph (nodes/edges/artifacts) normally comes
+  // from the live flow doc (== active branch); for a different branch we
+  // reconstruct it from that branch's git HEAD and pin the run to that commit.
+  const activeBranch = flow.activeBranch || 'main';
+  const branch = (overrides?.branch && overrides.branch.trim()) || activeBranch;
+  let runNodes: any[] = flow.nodes || [];
+  let runEdges: any[] = flow.edges || [];
+  let runArtifacts: Array<{ name: string; data: string }> = flow.artifacts || [];
+  let flowCommit: string | null = null;
+  if (branch !== activeBranch) {
+    const sha = await getRef(flowId, branchRef(branch));
+    let loaded = false;
+    if (sha) {
+      try {
+        const fields = await flowFieldsAtCommit(flowId, sha);
+        runNodes = fields.nodes || [];
+        runEdges = fields.edges || [];
+        runArtifacts = fields.artifacts || [];
+        flowCommit = sha;
+        loaded = true;
+      } catch { /* commit gone — fall back below */ }
+    }
+    if (!loaded) flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
+  } else {
+    flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
+  }
+  const graphSnapshot = flowCommit ? {} : { nodes: runNodes, edges: runEdges };
+
+  // Effective worker: a variant override (incl. '' for local) wins; otherwise
+  // the flow's own assignment.
+  const hasWorkerOverride = !!overrides && Object.prototype.hasOwnProperty.call(overrides, 'workerId');
+  const effectiveWorkerId = hasWorkerOverride ? (overrides!.workerId || '') : (flow.workerId || '');
 
   // Resolve worker before inserting the execution so we can store the name.
   let resolvedWorkerId: string | null = null;
   let resolvedWorkerName: string | null = null;
-  if (flow.workerId) {
+  if (effectiveWorkerId) {
     const workersCol = getCollection('workers');
-    const w = await workersCol.findOne({ _id: flow.workerId });
+    const w = await workersCol.findOne({ _id: effectiveWorkerId });
     const isOnline = isWorkerOnline(w?.lastSeenAt);
     if (!w || !isOnline) {
       const endTime = new Date().toISOString();
@@ -657,7 +694,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
       const failedExec: any = {
         _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
         status: 'FAILED', triggeredBy, triggeredUser: triggeredUser || null, startTime, endTime, duration, jobId: null,
-        workerId: flow.workerId, workerName: w?.name || null,
+        workerId: effectiveWorkerId, workerName: w?.name || null,
         output: null, error: reason, nodeStatuses: {}, flowCommit, branch, ...graphSnapshot,
       };
       await execsCol.insert(failedExec);
@@ -665,7 +702,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
       await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status: 'FAILED', startTime, endTime, duration } } });
       return executionId;
     }
-    resolvedWorkerId = flow.workerId;
+    resolvedWorkerId = effectiveWorkerId;
     resolvedWorkerName = w.name || null;
   }
 
@@ -695,8 +732,8 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status: 'RUNNING', startTime, endTime: null, duration: null } } });
 
   const jobId = nowUid();
-  const flowContent = JSON.stringify({ nodes: flow.nodes || [], edges: flow.edges || [] });
-  const flowArtifacts: Array<{name: string; data: string}> = flow.artifacts || [];
+  const flowContent = JSON.stringify({ nodes: runNodes, edges: runEdges });
+  const flowArtifacts: Array<{name: string; data: string}> = runArtifacts;
 
   // Extract artifacts locally before execution (for server-side nodes)
   if (flowArtifacts.length && !resolvedWorkerId) {

@@ -3,6 +3,12 @@ export interface FlowArtifact {
   data: string; // base64
 }
 
+export interface FlowVariant {
+  id: string;
+  workerId: string; // '' = local/server
+  branch: string;
+}
+
 export interface Flow {
   _id: string;
   name: string;
@@ -24,6 +30,9 @@ export interface Flow {
   } | null;
   // Active git branch whose HEAD the executor runs. Defaults to 'main'.
   activeBranch?: string;
+  // Per-flow execution variants ("subrows"): each runs the same flow with a
+  // different worker and/or branch, executable and schedulable independently.
+  variants?: FlowVariant[];
   createdAt: string;
   updatedAt: string;
   lastExecution?: {

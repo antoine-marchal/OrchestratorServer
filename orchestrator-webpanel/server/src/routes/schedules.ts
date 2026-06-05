@@ -31,7 +31,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // Create cron schedule
 router.post('/cron', async (req: Request, res: Response) => {
-  const { flowId, cronExpr, label, enabled = true, timezone } = req.body;
+  const { flowId, cronExpr, label, enabled = true, timezone, variantId, workerId, branch } = req.body;
   if (!flowId || !cronExpr) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId and cronExpr required' } }) as any;
   try {
     const col = getCollection('schedules');
@@ -39,6 +39,8 @@ router.post('/cron', async (req: Request, res: Response) => {
     const schedule: any = {
       _id: uuidv4(), flowId, type: 'cron', cronExpr, label: label || cronExpr,
       timezone: timezone || undefined,
+      // Variant ("subrow") schedules carry a worker/branch override.
+      ...(variantId ? { variantId, workerId: workerId || '', branch: branch || 'main' } : {}),
       createdBy: (req as any).user?._id || 'system', enabled,
       createdAt: now, updatedAt: now,
     };
@@ -71,7 +73,7 @@ router.post('/event', async (req: Request, res: Response) => {
 
 // Create API trigger
 router.post('/api-trigger', async (req: Request, res: Response) => {
-  const { flowId, label, expiresAt, singleUse = false } = req.body;
+  const { flowId, label, expiresAt, singleUse = false, variantId, workerId, branch } = req.body;
   if (!flowId) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId required' } }) as any;
   try {
     const schedulesCol = getCollection('schedules');
@@ -80,6 +82,8 @@ router.post('/api-trigger', async (req: Request, res: Response) => {
 
     const schedule: any = {
       _id: uuidv4(), flowId, type: 'api', label: label || 'API Trigger',
+      // Variant ("subrow") triggers fire the flow with this worker/branch override.
+      ...(variantId ? { variantId, workerId: workerId || '', branch: branch || 'main' } : {}),
       createdBy: (req as any).user?._id || 'system', enabled: true,
       createdAt: now, updatedAt: now,
     };

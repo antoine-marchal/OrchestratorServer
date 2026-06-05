@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, GitBranch, Server, Wifi, WifiOff } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
-import { useServerWorkers } from '../../hooks/useServerWorkers';
+import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
+import { useAuth } from '../../hooks/useAuth';
 
 interface Props {
   onClose: () => void;
@@ -11,7 +12,11 @@ interface Props {
 const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
-  const { workers } = useServerWorkers();
+  const { workers: allWorkers } = useServerWorkers();
+  const { role, login } = useAuth();
+  // Only workers the user is allowed to run on are selectable (mirrors the gate
+  // in /flows). Without this an operator could pick a forbidden worker here.
+  const workers = allWorkers.filter(w => canUseWorker(w, role, login));
 
   const [name, setName] = useState('');
   const [namespace, setNamespace] = useState('default');

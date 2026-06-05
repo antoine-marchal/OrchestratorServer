@@ -50,7 +50,16 @@ router.get('/trigger/:token', async (req: Request, res: Response) => {
       if (!claimed) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Single-use token already used' } }) as any;
     }
 
-    const executionId = await executeOrchestratorFlow(schedule.flowId, 'api');
+    // Variant triggers carry a worker/branch override; verify the subrow still
+    // exists so a deleted variant's token can't fire a ghost run.
+    let ov: { workerId?: string; branch?: string } | undefined;
+    if (schedule.variantId) {
+      const flow = await getCollection('flows').findOne({ _id: schedule.flowId });
+      const exists = flow && Array.isArray(flow.variants) && flow.variants.some((v: any) => v.id === schedule.variantId);
+      if (!exists) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Subrow no longer exists' } }) as any;
+      ov = { workerId: schedule.workerId ?? '', branch: schedule.branch };
+    }
+    const executionId = await executeOrchestratorFlow(schedule.flowId, 'api', undefined, ov);
     res.json({ executionId, message: 'Flow triggered' });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });

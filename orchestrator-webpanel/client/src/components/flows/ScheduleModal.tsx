@@ -6,6 +6,10 @@ import type { OrchestratorFlow } from '../../types/flows';
 
 interface Props {
   flow: OrchestratorFlow;
+  // When set, the modal manages the cron schedule for a specific subrow variant
+  // (worker/branch override) instead of the flow itself. API triggers are
+  // flow-level only, so that tab is hidden in variant mode.
+  variant?: { id: string; workerId: string; branch: string };
   onClose: () => void;
   onSave: (schedule: { cron: string; enabled: boolean; timezone: string } | null) => Promise<void>;
 }
@@ -40,7 +44,7 @@ interface ApiTrigger {
   createdAt: string;
 }
 
-const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
+const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const [tab, setTab] = useState<Tab>('cron');
@@ -69,7 +73,8 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
     (async () => {
       try {
         const data: any = await apiClient.get(`/api/v1/schedules?flowId=${encodeURIComponent(flow.id)}`);
-        const cronRows = (data.schedules || []).filter((s: any) => s.type === 'cron');
+        const cronRows = (data.schedules || []).filter((s: any) =>
+          s.type === 'cron' && (variant ? s.variantId === variant.id : !s.variantId));
         if (cronRows.length > 0) {
           // First row wins — keeps the modal single-cron for now.
           const row = cronRows[0];
@@ -83,7 +88,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
         console.error('Failed to load cron schedule', err);
       }
     })();
-  }, [tab, flow.id]);
+  }, [tab, flow.id, variant?.id]);
 
   // Load existing api-trigger schedules for this flow when the API tab opens.
   useEffect(() => {
@@ -91,7 +96,8 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
     (async () => {
       try {
         const data: any = await apiClient.get(`/api/v1/schedules?flowId=${encodeURIComponent(flow.id)}`);
-        const apiSchedules = (data.schedules || []).filter((s: any) => s.type === 'api');
+        const apiSchedules = (data.schedules || []).filter((s: any) =>
+          s.type === 'api' && (variant ? s.variantId === variant.id : !s.variantId));
         // Surface schedule placeholders even when we don't have the raw token URL anymore.
         const triggers: ApiTrigger[] = apiSchedules.map((s: any) => ({
           scheduleId: s._id,
@@ -105,7 +111,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
         console.error('Failed to load api triggers', err);
       }
     })();
-  }, [tab, flow.id]);
+  }, [tab, flow.id, variant?.id]);
 
   const handleSaveCron = async () => {
     if (!isValid) { setError('Enter a valid 5-field cron expression'); return; }
@@ -118,13 +124,17 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
         // node-cron task with the new expression / enabled flag.
         await apiClient.patch(`/api/v1/schedules/${cronScheduleId}`, payload);
       } else {
-        const created: any = await apiClient.post('/api/v1/schedules/cron', { flowId: flow.id, ...payload });
+        const created: any = await apiClient.post('/api/v1/schedules/cron', {
+          flowId: flow.id, ...payload,
+          // Variant schedules carry the subrow's worker/branch override.
+          ...(variant ? { variantId: variant.id, workerId: variant.workerId, branch: variant.branch } : {}),
+        });
         setCronScheduleId(created?._id || null);
       }
-      // Mirror to flow.schedule so the row badge in FlowsList keeps showing
-      // the cron string. This is purely for display — the cron service reads
-      // from the schedules collection, not this field.
-      await onSave({ cron: cron.trim(), enabled, timezone: 'UTC' });
+      // Flow-level only: mirror to flow.schedule so the row badge in FlowsList
+      // keeps showing the cron string. Variant schedules live solely in the
+      // schedules collection.
+      if (!variant) await onSave({ cron: cron.trim(), enabled, timezone: 'UTC' });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save schedule');
@@ -140,7 +150,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
         await apiClient.delete(`/api/v1/schedules/${cronScheduleId}`);
         setCronScheduleId(null);
       }
-      await onSave(null);
+      if (!variant) await onSave(null);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove schedule');
@@ -155,6 +165,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
     try {
       const res: any = await apiClient.post('/api/v1/schedules/api-trigger', {
         flowId: flow.id, label: apiLabel || 'API Trigger',
+        ...(variant ? { variantId: variant.id, workerId: variant.workerId, branch: variant.branch } : {}),
       });
       // Stash the full URL once — the raw token isn't shown again afterwards.
       setApiTriggers(prev => [
@@ -195,8 +206,11 @@ const ScheduleModal: React.FC<Props> = ({ flow, onClose, onSave }) => {
               <Clock className="w-4 h-4 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-base font-semibold">Triggers</h2>
-              <p className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{flow.name}</p>
+              <h2 className="text-base font-semibold">{variant ? 'Subrow Schedule' : 'Triggers'}</h2>
+              <p className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-400'}`}>
+                {flow.name}
+                {variant && ` · ${variant.workerId ? 'worker' : 'server'} · ${variant.branch}`}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className={`p-1.5 rounded-md ${dark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>

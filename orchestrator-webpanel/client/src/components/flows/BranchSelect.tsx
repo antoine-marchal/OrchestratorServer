@@ -9,8 +9,11 @@ export const BranchSelect: React.FC<{
   flowId: string;
   activeBranch?: string;
   onChanged?: () => void;
+  // When provided, selecting a branch just reports it (no checkout) — used by
+  // subrow variants that target a branch without changing the flow's active one.
+  onSelect?: (branch: string) => void;
   style?: React.CSSProperties;
-}> = ({ flowId, activeBranch, onChanged, style }) => {
+}> = ({ flowId, activeBranch, onChanged, onSelect, style }) => {
   const [branches, setBranches] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -29,6 +32,7 @@ export const BranchSelect: React.FC<{
 
   const onChange = async (branch: string) => {
     if (branch === current) return;
+    if (onSelect) { onSelect(branch); return; }
     setBusy(true);
     try {
       await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}/checkout`);

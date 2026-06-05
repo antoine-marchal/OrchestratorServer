@@ -7,6 +7,12 @@ export interface FlowArtifact {
   data: string; // base64
 }
 
+export interface FlowVariant {
+  id: string;
+  workerId: string; // '' = local/server
+  branch: string;
+}
+
 export interface OrchestratorFlow {
   id: string;
   name: string;
@@ -16,6 +22,8 @@ export interface OrchestratorFlow {
   owner?: string;
   // Active git branch whose HEAD the executor runs. Defaults to 'main'.
   activeBranch?: string;
+  // Per-flow execution variants ("subrows") — alternate worker/branch targets.
+  variants?: FlowVariant[];
   nodes: any[];
   edges: any[];
   artifacts?: FlowArtifact[];
