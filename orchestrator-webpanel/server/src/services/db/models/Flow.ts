@@ -22,6 +22,8 @@ export interface Flow {
     workerId: string;
     fallbackToLocal: boolean; // default true — run locally if worker is offline
   } | null;
+  // Active git branch whose HEAD the executor runs. Defaults to 'main'.
+  activeBranch?: string;
   createdAt: string;
   updatedAt: string;
   lastExecution?: {

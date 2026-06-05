@@ -750,6 +750,14 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   );
 };
 
+// Stable string fingerprint of a graph, ignoring transient run overlays, so we
+// can tell whether the editor session matches the server definition.
+const normContent = (nodes: any[], edges: any[]): string =>
+  JSON.stringify({
+    nodes: (nodes || []).map(n => ({ ...n, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } })),
+    edges: edges || [],
+  });
+
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();
   const { sessions, activeSessionId, createSession, switchSession, updateActiveFlowState, getCanonicalSession } = useSessionStore();
@@ -760,6 +768,9 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef<string | null>(null);
   const hydratedRef = useRef(false);
+  // Fingerprint of the definition the session was last synced to (hydrate or
+  // autosave). Lets us detect external changes (e.g. a git push) vs local edits.
+  const lastSyncedRef = useRef<string>('');
   const [showArtifacts, setShowArtifacts] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const artifacts = flow.artifacts || [];
@@ -776,6 +787,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       // First time entering this flow: create its one canonical root session.
       createSession(flow.name, flow.id, { isFlowRoot: true }).then(() => {
         updateActiveFlowState({ nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 });
+        lastSyncedRef.current = normContent(flow.nodes || [], flow.edges || []);
         hydratedRef.current = true;
       });
       return;
@@ -801,8 +813,32 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     if (!flowSessions.some(s => s.id === activeSessionId)) {
       switchSession(canonical.id);
     }
+    lastSyncedRef.current = normContent(flow.nodes || [], flow.edges || []);
     hydratedRef.current = true;
   }, [flow.id]);
+
+  // Adopt external changes to the flow definition (e.g. a git push, picked up by
+  // the library poll) into the canonical editor session — but only when the
+  // session has no unsaved local edits, so we never clobber active typing.
+  // Without this the session stays on its first-hydrated snapshot and the
+  // autosave below would PUT stale content, reverting the external change.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const canonical = getCanonicalSession(flow.id);
+    if (!canonical) return;
+    const serverContent = normContent(flow.nodes || [], flow.edges || []);
+    if (serverContent === lastSyncedRef.current) return; // no external change
+    const sessionContent = normContent(canonical.flowState.nodes || [], canonical.flowState.edges || []);
+    if (sessionContent !== lastSyncedRef.current) return; // local edits pending — keep them
+    useSessionStore.setState(state => ({
+      sessions: state.sessions.map(s =>
+        s.id === canonical.id
+          ? { ...s, flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } }
+          : s),
+    }));
+    useSessionStore.getState().saveSessions();
+    lastSyncedRef.current = serverContent;
+  }, [flow.nodes, flow.edges, flow.id]);
 
   useEffect(() => {
     if (!hydratedRef.current) return;
@@ -815,6 +851,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     autosaveTimer.current = setTimeout(() => {
       // Don't persist transient run overlays (live status / attempt counters).
       const cleanNodes = nodes.map(n => ({ ...n, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } }));
+      lastSyncedRef.current = normContent(cleanNodes, edges);
       updateFlow(flow.id, { nodes: cleanNodes, edges });
       setSaveState('saved');
       if (saveTimer.current) clearTimeout(saveTimer.current);

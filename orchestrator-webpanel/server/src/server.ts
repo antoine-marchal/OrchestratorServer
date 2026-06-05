@@ -20,6 +20,8 @@ import secretsRouter from './routes/secrets';
 import schedulesRouter from './routes/schedules';
 import triggersRouter from './routes/triggers';
 import workersRouter from './routes/workers';
+import { flowGitRepository } from './services/git/FlowGitRepository';
+import { handleReceivePack, handleInfoRefs, handleUploadPack } from './services/git/receivePack';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -148,6 +150,27 @@ app.use('/api/v1', triggersRouter);
 // Worker agent endpoints (open — workers self-register without auth)
 // UI endpoints (GET /, DELETE /:id/record) protected inline in workers router
 app.use('/api/v1/workers', workersRouter);
+
+// Git smart-HTTP endpoints: one repository per flow at /git/:flowId.
+// The wrapper stashes flowId on the request because @fusebit/cloud-git mounts
+// its routes on a plain Router (no mergeParams), which would otherwise drop the
+// :flowId param. Auth is handled inside the repository's authorize() via HTTP
+// Basic (login + API key). Git bodies are binary (application/x-git-*), so the
+// global express.json() above leaves them untouched.
+const stashFlowId = (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  (req as any).gitFlowId = req.params.flowId;
+  next();
+};
+// Full smart-HTTP git endpoints, all implemented here (we no longer route to
+// @fusebit/cloud-git): its push parser can't fatten the thin packs git sends by
+// default, it never advertises `report-status`, and its upload-pack always
+// side-band-frames the pack even when the client didn't negotiate it
+// ("expected ACK/NAK, got '?PACK'"). Auth via HTTP Basic in authorize().
+const gitAuthorize = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+  flowGitRepository.authorize(req, res, next);
+app.get('/git/:flowId/info/refs', stashFlowId, gitAuthorize, (req, res) => { void handleInfoRefs(flowGitRepository, req, res); });
+app.post('/git/:flowId/git-upload-pack', stashFlowId, gitAuthorize, (req, res) => { void handleUploadPack(req, res); });
+app.post('/git/:flowId/git-receive-pack', stashFlowId, gitAuthorize, (req, res) => { void handleReceivePack(req, res); });
 
 // Fallback to webpanel index for SPA routing
 app.get('*', (req, res) => {

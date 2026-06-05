@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
+import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useSessionStore } from '../../store/sessionStore';
 
 interface VersionRow {
-  _id: string;
+  _id: string; // commit sha
   flowId: string;
   savedAt: string;
   author?: string;
   name?: string;
-  nodeCount?: number;
-  edgeCount?: number;
+  message?: string;
 }
 
 interface VersionDetail {
@@ -77,6 +76,46 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<VersionDetail | null>(null);
   const [showDiff, setShowDiff] = useState(true);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [activeBranch, setActiveBranch] = useState<string>('main');
+  const [copied, setCopied] = useState(false);
+
+  const cloneUrl = flowId ? `${window.location.origin}/git/${flowId}` : '';
+
+  // Push the server's flow nodes/edges into the canonical editor session so the
+  // canvas reflects a restore/checkout (the editor reads the session, not the
+  // library). Same pattern restore relies on.
+  const applyToSession = useCallback((nodes: any[], edges: any[]) => {
+    if (!flowId) return;
+    const sessionStore = useSessionStore.getState();
+    const canonical = sessionStore.getCanonicalSession(flowId);
+    if (!canonical) return;
+    useSessionStore.setState(state => ({
+      sessions: state.sessions.map(s =>
+        s.id === canonical.id
+          ? { ...s, flowState: { ...s.flowState, nodes, edges, history: [], historyIndex: -1 } }
+          : s
+      ),
+    }));
+    sessionStore.saveSessions();
+  }, [flowId]);
+
+  const loadBranches = useCallback(async () => {
+    if (!flowId) return;
+    try {
+      const data = await apiClient.get(`/api/v1/flows/${flowId}/branches`) as any;
+      setBranches(Array.isArray(data?.branches) ? data.branches : []);
+      if (data?.active) setActiveBranch(data.active);
+    } catch { /* branches are best-effort */ }
+  }, [flowId]);
+
+  const copyClone = useCallback(() => {
+    if (!cloneUrl) return;
+    navigator.clipboard?.writeText(cloneUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => { /* clipboard blocked */ });
+  }, [cloneUrl]);
 
   const load = useCallback(async () => {
     if (!flowId) return;
@@ -93,6 +132,21 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
   }, [flowId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadBranches(); }, [loadBranches]);
+
+  const checkout = useCallback(async (branch: string) => {
+    if (!flowId || branch === activeBranch) return;
+    try {
+      const updated: any = await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}/checkout`, {});
+      applyToSession(Array.isArray(updated?.nodes) ? updated.nodes : [], Array.isArray(updated?.edges) ? updated.edges : []);
+      setActiveBranch(branch);
+      await loadAll();
+      await load();
+      await loadBranches();
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to switch branch');
+    }
+  }, [flowId, activeBranch, applyToSession, loadAll, load, loadBranches]);
 
   // Poll every 10s while the panel is open so autosaves materialise without a
   // manual refresh.
@@ -167,6 +221,44 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
         <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--err)' }}>{error}</div>
       )}
 
+      {/* Git: branch switcher + clone URL */}
+      <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <GitBranch size={12} style={{ color: 'var(--accent)' }} />
+          <select
+            value={activeBranch}
+            onChange={e => checkout(e.target.value)}
+            title="Active branch (executor runs its HEAD)"
+            style={{
+              flex: 1, height: 24, fontSize: 11, fontFamily: 'var(--font-mono)',
+              background: 'var(--bg-1)', color: 'var(--text)', border: '1px solid var(--border)',
+              borderRadius: 4, padding: '0 6px', cursor: 'pointer',
+            }}
+          >
+            {(branches.length ? branches : [activeBranch]).map(b => (
+              <option key={b} value={b}>{b}{b === activeBranch ? ' (active)' : ''}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            readOnly
+            value={cloneUrl}
+            onFocus={e => e.currentTarget.select()}
+            title="git clone URL — user = your login, password = an API key"
+            style={{
+              flex: 1, height: 24, fontSize: 10, fontFamily: 'var(--font-mono)',
+              background: 'var(--bg-1)', color: 'var(--text-2)', border: '1px solid var(--border)',
+              borderRadius: 4, padding: '0 6px',
+            }}
+          />
+          <button onClick={copyClone} className="tc-btn ghost" style={{ height: 24, padding: '0 6px' }} title="Copy clone URL">
+            {copied ? <Check size={12} style={{ color: 'var(--ok)' }} /> : <Copy size={12} />}
+          </button>
+        </div>
+        <div style={{ fontSize: 9, color: 'var(--text-3)' }}>auth: login + API key</div>
+      </div>
+
       <div style={{ flex: '0 1 auto', overflow: 'auto', borderBottom: '1px solid var(--border)', maxHeight: '40%' }}>
         {loading && versions.length === 0 ? (
           <div style={{ padding: 12, fontSize: 11, color: 'var(--text-3)' }}>Loading…</div>
@@ -194,8 +286,11 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
                   {isSelected ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                   <span style={{ color: 'var(--text)' }}>{new Date(v.savedAt).toLocaleString()}</span>
                 </div>
+                <div style={{ marginLeft: 17, color: 'var(--text-2)', fontSize: 10 }}>
+                  {v.message || '(no message)'}
+                </div>
                 <div style={{ marginLeft: 17, color: 'var(--text-3)', fontSize: 10 }}>
-                  {v.author || 'unknown'} · {v.nodeCount ?? 0} nodes · {v.edgeCount ?? 0} edges
+                  {v.author || 'unknown'} · <span style={{ fontFamily: 'var(--font-mono)' }}>{v._id.slice(0, 8)}</span>
                 </div>
                 {isSelected && (
                   <div style={{ marginLeft: 17, marginTop: 6, display: 'flex', gap: 6 }}>
