@@ -3,6 +3,14 @@ import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
 import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
+import {
+  commitFlowState,
+  listCommits,
+  flowFieldsAtCommit,
+  listBranches,
+  checkoutBranchToDoc,
+  activeRef,
+} from '../services/git/flowCommit';
 
 const router = Router();
 
@@ -85,60 +93,19 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Minimum interval between two snapshots of the same flow. Rapid autosaves
-// inside this window collapse into a single "editing session" — the first
-// PUT in the window snapshots the prior state, every later PUT in the
-// same window skips snapshotting so the history doesn't fill with noise.
-// Defaults to 10 min, override via ORCHESTRATOR_VERSION_MIN_INTERVAL_MS.
-const VERSION_MIN_INTERVAL_MS =
-  Number(process.env.ORCHESTRATOR_VERSION_MIN_INTERVAL_MS ?? 10 * 60 * 1000);
-
 router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   try {
     const ownerError = await validateOwnerLogin(req.body?.owner);
     if (ownerError) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: ownerError } }) as any;
     const col = getCollection('flows');
-    const versionsCol = getCollection('flow_versions');
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
       const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '', artifacts = [] } = req.body;
       const owner = (req as any).user?.login || 'unknown';
-      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, owner, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
+      flow = { _id: req.params.id, name, namespace, description, nodes, edges, workerId, artifacts, owner, activeBranch: 'main', schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
       await col.insert(flow);
     } else {
-      // Snapshot the previous version into flow_versions when the graph or
-      // artifacts changed. A 10-minute window collapses bursts of autosaves
-      // into a single snapshot per editing session.
-      const graphChanged =
-        (Array.isArray(req.body.nodes) && JSON.stringify(req.body.nodes) !== JSON.stringify(flow.nodes || []))
-        || (Array.isArray(req.body.edges) && JSON.stringify(req.body.edges) !== JSON.stringify(flow.edges || []))
-        || (Array.isArray(req.body.artifacts) && JSON.stringify(req.body.artifacts) !== JSON.stringify(flow.artifacts || []));
-      if (graphChanged) {
-        try {
-          // Find the most recent snapshot for this flow. Skip writing a new
-          // one if the last is younger than the configured min interval.
-          const recent = await versionsCol.find({ flowId: req.params.id }, { sort: { savedAt: -1 }, limit: 1 });
-          const last = recent && recent.length ? recent[0] : null;
-          const lastAgeMs = last ? Date.now() - new Date(last.savedAt).getTime() : Infinity;
-          if (lastAgeMs >= VERSION_MIN_INTERVAL_MS) {
-            await versionsCol.insert({
-              _id: nowUid(),
-              flowId: req.params.id,
-              nodes: flow.nodes || [],
-              edges: flow.edges || [],
-              artifacts: flow.artifacts || [],
-              name: flow.name,
-              namespace: flow.namespace,
-              description: flow.description,
-              savedAt: flow.updatedAt || now,
-              author: (req as any).user?.login || 'unknown',
-            });
-          }
-        } catch (e: any) {
-          console.warn('[flows] failed to snapshot version:', e.message);
-        }
-      }
       const updates: any = { updatedAt: now };
       for (const key of ['name', 'namespace', 'description', 'nodes', 'edges', 'workerId', 'artifacts', 'owner']) {
         if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -146,53 +113,51 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
       await col.update({ _id: req.params.id }, { $set: updates });
       flow = await col.findOne({ _id: req.params.id });
     }
+    // History now lives in git: commit the saved state onto the active branch.
+    // commitFlowState is a no-op when the resulting tree is unchanged, so
+    // repeated autosaves of identical content don't create empty commits.
+    try {
+      await commitFlowState(
+        req.params.id,
+        { login: (req as any).user?.login },
+        `Save by ${(req as any).user?.login || 'unknown'}`,
+        { allowAmend: true },
+      );
+    } catch (e: any) {
+      console.warn('[flows] git commit on save failed:', e.message);
+    }
     res.json(flow);
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
 });
 
-// Force a version snapshot of the flow's current persisted state right now,
-// bypassing the autosave debounce window. Used by the editor's "Save version"
-// button so a user can checkpoint on demand instead of waiting for the next
-// interval-gated snapshot inside PUT /:id.
+// Force a commit of the flow's current persisted state right now (editor's
+// "Save version" button). Returns the new commit, or 200 with unchanged=true.
 router.post('/:id/versions', requireFlowEditAccess, async (req: Request, res: Response) => {
-  const now = new Date().toISOString();
   try {
-    const col = getCollection('flows');
-    const versionsCol = getCollection('flow_versions');
-    const flow = await col.findOne({ _id: req.params.id });
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
-    const version = {
-      _id: nowUid(),
-      flowId: req.params.id,
-      nodes: flow.nodes || [],
-      edges: flow.edges || [],
-      artifacts: flow.artifacts || [],
-      name: flow.name,
-      namespace: flow.namespace,
-      description: flow.description,
-      savedAt: now,
-      author: (req as any).user?.login || 'unknown',
-      manual: true,
-    };
-    await versionsCol.insert(version);
-    res.status(201).json({ _id: version._id, savedAt: now, manual: true });
+    const login = (req as any).user?.login || 'unknown';
+    const message = (req.body?.message as string) || `Manual checkpoint by ${login}`;
+    const sha = await commitFlowState(req.params.id, { login }, message);
+    if (!sha) return res.json({ unchanged: true });
+    res.status(201).json({ _id: sha, savedAt: new Date().toISOString(), manual: true });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
 });
 
+// History = git log of the active branch. Shape preserved for the existing UI
+// (_id is the commit sha; savedAt/author/name retained).
 router.get('/:id/versions', async (req: Request, res: Response) => {
   try {
-    const versionsCol = getCollection('flow_versions');
-    const versions = await versionsCol.find({ flowId: req.params.id });
-    versions.sort((a: any, b: any) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
-    // Trim the payload — clients ask for the full body via /:vid when they
-    // want to diff or restore. Keep a node count so the list is informative.
-    res.json(versions.map((v: any) => ({
-      _id: v._id, flowId: v.flowId, savedAt: v.savedAt, author: v.author,
-      name: v.name, nodeCount: (v.nodes || []).length, edgeCount: (v.edges || []).length,
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const commits = await listCommits(req.params.id, activeRef(flow));
+    res.json(commits.map((c) => ({
+      _id: c.sha, flowId: req.params.id, savedAt: c.savedAt, author: c.author,
+      name: flow.name, message: c.message,
     })));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
@@ -201,45 +166,57 @@ router.get('/:id/versions', async (req: Request, res: Response) => {
 
 router.get('/:id/versions/:vid', async (req: Request, res: Response) => {
   try {
-    const versionsCol = getCollection('flow_versions');
-    const v = await versionsCol.findOne({ _id: req.params.vid, flowId: req.params.id });
-    if (!v) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } }) as any;
-    res.json(v);
+    const fields = await flowFieldsAtCommit(req.params.id, req.params.vid);
+    res.json({ _id: req.params.vid, flowId: req.params.id, ...fields });
+  } catch (err: any) {
+    res.status(404).json({ error: { code: 'NOT_FOUND', message: err.message } });
+  }
+});
+
+router.post('/:id/versions/:vid/restore', requireFlowEditAccess, async (req: Request, res: Response) => {
+  const now = new Date().toISOString();
+  try {
+    const col = getCollection('flows');
+    const flow = await col.findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    let fields;
+    try {
+      fields = await flowFieldsAtCommit(req.params.id, req.params.vid);
+    } catch (e: any) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: e.message } }) as any;
+    }
+    await col.update({ _id: req.params.id }, { $set: {
+      nodes: fields.nodes, edges: fields.edges, artifacts: fields.artifacts, updatedAt: now,
+    } });
+    // Record the restore as a new commit so it's itself part of history.
+    const login = (req as any).user?.login || 'unknown';
+    await commitFlowState(req.params.id, { login }, `Restore commit ${req.params.vid.slice(0, 8)} by ${login}`);
+    res.json(await col.findOne({ _id: req.params.id }));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
 });
 
-router.post('/:id/versions/:vid/restore', async (req: Request, res: Response) => {
-  const now = new Date().toISOString();
+// List git branches for this flow.
+router.get('/:id/branches', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
-    const versionsCol = getCollection('flow_versions');
-    const v = await versionsCol.findOne({ _id: req.params.vid, flowId: req.params.id });
-    if (!v) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Version not found' } }) as any;
-    const flow = await col.findOne({ _id: req.params.id });
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
-    // Snapshot the current state first so restore is itself reversible.
-    try {
-      await versionsCol.insert({
-        _id: nowUid(),
-        flowId: req.params.id,
-        nodes: flow.nodes || [],
-        edges: flow.edges || [],
-        artifacts: flow.artifacts || [],
-        name: flow.name,
-        namespace: flow.namespace,
-        description: flow.description,
-        savedAt: flow.updatedAt || now,
-        author: (req as any).user?.login || 'unknown',
-      });
-    } catch { /* best effort */ }
-    await col.update({ _id: req.params.id }, { $set: {
-      nodes: v.nodes || [], edges: v.edges || [], artifacts: v.artifacts || [], updatedAt: now,
-    } });
-    res.json(await col.findOne({ _id: req.params.id }));
+    const branches = await listBranches(req.params.id);
+    res.json({ branches, active: flow.activeBranch || 'main' });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Switch the active branch and materialize its HEAD into the flow doc — the
+// executor runs whatever is currently in the doc.
+router.post('/:id/branches/:name/checkout', requireFlowEditAccess, async (req: Request, res: Response) => {
+  try {
+    const updated = await checkoutBranchToDoc(req.params.id, req.params.name);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
   }
 });
 

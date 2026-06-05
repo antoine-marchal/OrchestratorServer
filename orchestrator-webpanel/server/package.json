@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-server",
-  "version": "3.1.7",
+  "version": "3.2.0",
   "description": "Orchestrator Server - API server with MongoDB/NeDB persistence",
   "main": "dist/server.js",
   "scripts": {
@@ -27,6 +27,7 @@
     "outputPath": "release"
   },
   "dependencies": {
+    "@fusebit/cloud-git": "^1.0.0",
     "@seald-io/nedb": "^4.0.4",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

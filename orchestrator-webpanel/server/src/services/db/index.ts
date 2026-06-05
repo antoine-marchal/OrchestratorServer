@@ -2,8 +2,9 @@ import path from 'path';
 import fs from 'fs';
 
 const COLLECTION_NAMES = [
-  'users', 'roles', 'secrets', 'flows', 'flow_versions', 'executions',
+  'users', 'roles', 'secrets', 'flows', 'executions',
   'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'sessions',
+  'git_objects', 'git_refs',
 ] as const;
 
 /* ─── Shared interface ───────────────────────────────────────────────────── */
@@ -240,8 +241,9 @@ export async function connectDB(): Promise<void> {
     await _db['executions'].ensureIndex({ fieldName: 'startTime' });
     await _db['schedules'].ensureIndex({ fieldName: 'flowId' });
     await _db['secrets'].ensureIndex({ fieldName: 'name' });
-    await _db['flow_versions'].ensureIndex({ fieldName: 'flowId' });
-    await _db['flow_versions'].ensureIndex({ fieldName: 'savedAt' });
+    await _db['git_objects'].ensureIndex({ fieldName: 'flowId' });
+    await _db['git_objects'].ensureIndex({ fieldName: 'sha' });
+    await _db['git_refs'].ensureIndex({ fieldName: 'flowId' });
   } catch (err: any) {
     console.warn('[DB] ensureIndex failed:', err.message);
   }
