@@ -1,6 +1,6 @@
 import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED, scopeKey, NODE_SCOPE_SEP } from './nodeExecutor';
 import { getCollection } from '../db/index';
-import { dispatchToWorker, isWorkerOnline } from '../../routes/workers';
+import { dispatchToWorker, isWorkerOnline, canUserUseWorker } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
 import { snapshotFlowForExecution, flowFieldsAtCommit, branchRef } from '../git/flowCommit';
 import { getRef } from '../git/gitStore';
@@ -45,7 +45,12 @@ export function parseFlowContent(flowContent: string): any {
   return { flow, nodeMap, incomingMap, outgoingMap, roots };
 }
 
-async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = ''): Promise<any> {
+// `triggerUser` is the user who launched the top-level run ({role, login}), or
+// null for system triggers (cron/api). Used to gate flowRef sub-flows by the
+// same worker accessibility rules as the top-level execute.
+export type TriggerUser = { role: string; login: string } | null;
+
+async function executeRegularNode(node: any, nodeId: string, processedInputs: any, nodeResults: Record<string, any>, _isInline: boolean, timeout: number, basePath: string, flowVariables: Record<string, any>, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = '', triggerUser: TriggerUser = null): Promise<any> {
   let rawCode: string = node?.data?.code || '';
   let nodeType = node?.data?.type;
   // Effective artifacts for this node = parent artifacts + (for flowRef nodes)
@@ -71,6 +76,20 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       rawCode = JSON.stringify({ nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] });
       // Honour flow2's own worker assignment, otherwise inherit flow1's.
       effectiveWorkerId = referencedFlow.workerId || workerId || null;
+      // Gate the referenced flow's OWN worker before running it. Without this a
+      // flowRef pointing at a flow on a forbidden worker would still run (the
+      // top-level gate only covers F1's worker), and one on an offline worker
+      // would hang until the dispatch timeout (~5 min) — looking like the
+      // sub-flow "never triggered". Fail fast with a clear reason instead.
+      if (referencedFlow.workerId) {
+        const refW = await getCollection('workers').findOne({ _id: referencedFlow.workerId });
+        if (triggerUser && !canUserUseWorker(triggerUser, refW)) {
+          throw new Error(`Not allowed to run referenced flow "${referencedFlow.name}" on worker "${refW?.name || referencedFlow.workerId}"`);
+        }
+        if (!refW || !isWorkerOnline(refW.lastSeenAt)) {
+          throw new Error(`Referenced flow "${referencedFlow.name}" is assigned to ${refW ? `offline worker "${refW.name}"` : 'a missing worker'}`);
+        }
+      }
       const refArtifacts: Array<{name: string; data: string}> = referencedFlow.artifacts || [];
       if (refArtifacts.length) {
         // De-dupe by name — parent wins so a flow1 artifact still shadows a
@@ -135,6 +154,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         console.warn(`[flow] failed to create nested execution record: ${e.message}`);
       }
     } catch (err: any) {
+      // Access/liveness gate failures are already user-facing — don't bury them
+      // under a generic "failed to load" wrapper.
+      if (/^Not allowed to run referenced flow|^Referenced flow /.test(err.message || '')) throw err;
       throw new Error(`Failed to load referenced flow: ${err.message}`);
     }
   }
@@ -263,6 +285,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       nodeId,
       // Forward to the parent execution's SSE listeners.
       execId: jobId,
+      // Propagate the triggering user so deeper flowRef nesting stays gated.
+      triggerUser,
       status: 'queued',
       startTime: new Date().toISOString(),
       stopRequested: false,
@@ -333,7 +357,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   });
 }
 
-export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = ''): Promise<any> {
+export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath: string[], basePath: string, timeout: number, jobId: string | null, workerId: string | null = null, parentNodeId: string | null = null, artifacts?: Array<{name: string; data: string}>, parentScope: string = '', triggerUser: TriggerUser = null): Promise<any> {
   const { flow, nodeMap, incomingMap, outgoingMap, roots } = tempFlow;
 
   const starter = flow.nodes.find((n: any) => n?.data?.isStarterNode);
@@ -528,7 +552,7 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
         if (jobId) emitJobLog(jobId, 'input', JSON.stringify(processedInputs, null, 2), nodeId, parentScope);
 
         try {
-          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts, parentScope);
+          res = await executeRegularNode(node, nodeId, processedInputs, nodeResults, true, timeout, basePath, flowVariables, jobId, workerId, parentNodeId, artifacts, parentScope, triggerUser);
           if (jobId) emitNodeStatus(jobId, nodeId, 'success', { attempt, parentNodeId, parentScope });
           break;
         } catch (err: any) {
@@ -636,6 +660,15 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
   const flow = await flowsCol.findOne({ _id: flowId });
   if (!flow) return null;
+
+  // Resolve the triggering user's role so flowRef sub-flows can be gated by the
+  // same worker-access rules as the top-level run. System triggers (cron/api)
+  // have no user → null → sub-flows run unrestricted.
+  let triggerUser: TriggerUser = null;
+  if (triggeredUser) {
+    const u = await getCollection('users').findOne({ login: triggeredUser });
+    triggerUser = u ? { role: u.role, login: u.login } : { role: 'viewer', login: triggeredUser };
+  }
 
   const { nowUid: uid } = await import('./nodeExecutor');
   const executionId = nowUid();
@@ -746,6 +779,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     jobId,
     sessionId: 'flows-internal',
     type: 'flow',
+    triggerUser,
     code: flowContent,
     codeFilePath: null,
     input: null,

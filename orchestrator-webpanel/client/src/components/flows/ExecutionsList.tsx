@@ -7,6 +7,7 @@ import ExecIdCell from './ExecIdCell';
 import ExecutionsChart from './ExecutionsChart';
 import type { ExecutionStatus } from '../../types/flows';
 import { useAuth } from '../../hooks/useAuth';
+import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -33,6 +34,14 @@ const ExecutionsList: React.FC = () => {
   const navigate = useNavigate();
   const { executions, killExecution, clearExecutions, deleteExecution, syncBackendExecutions, executeFlow } = useFlowLibraryStore();
   const { canEdit, isAdmin, role, login } = useAuth();
+  const { workers: serverWorkers } = useServerWorkers();
+
+  // May the user re-run on the worker this execution used? (server always ok)
+  const canRunExec = (exec: { workerId?: string }) => {
+    if (!exec.workerId) return true;
+    const w = serverWorkers.find(sw => sw._id === exec.workerId);
+    return !!w && canUseWorker(w, role, login);
+  };
 
   // Who may delete a single execution: admins delete any; operators delete only
   // the ones they triggered (exec.triggeredUser === their login). Mirrors the
@@ -252,7 +261,7 @@ const ExecutionsList: React.FC = () => {
                             <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)' }}>Kill</span>
                           </button>
                         )}
-                        {exec.status !== 'RUNNING' && canEdit && (
+                        {exec.status !== 'RUNNING' && canEdit && canRunExec(exec) && (
                           <button
                             className="tc-icon-btn"
                             onClick={() => handleRerun(exec)}

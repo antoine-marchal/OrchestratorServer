@@ -445,7 +445,9 @@ const FlowsList: React.FC = () => {
                 );
                 if (isCollapsed) return [header];
                 const rows = nsFlows.flatMap(flow => {
-                const canRun = true;
+                // May the user run this flow's own worker? (server is always ok)
+                const flowWorker = flow.workerId ? serverWorkers.find(w => w._id === flow.workerId) : null;
+                const canRun = !flow.workerId || (!!flowWorker && canUseWorker(flowWorker, role, login));
                 const variants = flow.variants || [];
                 const subUsableWorkers = serverWorkers.filter(w => canUseWorker(w, role, login));
                 const mainRow = (
@@ -638,11 +640,11 @@ const FlowsList: React.FC = () => {
 
                     <td onClick={e => e.stopPropagation()}>
                       <div className="tc-row-actions">
-                        {!isViewer && (
+                        {!isViewer && canRun && (
                           <button
                             className="tc-icon-btn"
                             onClick={e => handleExecute(flow.id, e)}
-                            disabled={runningIds.has(flow.id) || !canRun}
+                            disabled={runningIds.has(flow.id)}
                             title="Execute flow"
                           >
                             {runningIds.has(flow.id) ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -708,6 +710,8 @@ const FlowsList: React.FC = () => {
                   ...variants.map(variant => {
                     const runKey = `${flow.id}:${variant.id}`;
                     const editable = canEditFlow(flow);
+                    const vWorker = variant.workerId ? serverWorkers.find(w => w._id === variant.workerId) : null;
+                    const vCanRun = !variant.workerId || (!!vWorker && canUseWorker(vWorker, role, login));
                     const le = lastExecFor(flow.id, variant.workerId || '', variant.branch || 'main');
                     const sched = scheduleFor(flow.id, variant.id);
                     return (
@@ -785,7 +789,7 @@ const FlowsList: React.FC = () => {
                         </td>
                         <td onClick={e => e.stopPropagation()}>
                           <div className="tc-row-actions">
-                            {!isViewer && (
+                            {!isViewer && vCanRun && (
                               <button
                                 className="tc-icon-btn"
                                 disabled={runningIds.has(runKey)}

@@ -1012,6 +1012,8 @@ const FlowDetail: React.FC = () => {
 
   const flow = flows.find(f => f.id === id);
   const assignedWorker = flow?.workerId ? serverWorkers.find(w => w._id === flow.workerId) : undefined;
+  // May the user run this flow's worker? (server always ok). Gates the Execute button.
+  const canRunFlow = !flow?.workerId || (!!assignedWorker && canUseWorker(assignedWorker, role, login));
 
   const [adminLogins, setAdminLogins] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -1304,7 +1306,7 @@ const FlowDetail: React.FC = () => {
                 />
               </div>
             )}
-            {canEdit && (
+            {canEdit && canRunFlow && (
               <button
                 onClick={handleExecute}
                 disabled={running}

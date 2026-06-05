@@ -1007,7 +1007,7 @@ export function processJob(job: any): void {
         // Scope of the inner sub-graph = this flow node's own ancestor chain
         // plus its own id. Top-level flow jobs have no nodeId → empty scope.
         const innerScope = job.nodeId ? scopeKey(job.parentScope || '', job.nodeId) : (job.parentScope || '');
-        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || EXECUTION_DIR, effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts, innerScope);
+        const result = await executeInlineFlow(tempFlow, job.input, [], job.basePath || EXECUTION_DIR, effectiveTimeout || DEFAULT_FLOW_TIMEOUT_MS, ssePath, job.workerId || null, job.parentNodeId || null, job.artifacts, innerScope, job.triggerUser || null);
         restore();
         const logMessages = logs.map(l => l.type === 'error' ? `ERROR: ${l.message}` : l.message).join('\n');
         finish({ output: result, log: logMessages || 'Successfully executed flow', error: null });

@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-server",
-  "version": "3.2.0",
+  "version": "3.2.2",
   "description": "Orchestrator Server - API server with MongoDB/NeDB persistence",
   "main": "dist/server.js",
   "scripts": {
