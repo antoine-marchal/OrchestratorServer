@@ -100,6 +100,7 @@ interface FlowLibraryState {
   startScheduler: () => void;
   stopScheduler: () => void;
   syncBackendExecutions: (flowId?: string) => Promise<void>;
+  fetchExecutionDetail: (execId: string) => Promise<void>;
 }
 
 export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
@@ -467,6 +468,9 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
           if (knownById.has(id)) {
             const prev = knownById.get(id)!;
+            // The list endpoint is metadata-only — logs/nodes/edges are fetched
+            // lazily via fetchExecutionDetail. Only patch them when the row
+            // happens to carry them, so we never clobber already-fetched detail.
             const patch: Partial<FlowExecution> = {
               displayName: bExec.displayName,
               status: bExec.status,
@@ -476,12 +480,10 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
               error: bExec.error,
               workerId: bExec.workerId || '',
               workerName: bExec.workerName || '',
-              nodes: Array.isArray(bExec.nodes) ? bExec.nodes : undefined,
-              edges: Array.isArray(bExec.edges) ? bExec.edges : undefined,
             };
-            if (Array.isArray(bExec.logs) && bExec.logs.length > 0) {
-              patch.logs = bExec.logs;
-            }
+            if (Array.isArray(bExec.nodes) && bExec.nodes.length) patch.nodes = bExec.nodes;
+            if (Array.isArray(bExec.edges) && bExec.edges.length) patch.edges = bExec.edges;
+            if (Array.isArray(bExec.logs) && bExec.logs.length > 0) patch.logs = bExec.logs;
             patchedExecs.set(id, { ...prev, ...patch });
             if (bExec.status !== 'RUNNING') stoppedRunningIds.push(id);
           } else {
@@ -509,6 +511,27 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         }
       } catch (err) {
         console.error('[flowLibraryStore] syncBackendExecutions failed:', err);
+      }
+    },
+
+    // Pull the heavy detail (logs + node/edge graph) for one execution. The list
+    // endpoint returns metadata only; this fills in the rest when the user opens
+    // an execution. RUNNING execs are kept fresh by startPoll instead.
+    fetchExecutionDetail: async (execId) => {
+      try {
+        const d: any = await apiClient.get(`/api/v1/executions/${execId}`);
+        updateExec(execId, {
+          logs: d.logs || [],
+          nodes: Array.isArray(d.nodes) ? d.nodes : undefined,
+          edges: Array.isArray(d.edges) ? d.edges : undefined,
+          output: d.output ?? null,
+          error: d.error ?? null,
+          status: d.status as ExecutionStatus,
+          endTime: d.endTime ?? null,
+          duration: d.duration ?? null,
+        });
+      } catch (err) {
+        console.error('[flowLibraryStore] fetchExecutionDetail failed:', err);
       }
     },
   };

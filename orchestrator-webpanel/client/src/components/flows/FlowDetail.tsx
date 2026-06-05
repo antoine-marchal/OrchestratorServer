@@ -165,7 +165,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   onSelectExec,
 }) => {
   const flowId = flow.id;
-  const { executions, killExecution, clearExecutions, deleteExecution, renameExecution, syncBackendExecutions, flows } = useFlowLibraryStore();
+  const { executions, killExecution, clearExecutions, deleteExecution, renameExecution, syncBackendExecutions, fetchExecutionDetail, flows } = useFlowLibraryStore();
   const { canEdit, isAdmin, role, login } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
 
@@ -220,6 +220,12 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     setSelectedRun(null);
     setCollapsedFlowNodes(new Set());
   }, [selectedId]);
+
+  // Executions are listed metadata-only; pull the heavy detail (logs + graph)
+  // when one is opened. RUNNING ones keep refreshing via the per-exec poller.
+  useEffect(() => {
+    if (selectedId) fetchExecutionDetail(selectedId).catch(() => {});
+  }, [selectedId, fetchExecutionDetail]);
 
   // Live-tail executions while the user is on this tab. This catches executions
   // started by cron / API triggers (anything not initiated from this browser),

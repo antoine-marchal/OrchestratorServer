@@ -2,8 +2,8 @@ import path from 'path';
 import fs from 'fs';
 
 const COLLECTION_NAMES = [
-  'users', 'roles', 'secrets', 'flows', 'executions',
-  'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'sessions',
+  'users', 'roles', 'secrets', 'flows', 'executions', 'execution_logs',
+  'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'artifact_blobs', 'sessions',
   'git_objects', 'git_refs',
 ] as const;
 
@@ -13,6 +13,11 @@ export interface FindOptions {
   sort?: Record<string, 1 | -1>;
   skip?: number;
   limit?: number;
+  // Field inclusion/exclusion map. Same shape on Mongo and NeDB. Exclusion-only
+  // ({ field: 0 }) is the portable form — NeDB forbids mixing include/exclude
+  // (except _id). Used to keep heavy fields (logs, nodes, edges) out of list
+  // queries.
+  projection?: Record<string, 0 | 1>;
 }
 
 export interface ICollection {
@@ -32,6 +37,7 @@ class MongoCollection implements ICollection {
 
   find(query: object = {}, options: FindOptions = {}): Promise<any[]> {
     let cursor = this.col.find(query);
+    if (options.projection) cursor = cursor.project(options.projection);
     if (options.sort) cursor = cursor.sort(options.sort);
     if (options.skip) cursor = cursor.skip(options.skip);
     if (options.limit) cursor = cursor.limit(options.limit);
@@ -150,7 +156,7 @@ class NeDBCollection implements ICollection {
 
   find(query: object = {}, options: FindOptions = {}): Promise<any[]> {
     return new Promise((resolve, reject) => {
-      let cursor = this.ds.find(query);
+      let cursor = options.projection ? this.ds.find(query, options.projection) : this.ds.find(query);
       if (options.sort) cursor = cursor.sort(options.sort);
       if (options.skip) cursor = cursor.skip(options.skip);
       if (options.limit) cursor = cursor.limit(options.limit);
@@ -236,6 +242,7 @@ export async function connectDB(): Promise<void> {
     await _db['worker_jobs'].ensureIndex({ fieldName: 'workerId' });
     await _db['worker_jobs'].ensureIndex({ fieldName: 'status' });
     await _db['worker_jobs'].ensureIndex({ fieldName: 'executionId' });
+    await _db['worker_jobs'].ensureIndex({ fieldName: 'completedAt' });
     await _db['executions'].ensureIndex({ fieldName: 'flowId' });
     await _db['executions'].ensureIndex({ fieldName: 'status' });
     await _db['executions'].ensureIndex({ fieldName: 'startTime' });

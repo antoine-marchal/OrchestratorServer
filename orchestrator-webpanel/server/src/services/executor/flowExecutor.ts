@@ -2,6 +2,8 @@ import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, c
 import { getCollection } from '../db/index';
 import { dispatchToWorker, isWorkerOnline } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
+import { snapshotFlowForExecution } from '../git/flowCommit';
+import { saveExecutionLogs } from './executionLogs';
 import { eventBus } from '../scheduler/eventBus';
 import kill from 'tree-kill';
 import { ChildProcess } from 'child_process';
@@ -101,6 +103,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         const execId = nowUid();
         const startTime = new Date().toISOString();
         const nestedNodeIds = new Set<string>((referencedFlow.nodes || []).map((n: any) => n.id));
+        // Pin to the referenced flow's git commit; inline only as a fallback.
+        const nestedCommit = await snapshotFlowForExecution(referencedFlow._id, { login: referencedFlow.owner });
+        const nestedGraph = nestedCommit ? {} : { nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] };
         await execsCol.insert({
           _id: execId,
           flowId: referencedFlow._id,
@@ -115,12 +120,11 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
           jobId: null,
           workerId: effectiveWorkerId,
           workerName,
-          logs: [],
           output: null,
           error: null,
           nodeStatuses: {},
-          nodes: referencedFlow.nodes || [],
-          edges: referencedFlow.edges || [],
+          flowCommit: nestedCommit,
+          ...nestedGraph,
           parentExecutionId: jobId || null,
           parentNodeId: nodeId,
         });
@@ -307,8 +311,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
               status, endTime, duration,
               output: j.output ?? null,
               error: j.error ?? null,
-              logs: nestedLogs,
             } });
+            await saveExecutionLogs(ne.execId, nestedLogs);
             await flowsCol.update({ _id: ne.flowId }, { $set: {
               lastExecution: { id: ne.execId, status, startTime: ne.startTime, endTime, duration },
             } });
@@ -629,6 +633,13 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   const startTime = new Date().toISOString();
   const WORK_DIR = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
 
+  // Pin this run to an immutable git commit instead of embedding a full copy of
+  // nodes+edges in the execution row. The detail endpoint reconstructs the graph
+  // from this sha on demand. Falls back to inlining the graph if no commit could
+  // be made (keeps older / git-less flows working).
+  const flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
+  const graphSnapshot = flowCommit ? {} : { nodes: flow.nodes || [], edges: flow.edges || [] };
+
   // Resolve worker before inserting the execution so we can store the name.
   let resolvedWorkerId: string | null = null;
   let resolvedWorkerName: string | null = null;
@@ -644,10 +655,10 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
         _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
         status: 'FAILED', triggeredBy, triggeredUser: triggeredUser || null, startTime, endTime, duration, jobId: null,
         workerId: flow.workerId, workerName: w?.name || null,
-        logs: [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }],
-        output: null, error: reason, nodeStatuses: {}, nodes: flow.nodes || [], edges: flow.edges || [],
+        output: null, error: reason, nodeStatuses: {}, flowCommit, ...graphSnapshot,
       };
       await execsCol.insert(failedExec);
+      await saveExecutionLogs(executionId, [{ type: 'error', message: reason, nodeId: null, timestamp: Date.now() }]);
       await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status: 'FAILED', startTime, endTime, duration } } });
       return executionId;
     }
@@ -669,12 +680,11 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     jobId: null,
     workerId: resolvedWorkerId,
     workerName: resolvedWorkerName,
-    logs: [],
     output: null,
     error: null,
     nodeStatuses: {},
-    nodes: flow.nodes || [],
-    edges: flow.edges || [],
+    flowCommit,
+    ...graphSnapshot,
   };
 
   await execsCol.insert(execution);
@@ -751,7 +761,8 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     // future visits (after the in-memory buffer is freed).
     const nodeStatuses = ns || {};
 
-    await execsCol.update({ _id: executionId }, { $set: { status, endTime, duration, output: j.output, error: j.error, logs: logBuf, nodeStatuses } });
+    await execsCol.update({ _id: executionId }, { $set: { status, endTime, duration, output: j.output, error: j.error, nodeStatuses } });
+    await saveExecutionLogs(executionId, logBuf);
     await flowsCol.update({ _id: flowId }, { $set: { lastExecution: { id: executionId, status, startTime, endTime, duration } } });
 
     // Emit lifecycle events so `type=event` schedules bound to flow.completed /

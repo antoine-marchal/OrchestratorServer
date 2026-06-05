@@ -1,10 +1,11 @@
-import { getCollection } from '../db/index';
+import { getCollection, isMongoMode } from '../db/index';
 import type { GitObjectType } from './gitObjects';
 
 // DB-backed git object/ref store, scoped per flow. Objects are content-addressed
-// (sha) and immutable; refs are mutable pointers. Object bytes are kept as base64
+// (sha) and immutable; refs are mutable pointers. On Mongo the bytes are stored
+// as a native Buffer (BinData — no base64 inflation); on NeDB they're base64
 // because NeDB cannot round-trip a Buffer cleanly (it JSON-serializes to
-// {type:'Buffer',data:[...]}), and Mongo stores the base64 string verbatim.
+// {type:'Buffer',data:[...]}). Reads normalise either form back to a Buffer.
 
 export interface StoredObject {
   objectType: GitObjectType;
@@ -14,10 +15,19 @@ export interface StoredObject {
 const objects = () => getCollection('git_objects');
 const refs = () => getCollection('git_refs');
 
+// Normalise a stored `data` field back to a Buffer regardless of how it was
+// persisted: native Buffer (Mongo BinData), Mongo Binary ({buffer}), or base64
+// string (NeDB, or legacy Mongo rows written before BinData).
+function toBuffer(data: any): Buffer {
+  if (Buffer.isBuffer(data)) return data;
+  if (data && typeof data === 'object' && typeof data.buffer !== 'undefined') return Buffer.from(data.buffer);
+  return Buffer.from(String(data), 'base64');
+}
+
 export async function getObject(flowId: string, sha: string): Promise<StoredObject | null> {
   const doc = await objects().findOne({ _id: `${flowId}:${sha}` });
   if (!doc) return null;
-  return { objectType: doc.objectType, data: Buffer.from(doc.data, 'base64') };
+  return { objectType: doc.objectType, data: toBuffer(doc.data) };
 }
 
 export async function hasObject(flowId: string, sha: string): Promise<boolean> {
@@ -32,7 +42,10 @@ export async function putObject(
 ): Promise<void> {
   const _id = `${flowId}:${sha}`;
   if (await objects().findOne({ _id })) return; // immutable — skip duplicates
-  await objects().insert({ _id, flowId, sha, objectType, data: data.toString('base64') });
+  await objects().insert({
+    _id, flowId, sha, objectType,
+    data: isMongoMode() ? data : data.toString('base64'),
+  });
 }
 
 export interface RefRow {

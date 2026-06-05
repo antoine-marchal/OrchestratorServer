@@ -5,6 +5,7 @@ import { getCollection } from '../services/db/index';
 import { authMiddleware } from '../middleware/auth';
 import { emitJobLog, jobs } from '../services/executor/nodeExecutor';
 import { extractSecretNames, resolveSecretValues } from './secrets';
+import { putArtifacts, getArtifactBase64 } from '../services/executor/artifactStore';
 
 const router = Router();
 
@@ -223,6 +224,25 @@ router.post('/:id/jobs/:jobId/secrets', workerAuth, async (req: Request, res: Re
   }
 });
 
+// Worker fetches one artifact body (base64) referenced by its job. Bodies are
+// content-addressed and stored once (artifactStore) instead of inlined per job;
+// the worker pulls each on demand right before extraction. Only shas actually
+// referenced by THIS job are served — defence in depth.
+router.get('/:id/jobs/:jobId/artifacts/:sha', workerAuth, async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('worker_jobs');
+    const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
+    if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
+    const ref = (job.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
+    if (!ref) return res.status(404).json({ error: 'Artifact not referenced by this job' }) as any;
+    const data = await getArtifactBase64(req.params.sha);
+    if (data == null) return res.status(404).json({ error: 'Artifact blob not found' }) as any;
+    res.json({ name: ref.name, sha: ref.sha, data });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Worker reports job complete. Idempotent: a worker that retries `/complete`
 // after the parent execution was already killed (or after a server restart
 // that lost the in-memory awaiting promise) still gets a 200 — we always
@@ -317,9 +337,13 @@ export const pendingWorkerJobs = new Map<string, { resolve: (v: WorkerJobResult)
 export async function dispatchToWorker(workerId: string, node: any, executionId: string, nodeId: string, artifacts?: Array<{name: string; data: string}>): Promise<WorkerJobResult> {
   const col = getCollection('worker_jobs');
   const jobId = uuidv4();
+  // Artifacts are content-addressed once (see artifactStore) and referenced by
+  // sha here — NOT inlined per job. The worker fetches each body on demand from
+  // GET /jobs/:jobId/artifacts/:sha, mirroring how it already pulls secrets.
+  const artifactRefs = await putArtifacts(artifacts);
   await col.insert({
     _id: jobId, workerId, executionId, nodeId, node,
-    artifacts: artifacts && artifacts.length ? artifacts : undefined,
+    artifacts: artifactRefs.length ? artifactRefs : undefined,
     status: 'pending', createdAt: new Date().toISOString(),
   });
 

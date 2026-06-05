@@ -1,8 +1,32 @@
 import { Router, Request, Response } from 'express';
 import { getCollection } from '../services/db/index';
 import { jobs, jobLogBuffers, terminateJobAndChildren, executionSSEListeners, executionNodeStatuses } from '../services/executor/nodeExecutor';
+import { loadExecutionLogs, deleteExecutionLogs } from '../services/executor/executionLogs';
+import { flowFieldsAtCommit } from '../services/git/flowCommit';
 
 const router = Router();
+
+// Heavy fields kept out of list responses — reconstructed/fetched only when a
+// single execution's detail is opened. Keeps the list payload to metadata.
+const LIST_PROJECTION = { logs: 0, nodes: 0, edges: 0, nodeStatuses: 0 } as const;
+
+// Fill an execution doc with the fields a detail view needs: logs (from the
+// separate store or the live in-memory buffer) and the node/edge graph
+// (reconstructed from the pinned git commit when not inlined).
+async function hydrateExecution(exec: any): Promise<any> {
+  if (!Array.isArray(exec.logs) || exec.logs.length === 0) {
+    const live = exec.status === 'RUNNING' && exec.jobId ? jobLogBuffers.get(exec.jobId) : null;
+    exec.logs = (live && live.length) ? live : await loadExecutionLogs(exec._id);
+  }
+  if ((!Array.isArray(exec.nodes) || !exec.nodes.length) && exec.flowCommit) {
+    try {
+      const fields = await flowFieldsAtCommit(exec.flowId, exec.flowCommit);
+      exec.nodes = fields.nodes;
+      exec.edges = fields.edges;
+    } catch { /* commit gone / git-less flow — leave undefined, client falls back to flow def */ }
+  }
+  return exec;
+}
 
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -24,21 +48,12 @@ router.get('/', async (req: Request, res: Response) => {
     // DB-level sort + skip + limit — uses the (flowId, startTime) index on
     // Mongo. NeDB still scans but at least doesn't materialise every doc
     // through this Node process before slicing.
+    // List is metadata-only — logs/nodes/edges/nodeStatuses are excluded (see
+    // LIST_PROJECTION) and fetched lazily by GET /:id when an execution opens.
     const [page, total] = await Promise.all([
-      col.find(query, { sort: { startTime: -1 }, skip: offset, limit }),
+      col.find(query, { sort: { startTime: -1 }, skip: offset, limit, projection: LIST_PROJECTION }),
       col.count(query),
     ]);
-
-    // For still-running executions, the persisted `logs` field on the DB row
-    // is empty — logs only get written at completion. Merge the live in-memory
-    // buffer here so the client's tab-level sync poll doesn't see [] and
-    // overwrite logs that the per-execution poller has already pulled in.
-    for (const e of page) {
-      if (e.status === 'RUNNING' && e.jobId) {
-        const buf = jobLogBuffers.get(e.jobId);
-        if (Array.isArray(buf) && buf.length > 0) e.logs = buf;
-      }
-    }
 
     res.json({ executions: page, total });
   } catch (err: any) {
@@ -59,13 +74,14 @@ router.delete('/', async (req: Request, res: Response) => {
     const flowId = req.query.flowId ? String(req.query.flowId) : null;
 
     const query = flowId ? { flowId } : {};
-    const toDelete = await execsCol.find(query);
+    const toDelete = await execsCol.find(query, { projection: { jobId: 1 } });
 
     for (const exec of toDelete) {
       if (exec.jobId) jobLogBuffers.delete(exec.jobId);
     }
 
     const removed = await execsCol.remove(query, { multi: true });
+    await deleteExecutionLogs(toDelete.map((e: any) => e._id));
 
     if (flowId) {
       await flowsCol.update({ _id: flowId }, { $set: { lastExecution: null } });
@@ -104,6 +120,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     if (exec.jobId) jobLogBuffers.delete(exec.jobId);
     await execsCol.remove({ _id: exec._id });
+    await deleteExecutionLogs([exec._id]);
 
     // If the flow's lastExecution pointer referenced this row, repoint it to the
     // most recent surviving execution for that flow (or null when none remain).
@@ -153,7 +170,7 @@ router.get('/:id', async (req: Request, res: Response) => {
         await flowsCol.update({ _id: exec.flowId }, { $set: { lastExecution: { id: exec._id, status: 'FAILED', startTime: exec.startTime, endTime, duration } } });
       }
     }
-    res.json(exec);
+    res.json(await hydrateExecution(exec));
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }

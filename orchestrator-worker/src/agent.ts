@@ -233,13 +233,32 @@ function extractArtifacts(artifacts: Array<{name: string; data: string}>): void 
   }
 }
 
-function cleanupArtifacts(artifacts: Array<{name: string; data: string}>): void {
+function cleanupArtifacts(artifacts: Array<{name: string}>): void {
   if (!artifacts || !artifacts.length) return;
   for (const artifact of artifacts) {
     const p = safeArtifactPath(artifact.name);
     if (!p) continue;
     try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch { }
   }
+}
+
+// Artifacts are no longer inlined in the job record — it carries `{ name, sha }`
+// refs and we pull each body (base64) on demand, mirroring secret resolution.
+// Falls back to an inline `data` field if present (older orchestrator builds).
+async function resolveArtifactBodies(
+  workerId: string,
+  jobId: string,
+  refs: Array<{ name: string; sha?: string; data?: string }>,
+): Promise<Array<{ name: string; data: string }>> {
+  const out: Array<{ name: string; data: string }> = [];
+  for (const ref of refs) {
+    if (typeof ref.data === 'string') { out.push({ name: ref.name, data: ref.data }); continue; }
+    if (!ref.sha) continue;
+    const res = await http.get(`/api/v1/workers/${workerId}/jobs/${jobId}/artifacts/${ref.sha}`);
+    const data = res.data && res.data.data;
+    if (typeof data === 'string') out.push({ name: ref.name, data });
+  }
+  return out;
 }
 
 // Only clean up shared artifacts when no sibling job is still running in the
@@ -254,7 +273,9 @@ function maybeCleanupArtifacts(artifacts: Array<{name: string; data: string}>): 
 
 async function executeJob(workerId: string, job: any): Promise<void> {
   const jobId = job._id;
-  const artifacts: Array<{name: string; data: string}> = job.artifacts || [];
+  const artifactRefs: Array<{name: string; sha?: string; data?: string}> = job.artifacts || [];
+  // Resolved bodies are filled in once fetched; cleanup only needs the names.
+  let artifacts: Array<{name: string; data: string}> = [];
   const onLog = (type: 'log' | 'error', message: string) => {
     http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/log`, { type, message }).catch(() => {});
   };
@@ -262,7 +283,8 @@ async function executeJob(workerId: string, job: any): Promise<void> {
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/status`, { status: 'running' });
     onLog('log', `[worker] running ${job.node?.type ?? 'node'} on "${WORKER_NAME}" (${process.platform}, cwd=${EXECUTION_DIR})`);
 
-    if (artifacts.length) {
+    if (artifactRefs.length) {
+      artifacts = await resolveArtifactBodies(workerId, jobId, artifactRefs);
       extractArtifacts(artifacts);
       onLog('log', `[worker] ${artifacts.length} artifact(s) extracted to ${EXECUTION_DIR}`);
     }

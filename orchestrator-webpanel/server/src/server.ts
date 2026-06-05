@@ -11,6 +11,7 @@ import { DEFAULT_ROLES } from './services/db/models/Role';
 import { setExecuteFlowFn, loadAll as loadCronSchedules } from './services/scheduler/cronScheduler';
 import { eventBus } from './services/scheduler/eventBus';
 import { executeOrchestratorFlow } from './services/executor/flowExecutor';
+import { gcArtifacts } from './services/executor/artifactStore';
 
 import jobsRouter from './routes/jobs';
 import flowsRouter from './routes/flows';
@@ -385,6 +386,31 @@ async function start(): Promise<void> {
     }
   }, 30000);
 
+  // Janitor: prune finished worker_jobs (and the artifact blobs they were the
+  // last to reference) after a retention window. worker_jobs used to accumulate
+  // forever — each carried a full node + (previously) inlined artifacts — so the
+  // queue grew without bound. We keep terminal jobs briefly so a late/retried
+  // /complete (or a server restart that lost the in-memory awaiter) still finds
+  // the record, then delete. Override retention via WORKER_JOB_RETENTION_MS.
+  const WORKER_JOB_RETENTION_MS = parseInt(process.env.WORKER_JOB_RETENTION_MS || '3600000');
+  const JANITOR_INTERVAL_MS = parseInt(process.env.JANITOR_INTERVAL_MS || '300000');
+  const janitorTimer = setInterval(async () => {
+    try {
+      const jobsCol = getCollection('worker_jobs');
+      const cutoff = new Date(Date.now() - WORKER_JOB_RETENTION_MS).toISOString();
+      const removed = await jobsCol.remove(
+        { status: { $in: ['success', 'failed', 'cancelled'] }, completedAt: { $lt: cutoff } },
+        { multi: true },
+      );
+      const blobsRemoved = await gcArtifacts();
+      if (removed || blobsRemoved) {
+        console.log(`[Janitor] pruned ${removed} worker_job(s), ${blobsRemoved} artifact blob(s)`);
+      }
+    } catch (err) {
+      console.warn('[Janitor] sweep failed:', (err as Error).message);
+    }
+  }, JANITOR_INTERVAL_MS);
+
   const httpsEnabled = process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true';
   let server: http.Server | https.Server;
   if (httpsEnabled) {
@@ -411,6 +437,7 @@ async function start(): Promise<void> {
     console.log(`\nReceived ${signal}. Shutting down...`);
     clearInterval(tokenExpiryTimer);
     clearInterval(reaperTimer);
+    clearInterval(janitorTimer);
     eventBus.stopWatcher();
     server.close(() => {
       console.log('Server shut down successfully.');

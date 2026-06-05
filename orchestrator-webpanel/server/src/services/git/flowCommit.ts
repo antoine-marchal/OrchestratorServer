@@ -137,6 +137,28 @@ export async function commitFlowState(
   return commit.sha;
 }
 
+// Snapshot a flow's current state for an execution record and return the commit
+// sha the run should pin to. Executions used to embed a full copy of nodes+edges
+// per run; instead we point them at an immutable git commit (objects are never
+// GC'd) and reconstruct on demand. Returns null only if no commit could be made
+// (e.g. flow missing) — caller then falls back to inlining the graph.
+export async function snapshotFlowForExecution(flowId: string, author: CommitAuthor): Promise<string | null> {
+  try {
+    // No amend + a non-autosave message: never rewrites the user's editor
+    // autosave, and commitFlowState returns null (no new commit) when the tree
+    // is unchanged — the common case, since editing already commits.
+    const sha = await commitFlowState(flowId, author, 'Snapshot for execution');
+    if (sha) return sha;
+    // Tree unchanged since last commit — pin to the current branch HEAD.
+    const flow = await getCollection('flows').findOne({ _id: flowId });
+    if (!flow) return null;
+    return await getRef(flowId, activeRef(flow));
+  } catch (e: any) {
+    console.warn('[git] snapshotFlowForExecution failed:', e.message);
+    return null;
+  }
+}
+
 // Create the first commit from the current flow doc if the repo is empty.
 // Lets `git clone` work for flows that predate git history.
 export async function ensureInitialized(flowId: string): Promise<void> {
