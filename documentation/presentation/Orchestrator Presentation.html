@@ -23,7 +23,7 @@
     <text x="600" y="430" text-anchor="middle" font-family="monospace" font-size="28" fill="#6b7280">Plateforme d'automatisation auto-hébergée</text>
     <!-- Version badge -->
     <rect x="530" y="460" width="140" height="40" rx="20" fill="none" stroke="oklch(0.45 0.20 235)" stroke-width="2"/>
-    <text x="600" y="486" text-anchor="middle" font-family="monospace" font-size="22" fill="oklch(0.45 0.20 235)">v3.1.4</text>
+    <text x="600" y="486" text-anchor="middle" font-family="monospace" font-size="22" fill="oklch(0.45 0.20 235)">v3.2.4</text>
   </svg>
 </template>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -336,7 +336,7 @@
 
   <div id="s1-content">
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:32px;">
-      <span class="tag tag-blue">v3.1.4</span>
+      <span class="tag tag-blue">v3.2.4</span>
       <span class="tag tag-green"><span class="dot dot-green"></span> Node.js ≥ 18</span>
       <span class="tag tag-amber">TypeScript</span>
     </div>
@@ -1423,8 +1423,9 @@
         <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows</span><span class="api-desc">Créer un flux</span></div>
         <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span></span><span class="api-desc">Graphe + planification + worker</span></div>
         <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/execute</span><span class="api-desc">Lancer → executionId</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span>/versions</span><span class="api-desc">Historique snapshots</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/versions/<span class="param">:vid</span>/restore</span><span class="api-desc">Restaurer</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span>/branches</span><span class="api-desc">Branches git + active</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/artifacts</span><span class="api-desc">Upload artefact (binaire brut)</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/versions/<span class="param">:vid</span>/restore</span><span class="api-desc">Restaurer snapshot</span></div>
       </div>
 
       <div class="api-group">
@@ -1455,14 +1456,14 @@
       <div class="api-group">
         <div class="api-group-title">Workers (UI)</div>
         <div class="api-row"><span class="method get">GET</span><span class="api-path">/workers</span><span class="api-desc">Liste + statut en ligne</span></div>
-        <div class="api-row"><span class="method patch">PATCH</span><span class="api-path">/workers/<span class="param">:id</span></span><span class="api-desc">Mettre à jour métadonnées</span></div>
+        <div class="api-row"><span class="method patch">PATCH</span><span class="api-path">/workers/groups/<span class="param">:group</span>/access</span><span class="api-desc">Politique d'accès (admin)</span></div>
         <div class="api-row"><span class="method delete">DELETE</span><span class="api-path">/workers/<span class="param">:id</span>/record</span><span class="api-desc">Retirer de l'UI</span></div>
       </div>
 
       <div class="code-block" style="font-size:18px;padding:14px 20px;margin-top:4px;">
         <span class="comment"># Auth : Bearer &lt;jwt&gt; ou ApiKey &lt;key&gt;</span><br>
-        <span class="comment"># SSE  : GET /executions/:id/stream?token=&lt;jwt&gt;</span><br>
-        <span class="comment"># Santé : GET /ping → { "status": "ok", "version" }</span>
+        <span class="comment"># Git  : git clone http://login:apikey@host/git/&lt;flowId&gt;</span><br>
+        <span class="comment"># SSE  : GET /executions/:id/stream?token=&lt;jwt&gt;</span>
       </div>
     </div>
   </div>
@@ -1628,8 +1629,8 @@
       <div class="art-step">
         <div class="art-step-num">1</div>
         <div class="art-step-body">
-          <div class="art-step-title">Stockage dans le flux</div>
-          <div class="art-step-desc"><code>artifacts[]: &#123; name, data &#125;</code> — data en <strong>base64</strong>. Versionné avec le flux, inclus dans les snapshots. Raison de configurer <code>JSON_BODY_LIMIT</code>.</div>
+          <div class="art-step-title">Stockage adressé par contenu</div>
+          <div class="art-step-desc">Le corps est stocké <strong>une seule fois</strong> par <code>sha256</code> (<code>artifact_blobs</code>, chunké au-delà de 8 Mo). Le flux ne garde qu'une ref <code>&#123; name, sha &#125;</code> — committée dans git en pointeur. Upload binaire brut.</div>
         </div>
       </div>
       <div class="art-connector"></div>
@@ -1637,7 +1638,7 @@
         <div class="art-step-num">2</div>
         <div class="art-step-body">
           <div class="art-step-title">Extraction au démarrage du run</div>
-          <div class="art-step-desc">Décodé et écrit dans <code>ORCHESTRATOR_EXECUTION_DIR</code>. Côté worker si un worker est assigné (artefacts dans le payload du job).</div>
+          <div class="art-step-desc">Écrit dans <code>ORCHESTRATOR_EXECUTION_DIR</code>. Côté worker si un worker est assigné : il télécharge chaque corps par <code>sha</code> avant de lancer le nœud.</div>
         </div>
       </div>
       <div class="art-connector"></div>
@@ -1761,15 +1762,16 @@
     <div id="s12-right">
       <h2 style="font-size:32px;font-weight:600;color:var(--muted);margin-bottom:8px;">Collections</h2>
       <div class="coll-row"><span class="coll-name">users</span><span class="coll-desc">Comptes, bcrypt hash, rôle, apiKeys[] hashées SHA-256</span></div>
-      <div class="coll-row"><span class="coll-name">flows</span><span class="coll-desc">Graphe JSON (nodes+edges), owner, workerId, artifacts[]</span></div>
+      <div class="coll-row"><span class="coll-name">flows</span><span class="coll-desc">Graphe JSON (nodes+edges), owner, activeBranch, variants[], refs artefacts {name,sha}</span></div>
       <div class="coll-row"><span class="coll-name">flow_versions</span><span class="coll-desc">Snapshots historiques — restauration</span></div>
-      <div class="coll-row"><span class="coll-name">executions</span><span class="coll-desc">Statut, début/fin, durée, résultats par nœud</span></div>
-      <div class="coll-row"><span class="coll-name">schedules</span><span class="coll-desc">Lignes cron / event / api-trigger</span></div>
-      <div class="coll-row"><span class="coll-name">workers</span><span class="coll-desc">Workers enregistrés, tokenHash, lastSeenAt, groupe</span></div>
+      <div class="coll-row"><span class="coll-name">git_objects / git_refs</span><span class="coll-desc">Dépôt git par flux : objets immuables + branches</span></div>
+      <div class="coll-row"><span class="coll-name">artifact_blobs / _chunks</span><span class="coll-desc">Artefacts adressés par contenu (sha256) + chunking</span></div>
+      <div class="coll-row"><span class="coll-name">executions</span><span class="coll-desc">Statut, début/fin, durée, branche, résultats par nœud</span></div>
+      <div class="coll-row"><span class="coll-name">schedules</span><span class="coll-desc">Lignes cron / event / api-trigger (+ variantes)</span></div>
+      <div class="coll-row"><span class="coll-name">workers</span><span class="coll-desc">Enregistrés, tokenHash, lastSeenAt, groupe, politique d'accès</span></div>
       <div class="coll-row"><span class="coll-name">worker_jobs</span><span class="coll-desc">Unités de travail dispatchées + cycle de vie</span></div>
       <div class="coll-row"><span class="coll-name">secrets</span><span class="coll-desc">Blobs AES-256-GCM chiffrés — valeurs jamais en clair</span></div>
-      <div class="coll-row"><span class="coll-name">trigger_tokens</span><span class="coll-desc">Tokens HTTP publics — expiration automatique</span></div>
-      <div class="coll-row"><span class="coll-name">sessions</span><span class="coll-desc">Enregistrements de session utilisateur</span></div>
+      <div class="coll-row"><span class="coll-name">trigger_tokens / sessions</span><span class="coll-desc">Tokens HTTP publics (TTL) · sessions utilisateur</span></div>
 
       <div class="card" style="border-color:var(--blue);margin-top:4px;">
         <div style="font-size:21px;color:var(--muted);line-height:1.6;">Index créés à la connexion : <code style="font-family:var(--font-mono)">apiKeys.keyHash</code>, <code style="font-family:var(--font-mono)">login</code> (unique), <code style="font-family:var(--font-mono)">workers.lastSeenAt</code>, <code style="font-family:var(--font-mono)">worker_jobs.status</code>, <code style="font-family:var(--font-mono)">executions.flowId+status+startTime</code>…</div>
@@ -1820,7 +1822,7 @@
 
       <div class="code-block" style="font-size:19px;">
         <span class="comment"># 1. Appliquer la version</span><br>
-        <span class="kw">set-version.bat</span> <span class="num">3.1.4</span><br><br>
+        <span class="kw">set-version.bat</span> <span class="num">3.2.4</span><br><br>
         <span class="comment"># 2. Builder les binaires</span><br>
         <span class="kw">build-server.bat</span>  <span class="comment">→ release/orchestrator-server-*</span><br>
         <span class="kw">build-worker.bat</span>  <span class="comment">→ release/orchestrator-worker-*</span><br><br>
@@ -2048,12 +2050,12 @@
       </div>
       <div class="s17-callout">
         <div class="co-key">⚙</div>
-        <div class="co-text"><span class="t">Panneau worker / planification</span><br><span class="d">Assigner un worker, attacher cron / event / trigger.</span></div>
+        <div class="co-text"><span class="t">Worker · branche git · artefacts</span><br><span class="d">Choisir worker/branche, joindre des artefacts, planifier cron / event / trigger.</span></div>
       </div>
     </div>
     <div id="s17-right">
       <div class="shot has-img">
-        <img src="screenshots/fluxedit1.png" alt="Éditeur de flux — édition Monaco">
+        <img src="screenshots/fluxedit1.png" alt="Éditeur de flux — panneau artefacts + arbre de fichiers git">
         <div class="shot-badge">CAPTURE 1</div>
       </div>
       <div class="shot green has-img">
@@ -2391,7 +2393,7 @@
       <div>Docs&nbsp;&nbsp;→&nbsp;&nbsp;<b>documentation/</b> — ARCHITECTURE · API · ONBOARDING · RUNBOOK</div>
     </div>
   </div>
-  <div class="corner-logo">v3.1.4</div>
+  <div class="corner-logo">v3.2.4</div>
   <div class="slide-num">25 / 25</div>
 </section>
 

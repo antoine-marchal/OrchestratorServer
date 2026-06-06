@@ -91,6 +91,8 @@ Où regarder quand vous devez changer quelque chose :
 | Toucher à l'auth / aux tokens | `server/src/middleware/auth.ts`, `rbac.ts` |
 | Changer comment un flux s'exécute (parcours DAG, retry, dispatch) | `server/src/services/executor/flowExecutor.ts` |
 | Ajouter/modifier un runner de type de nœud | `server/src/services/executor/nodeExecutor.ts` (serveur) et `orchestrator-worker/src/executor/nodeExecutor.ts` (worker) — gardez-les synchronisés |
+| Toucher au versionnage git / branches / smart-HTTP | `server/src/services/git/*` (`flowMaterialize`, `flowCommit`, `gitStore`, `receivePack`) |
+| Toucher au stockage/GC des artefacts | `server/src/services/executor/artifactStore.ts` |
 | Toucher à la planification | `server/src/services/scheduler/cronScheduler.ts`, `eventBus.ts` |
 | Changer le stockage / ajouter une collection | `server/src/services/db/index.ts` + `db/models/*` |
 | Modifier le canvas de l'éditeur de flux | `client/src/components/FlowEditor.tsx`, `components/node/*`, `components/editor/*` |
@@ -107,14 +109,14 @@ Où regarder quand vous devez changer quelque chose :
 ### Construire un binaire packagé
 
 ```bat
-set-version.bat 3.1.3       :: applique la version partout
+set-version.bat 3.2.4       :: applique la version partout
 build-server.bat            :: -> release/orchestrator-server-*
 build-worker.bat            :: -> release/orchestrator-worker-*
 ```
 
 ### Lancer les tests
 
-Vitest couvre le crypto, la substitution de secrets, la sûreté des chemins d'artefacts, et le parseur de flux :
+Vitest couvre le crypto, la substitution de secrets, la sûreté des chemins d'artefacts, le parseur de flux, le chunking d'artefacts, le rework de branches et les diffs de commit :
 
 ```bash
 cd orchestrator-webpanel/server && npm test

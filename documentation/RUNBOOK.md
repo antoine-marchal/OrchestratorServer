@@ -24,7 +24,7 @@ Chaque script : compile le TypeScript, package avec `@yao-pkg/pkg`, et copie le 
 Avant tout, appliquez une version à tous les `package.json` + `.version` :
 
 ```bat
-set-version.bat 3.1.3
+set-version.bat 3.2.4
 ```
 
 ---
@@ -88,9 +88,17 @@ Référence complète : `release/server.env.example` et `release/worker.env.exam
 | `ORCHESTRATOR_KEEP_ARTIFACTS` | `false` | `true` conserve les artefacts (et archives décompressées) après le run au lieu de les nettoyer. |
 | `DOMAIN` | `http://localhost` | URL publique de base (liste blanche CORS + `service=` SSO). |
 | `ORCHESTRATOR_CORS_ORIGINS` | — | Origines autorisées supplémentaires, séparées par des virgules (production). |
-| `JSON_BODY_LIMIT` | `100mb` | Taille max de corps (les artefacts base64 la gonflent). |
+| `JSON_BODY_LIMIT` | `100mb` | Taille max de corps JSON (les artefacts base64 la gonflent). |
+| `ARTIFACT_UPLOAD_LIMIT` | `1024mb` | Taille max d'un upload d'artefact binaire brut (`POST /flows/:id/artifacts`). |
 | `WORKER_OFFLINE_TIMEOUT_MS` | `60000` | Seuil du reaper pour déclarer un worker hors ligne. |
+| `DISPATCH_TIMEOUT_MIN` | `5` | Timeout dur (minutes) d'un nœud réparti à un worker. |
+| `JANITOR_INTERVAL_MS` | `300000` | Cadence du janitor (purge `worker_jobs` finis + GC blobs d'artefacts). |
+| `WORKER_JOB_RETENTION_MS` | `3600000` | Durée de conservation d'un `worker_job` terminé avant purge. |
+| `ARTIFACT_GC_MIN_AGE_MS` | `600000` | Fenêtre de fraîcheur : un blob/chunk plus jeune n'est jamais réclamé (anti-course à l'upload). |
+| `ORCHESTRATOR_VERSION_MIN_INTERVAL_MS` | `600000` | Intervalle min entre deux snapshots de version (les autosaves rapprochés fusionnent). |
 | `ORCHESTRATOR_SERVER_EXECUTION_ENABLED` | `true` | `false` interdit l'exécution locale des nœuds feuilles — force tous les nœuds de script sur les workers. |
+| `SERVER_EXECUTION_MODE` | `parallel` | Ordonnancement des runs de flux : `parallel` (concurrents) ou `sequential` (sérialisés). |
+| `ORCHESTRATOR_FAIL_ON_LOG_ERROR` | `false` | `true` → un nœud dont la sortie contient `ERROR`/`FAILED` est forcé en FAILED même si le process sort en 0 (idem worker). |
 | `HTTPS` | `false` | `true` → écoute TLS (voir §6). |
 | `ORCHESTRATOR_PROXYAUTH_URL` | — | URL de validation SSO/CAS. Avec `_REGEX`, active le login SSO (redirection auto du front). |
 | `ORCHESTRATOR_PROXYAUTH_REGEX` | — | Regex sur la réponse de validation ; groupe 1 = login. Ex. `<cas:user>([^<]+)</cas:user>`. |
@@ -107,6 +115,8 @@ Référence complète : `release/server.env.example` et `release/worker.env.exam
 | `POLL_INTERVAL_MS` | `2000` | Cadence d'interrogation des jobs. |
 | `HEARTBEAT_INTERVAL_MS` | `10000` | Cadence du keepalive. |
 | `WORKER_EXECUTION_MODE` | `parallel` | Mode de prise de jobs : `parallel` ou `sequential`. |
+| `WORKER_MAX_HTTP_SIZE` | `100mb` | Taille max d'un échange HTTP avec le serveur (doit être ≥ `JSON_BODY_LIMIT`). |
+| `ORCHESTRATOR_FAIL_ON_LOG_ERROR` | `false` | Idem serveur, côté worker. |
 
 ---
 
@@ -117,6 +127,7 @@ Référence complète : `release/server.env.example` et `release/worker.env.exam
 3. Remplacez le binaire ; gardez le `.env` existant et le `data/` (NeDB) en place.
 4. Démarrez le serveur. Les migrations de démarrage tournent automatiquement et sont idempotentes :
    - ancien `flow.schedule` → collection `schedules`
+   - artefacts inline (base64) → refs adressées par contenu (`artifact_blobs`)
    - backfill `owner=admin` sur les flux sans propriétaire
    - executions restées `RUNNING` → `FAILED`
 5. Vérifiez : `GET /api/v1/ping` renvoie la nouvelle `version` ; l'UI charge ; un flux de test s'exécute.
@@ -175,4 +186,4 @@ cp -r "$ORCHESTRATOR_WORK_DIR/data" "backup-$(date +%F)/"
 
 - **Santé :** `curl http://<host>:<PORT>/api/v1/ping` → `{ "status": "ok" }`.
 - **Workers en ligne :** panneau **Workers** de l'UI, ou `GET /api/v1/workers` (en ligne = vu dans les 30 dernières secondes).
-- **Rétention des exécutions :** pas de purge automatique pour l'instant (backlog #22) — `DELETE /api/v1/executions` périodiquement ou élaguez `executions.db` pour maîtriser la croissance.
+- **Rétention des exécutions :** pas de purge automatique des `executions` pour l'instant (backlog #22) — `DELETE /api/v1/executions` (admin) périodiquement ou élaguez `executions.db` pour maîtriser la croissance. En revanche les `worker_jobs` terminés et les blobs d'artefacts non référencés **sont** purgés par le janitor (`JANITOR_INTERVAL_MS`).

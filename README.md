@@ -4,7 +4,9 @@ Une plateforme d'automatisation auto-hébergée : un éditeur de flux visuel, un
 
 Concrètement : on construit des flux dans un éditeur de graphe en glisser-déposer (JavaScript, Python, Groovy, PowerShell, Batch, Playwright, sous-flux, conditions), on les déclenche via cron, événement, requête HTTP ou à la demande, et on regarde les logs défiler en direct dans le navigateur. Le travail lourd ou propre à un OS est délégué à des agents **worker** distants, qui s'enregistrent eux-mêmes auprès du serveur en HTTP.
 
-> Version 3.1.2 · Node.js ≥ 18 · TypeScript
+Chaque flux est en plus versionné dans un **dépôt git interne** : les sauvegardes de l'éditeur deviennent des commits, on travaille par **branches**, et on peut `git clone`/`push`/`pull` un flux avec un client git standard. On exécute un même flux en plusieurs **variantes** (worker/branche différents) planifiables indépendamment, et ses fichiers joints (**artefacts**) sont stockés une seule fois en adressage par contenu.
+
+> Version 3.2.4 · Node.js ≥ 18 · TypeScript
 
 ---
 
@@ -16,8 +18,10 @@ OrchestratorServer/
 │   ├── server/                # Backend Express + TypeScript (API, exécuteur, planificateur)
 │   └── client/                # Frontend React + Vite (éditeur de flux, admin, tableaux de bord)
 ├── orchestrator-worker/       # Agent d'exécution distant (s'enregistre, interroge, exécute les jobs)
+├── oauth_proxy/               # Pont OAuth2 de test (Grafana → CAS) — voir son README
+├── authent_test_service/      # Mock CAS/SSO pour tester proxy-auth et oauth_proxy
 ├── release/                   # Binaires packagés + exemples de .env (sortie de build)
-├── documentation/             # Architecture, API, runbook, onboarding (commencez ici)
+├── documentation/             # Architecture, API, runbook, onboarding, deck (commencez ici)
 ├── build-server.bat           # Build + pkg du serveur vers release/
 ├── build-worker.bat           # Build + pkg du worker vers release/
 ├── deploy.bat                 # Copie les binaires de release vers la cible de déploiement
@@ -33,8 +37,8 @@ OrchestratorServer/
 
 | Composant | Son rôle |
 |---|---|
-| **Serveur** (`orchestrator-webpanel/server`) | L'API REST, l'exécuteur de flux en cours de processus, le planificateur cron/événement, la répartition vers les workers, l'authentification et le chiffrement des secrets. Il sert aussi l'interface web une fois buildée. |
-| **Interface web** (`orchestrator-webpanel/client`) | L'éditeur visuel React Flow, les panneaux de code Monaco, l'historique d'exécution avec streaming de logs en direct, et l'administration des planifications, secrets et utilisateurs. |
+| **Serveur** (`orchestrator-webpanel/server`) | L'API REST, l'exécuteur de flux en cours de processus, le planificateur cron/événement, la répartition vers les workers, le versionnage git des flux, le stockage d'artefacts adressé par contenu, l'authentification et le chiffrement des secrets. Il sert aussi l'interface web une fois buildée. |
+| **Interface web** (`orchestrator-webpanel/client`) | L'éditeur visuel React Flow, les panneaux de code Monaco, l'historique d'exécution avec streaming de logs en direct, le sélecteur de branche et les variantes de flux, et l'administration des planifications, secrets, workers et utilisateurs. |
 | **Worker** (`orchestrator-worker`) | Un agent distant sans état. Il s'enregistre auprès du serveur, interroge en long-poll pour récupérer des jobs, exécute les nœuds de script dans des processus enfants isolés, et renvoie les logs au fil de l'eau. |
 
 ---
@@ -93,6 +97,6 @@ Posez un `.env` à côté de chaque binaire (à partir de `release/server.env.ex
 
 ## Stack technique
 
-**Backend :** Node.js, TypeScript, Express 4, NeDB *ou* MongoDB (choisi automatiquement selon `MONGO_URI`), authentification JWT, secrets en AES-256-GCM, node-cron.
+**Backend :** Node.js, TypeScript (mode strict), Express 4, NeDB *ou* MongoDB (choisi automatiquement selon `MONGO_URI`), authentification JWT, secrets en AES-256-GCM, node-cron, dépôt git interne maison (objets/refs en base, smart-HTTP), stockage d'artefacts adressé par contenu (sha256, chunking).
 **Frontend :** React 18, Vite, React Flow, Monaco Editor, Zustand, Tailwind CSS.
 **Worker :** Node.js, TypeScript, axios, playwright, tree-kill. Packagé en binaire unique avec `@yao-pkg/pkg`.
