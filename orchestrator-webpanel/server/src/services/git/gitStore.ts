@@ -77,6 +77,11 @@ export async function deleteRef(flowId: string, ref: string): Promise<void> {
   await refs().remove({ _id: `${flowId}:${ref}` });
 }
 
+// Remove every ref of a flow (used when the flow is deleted).
+export async function deleteAllRefs(flowId: string): Promise<number> {
+  return refs().remove({ flowId }, { multi: true });
+}
+
 // Every artifact-pointer sha256 referenced by ANY git blob across ALL flows.
 // Artifact bodies (in artifact_blobs) must survive as long as a commit anywhere
 // still points at them — even commits whose flow doc no longer lists the

@@ -213,6 +213,67 @@ class ApiClient {
     return response.json();
   }
 
+  // Raw binary POST with upload-progress callback (artifact upload). Uses XHR
+  // because fetch cannot report upload progress. onProgress gets 0–100.
+  uploadBinary<T = any>(path: string, body: Blob, onProgress?: (pct: number) => void): Promise<T> {
+    const endpoint = path.startsWith('/api/v1') ? path.slice('/api/v1'.length) : path;
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}${endpoint}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      const jwt = getJwt();
+      if (jwt) xhr.setRequestHeader('Authorization', `Bearer ${jwt}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status === 401) {
+          clearJwt();
+          window.location.hash = '/login';
+          reject(new Error('Session expired. Please log in again.'));
+          return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText) as T); } catch { resolve({} as T); }
+        } else {
+          let msg = `HTTP ${xhr.status}`;
+          try { const j = JSON.parse(xhr.responseText); msg = j.error?.message || j.message || msg; } catch { /* keep */ }
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.send(body);
+    });
+  }
+
+  // Binary GET with download-progress callback. XHR (not fetch) so we can set the
+  // Authorization header AND report progress. Returns the body as a Blob.
+  downloadBinary(path: string, onProgress?: (pct: number) => void): Promise<Blob> {
+    const endpoint = path.startsWith('/api/v1') ? path.slice('/api/v1'.length) : path;
+    return new Promise<Blob>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${this.baseUrl}${endpoint}`);
+      xhr.responseType = 'blob';
+      const jwt = getJwt();
+      if (jwt) xhr.setRequestHeader('Authorization', `Bearer ${jwt}`);
+      xhr.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status === 401) {
+          clearJwt();
+          window.location.hash = '/login';
+          reject(new Error('Session expired. Please log in again.'));
+          return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response as Blob);
+        else reject(new Error(`HTTP ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error('Network error during download'));
+      xhr.send();
+    });
+  }
+
   async delete<T = any>(path: string): Promise<T> {
     return this.request<T>(path.startsWith('/api/v1') ? path.slice('/api/v1'.length) : path, {
       method: 'DELETE',

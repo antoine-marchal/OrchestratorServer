@@ -8,6 +8,7 @@ import {
   getRef,
   listRefs,
   deleteObjectsExcept,
+  deleteAllRefs,
 } from './gitStore';
 import { putArtifacts, gcArtifacts } from '../executor/artifactStore';
 import type { ArtifactEntry } from './flowMaterialize';
@@ -431,6 +432,15 @@ export async function resetBranch(
   await gcFlowObjects(flowId);
   await gcArtifacts(0); // reclaim artifact blobs no surviving flow/job references
   return newTip;
+}
+
+// Delete ALL git state for a flow (objects + refs), then reclaim any artifact
+// blobs that were kept alive only by this flow's commit pointers. Call when a
+// flow is deleted — otherwise its git_objects linger and keep pinning artifacts.
+export async function purgeFlowGit(flowId: string): Promise<void> {
+  await deleteObjectsExcept(flowId, new Set()); // empty keep-set → delete every object
+  await deleteAllRefs(flowId);
+  await gcArtifacts(0); // pointers gone → unreferenced blobs/chunks reclaimable now
 }
 
 // Reachability GC: collect every git object reachable from any ref of this flow

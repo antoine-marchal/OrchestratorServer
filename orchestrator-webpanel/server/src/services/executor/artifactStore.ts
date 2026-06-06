@@ -125,12 +125,16 @@ export async function* artifactChunks(sha: string): AsyncGenerator<Buffer, void,
   }
 }
 
-// Delete blobs not referenced by any worker_job. Cheap-ish: one scan of
-// worker_jobs artifact refs, then remove the complement. Called by the periodic
+// Freshness window (ms): blobs/chunks younger than this are never reclaimed, so
+// GC can't race an in-flight upload (chunks written before their manifest, or a
+// blob written before its referencing worker_job). Override via env.
+export const ARTIFACT_GC_MIN_AGE_MS = parseInt(process.env.ARTIFACT_GC_MIN_AGE_MS || '600000', 10);
+
+// Delete blobs not referenced by any worker_job, flow, or git pointer. Cheap-ish:
+// build the referenced set, then remove the complement. Called by the periodic
 // sweep after stale worker_jobs are pruned. `minAgeMs` skips freshly-written
-// blobs so we never reclaim one in the window between putArtifacts() inserting
-// the blob and dispatchToWorker() inserting the referencing worker_job.
-export async function gcArtifacts(minAgeMs = 600000): Promise<number> {
+// blobs so we never reclaim one mid-write.
+export async function gcArtifacts(minAgeMs = ARTIFACT_GC_MIN_AGE_MS): Promise<number> {
   const blobsCol = getCollection('artifact_blobs');
   const jobsCol = getCollection('worker_jobs');
   const blobs: any[] = await blobsCol.find({}, { projection: { _id: 1, createdAt: 1 } });

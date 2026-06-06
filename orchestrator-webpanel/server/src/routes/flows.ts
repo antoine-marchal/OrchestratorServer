@@ -13,6 +13,7 @@ import {
   createBranch,
   resetBranch,
   ensureArtifactRefs,
+  purgeFlowGit,
   activeRef,
   type ResetMode,
 } from '../services/git/flowCommit';
@@ -376,6 +377,10 @@ router.delete('/:id', requireFlowEditAccess, async (req: Request, res: Response)
     const col = getCollection('flows');
     const n = await col.remove({ _id: req.params.id });
     if (!n) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    // Cascade: drop the flow's git objects/refs and reclaim its now-orphaned
+    // artifact blobs. Without this the git_objects linger and keep pinning blobs.
+    try { await purgeFlowGit(req.params.id); }
+    catch (e: any) { console.warn('[flows] purgeFlowGit failed:', e.message); }
     res.json({ message: 'Flow deleted' });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });

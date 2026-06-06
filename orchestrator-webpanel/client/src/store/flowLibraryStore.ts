@@ -142,7 +142,16 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
   }
 
   function persistExecs(executions: FlowExecution[]) {
-    const trimmed = executions.slice(0, MAX_EXECUTIONS);
+    // Dedupe by id (last occurrence wins — the patched/backend copy is later in
+    // the merged array than an optimistic one) and sort newest-first. An
+    // optimistic insert in executeFlow racing a concurrent syncBackend poll could
+    // otherwise leave two rows with the same id, and every consumer renders the
+    // store order, so centralizing the sort here fixes ordering everywhere.
+    const byId = new Map<string, FlowExecution>();
+    for (const e of executions) byId.set(e.id, e);
+    const sorted = Array.from(byId.values())
+      .sort((a, b) => new Date(b.startTime || 0).getTime() - new Date(a.startTime || 0).getTime());
+    const trimmed = sorted.slice(0, MAX_EXECUTIONS);
     saveJSON(EXECS_KEY, trimmed);
     // Same reference-stability trick as persistFlows: skip the set when the
     // payload is structurally identical, otherwise reuse existing exec

@@ -803,6 +803,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const lastSyncedRef = useRef<string>('');
   const [showArtifacts, setShowArtifacts] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [transfer, setTransfer] = useState<{ mode: 'upload' | 'download'; items: Array<{ name: string; pct: number; done: boolean; error?: string }> } | null>(null);
   const artifacts = flow.artifacts || [];
 
   useEffect(() => {
@@ -911,38 +912,57 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (!files.length) return;
-    // Upload each file as raw binary — the server content-addresses the body and
-    // returns the updated {name,sha} ref list. No base64-in-JSON, so large files
-    // no longer trigger "allocation size overflow".
+    // Upload each file as raw binary with a progress modal — server
+    // content-addresses the body and returns the updated {name,sha} ref list.
+    const patch = (i: number, p: Partial<{ pct: number; done: boolean; error?: string }>) =>
+      setTransfer(prev => prev ? { ...prev, items: prev.items.map((u, idx) => idx === i ? { ...u, ...p } : u) } : prev);
+    setTransfer({ mode: 'upload', items: files.map(f => ({ name: f.name, pct: 0, done: false })) });
     let latest = artifacts;
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
       try {
-        const resp: any = await apiClient.postBinary(
+        const resp: any = await apiClient.uploadBinary(
           `/api/v1/flows/${flow.id}/artifacts?name=${encodeURIComponent(file.name)}`,
           file,
+          (pct) => patch(i, { pct }),
         );
         if (Array.isArray(resp?.artifacts)) latest = resp.artifacts;
-      } catch (err) {
+        patch(i, { pct: 100, done: true });
+      } catch (err: any) {
         console.error('artifact upload failed', err);
+        patch(i, { done: true, error: err?.message || 'failed' });
       }
     }
     // Reflect server-side refs locally without resending them through PUT.
     updateFlowLocal(flow.id, { artifacts: latest });
+    // Auto-close when all succeeded; keep open if any error so the user sees it.
+    setTimeout(() => setTransfer(prev => (prev && prev.items.some(u => u.error)) ? prev : null), 1200);
   };
 
-  const handleArtifactDownload = (a: { name: string; sha?: string }) => {
+  const handleArtifactDownload = async (a: { name: string; sha?: string }) => {
     if (!a.sha) return;
-    // Stream straight to disk via the browser — the server streams chunk-by-chunk,
-    // so nothing is held in JS memory. Token in the query because a plain <a>
-    // download can't send an Authorization header.
-    const token = localStorage.getItem('orchestrator_jwt') || '';
-    const url = `/api/v1/flows/${flow.id}/artifacts/${a.sha}/raw?token=${encodeURIComponent(token)}`;
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = a.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const patch = (p: Partial<{ pct: number; done: boolean; error?: string }>) =>
+      setTransfer(prev => prev ? { ...prev, items: prev.items.map((u, i) => i === 0 ? { ...u, ...p } : u) } : prev);
+    setTransfer({ mode: 'download', items: [{ name: a.name, pct: 0, done: false }] });
+    try {
+      const blob = await apiClient.downloadBinary(
+        `/api/v1/flows/${flow.id}/artifacts/${a.sha}/raw`,
+        (pct) => patch({ pct }),
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = a.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      patch({ pct: 100, done: true });
+    } catch (err: any) {
+      console.error('artifact download failed', err);
+      patch({ done: true, error: err?.message || 'failed' });
+    }
+    setTimeout(() => setTransfer(prev => (prev && prev.items.some(u => u.error)) ? prev : null), 1200);
   };
 
   const handleArtifactRemove = async (name: string) => {
@@ -1006,6 +1026,52 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
           )}
         </div>
       )}
+
+      {transfer && (() => {
+        const allDone = transfer.items.every(u => u.done);
+        const verb = transfer.mode === 'upload' ? 'Upload' : 'Download';
+        const gerund = transfer.mode === 'upload' ? 'Uploading' : 'Downloading';
+        const n = transfer.items.length;
+        return (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => { if (allDone) setTransfer(null); }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, width: 440, maxWidth: '90vw', padding: 16, fontFamily: 'var(--font-mono)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              {allDone
+                ? <CheckCircle2 size={14} style={{ color: 'var(--ok)' }} />
+                : <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent)' }} />}
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                {allDone ? `${verb} complete` : `${gerund} ${n} file${n > 1 ? 's' : ''}…`}
+              </span>
+              <button onClick={() => setTransfer(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }} title="Close">
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: '50vh', overflow: 'auto' }}>
+              {transfer.items.map((u, i) => (
+                <div key={i}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'var(--text-2)', marginBottom: 4 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</span>
+                    <span style={{ flexShrink: 0, color: u.error ? 'var(--err)' : u.done ? 'var(--ok)' : 'var(--text-3)' }}>
+                      {u.error ? 'failed' : u.done ? 'done' : `${u.pct}%`}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--bg-3)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${u.error ? 100 : u.pct}%`, background: u.error ? 'var(--err)' : 'var(--accent)', transition: 'width 0.15s' }} />
+                  </div>
+                  {u.error && <div style={{ fontSize: 10, color: 'var(--err)', marginTop: 2 }}>{u.error}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       <div className="flex-1 min-h-0">
         <EditorLayout
