@@ -3,7 +3,7 @@ import fs from 'fs';
 
 const COLLECTION_NAMES = [
   'users', 'roles', 'secrets', 'flows', 'executions', 'execution_logs',
-  'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'artifact_blobs', 'sessions',
+  'schedules', 'trigger_tokens', 'workers', 'worker_jobs', 'artifact_blobs', 'artifact_chunks', 'sessions',
   'git_objects', 'git_refs',
 ] as const;
 
@@ -248,6 +248,7 @@ export async function connectDB(): Promise<void> {
     await _db['executions'].ensureIndex({ fieldName: 'startTime' });
     await _db['schedules'].ensureIndex({ fieldName: 'flowId' });
     await _db['secrets'].ensureIndex({ fieldName: 'name' });
+    await _db['artifact_chunks'].ensureIndex({ fieldName: 'sha' });
     await _db['git_objects'].ensureIndex({ fieldName: 'flowId' });
     await _db['git_objects'].ensureIndex({ fieldName: 'sha' });
     await _db['git_refs'].ensureIndex({ fieldName: 'flowId' });

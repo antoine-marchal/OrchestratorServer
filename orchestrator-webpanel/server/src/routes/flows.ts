@@ -12,10 +12,11 @@ import {
   checkoutBranchToDoc,
   createBranch,
   resetBranch,
+  ensureArtifactRefs,
   activeRef,
   type ResetMode,
 } from '../services/git/flowCommit';
-import { putArtifacts, getArtifactBase64 } from '../services/executor/artifactStore';
+import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../services/executor/artifactStore';
 
 const router = Router();
 
@@ -218,9 +219,9 @@ router.post('/:id/versions/:vid/restore', requireFlowEditAccess, async (req: Req
     } catch (e: any) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: e.message } }) as any;
     }
-    // Persist artifacts as content-addressed refs, not the inline base64 the
-    // git tree round-trips (keeps the flows collection lean).
-    const artifactRefs = await putArtifacts(fields.artifacts);
+    // Persist artifacts as content-addressed refs (git round-trips pointers now;
+    // legacy commits round-trip inline bytes — ensureArtifactRefs handles both).
+    const artifactRefs = await ensureArtifactRefs(fields.artifacts);
     await col.update({ _id: req.params.id }, { $set: {
       nodes: fields.nodes, edges: fields.edges, artifacts: artifactRefs, updatedAt: now,
     } });
@@ -309,6 +310,31 @@ router.post('/:id/artifacts', requireFlowEditAccess, rawArtifact, async (req: Re
     res.status(201).json({ artifact: ref, artifacts });
   } catch (err: any) {
     res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Streamed binary download by sha — chunk-by-chunk, never buffering the whole
+// file. Auth via ?token= (a plain <a download> can't set an Authorization
+// header). Only artifacts referenced by this flow are served.
+router.get('/:id/artifacts/:sha/raw', async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const ref = (flow.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
+    if (!ref) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact not referenced by this flow' } }) as any;
+    const size = await getArtifactSize(req.params.sha);
+    if (size == null) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact blob not found' } }) as any;
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(size));
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(ref.name)}`);
+    for await (const part of artifactChunks(req.params.sha)) {
+      // Respect backpressure so a huge artifact can't balloon the send buffer.
+      if (!res.write(part)) await new Promise<void>((r) => res.once('drain', () => r()));
+    }
+    res.end();
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+    else res.destroy();
   }
 });
 

@@ -78,13 +78,17 @@ function parseGraph(code: unknown): { nodes: any[]; edges: any[] } | null {
   return null;
 }
 
+// Artifact reference, either a content-addressed ref ({name,sha}) or a legacy
+// inline body ({name,data}). The materializer prefers `sha`.
+export interface ArtifactEntry { name: string; sha?: string; data?: string }
+
 export interface FlowLike {
   name?: string;
   namespace?: string;
   description?: string;
   nodes?: any[];
   edges?: any[];
-  artifacts?: Array<{ name: string; data: string }>;
+  artifacts?: ArtifactEntry[];
 }
 
 export interface FlowFields {
@@ -93,7 +97,21 @@ export interface FlowFields {
   description: string;
   nodes: any[];
   edges: any[];
-  artifacts: Array<{ name: string; data: string }>;
+  artifacts: ArtifactEntry[];
+}
+
+// Artifact bodies are NOT duplicated into git. Instead git holds a tiny
+// content-addressed *pointer* (git-LFS style): the file's bytes live once in the
+// artifact_blobs store (keyed by sha256), and the git blob carries only that
+// sha256. A `git clone` therefore gets a pointer file, not the raw bytes.
+const ARTIFACT_POINTER_TAG = 'orchestrator.artifact/v1';
+function artifactPointer(sha: string): Buffer {
+  return Buffer.from(`${ARTIFACT_POINTER_TAG}\nsha256:${sha}\n`, 'utf8');
+}
+function parseArtifactPointer(text: string): string | null {
+  if (!text.startsWith(ARTIFACT_POINTER_TAG)) return null;
+  const m = text.match(/sha256:([a-f0-9]+)/);
+  return m ? m[1] : null;
 }
 
 export interface TreeBuildResult {
@@ -133,7 +151,7 @@ interface Graph {
   description?: string;
   nodes: any[];
   edges: any[];
-  artifacts?: Array<{ name: string; data: string }>;
+  artifacts?: ArtifactEntry[];
 }
 
 // Build the tree entries for one directory level, recursing into flow nodes.
@@ -194,8 +212,11 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
   if (artifacts.length) {
     const artEntries: TreeEntry[] = [];
     for (const a of artifacts) {
-      if (!a || typeof a.name !== 'string') continue;
-      const blob = buildBlob(Buffer.from(a.data ?? '', 'base64')); add(blob);
+      // Only refs (carry a sha) become pointers — bodies already stored in
+      // artifact_blobs. Entries lacking a sha are skipped (caller normalizes to
+      // refs before commit; see ensureArtifactRefs).
+      if (!a || typeof a.name !== 'string' || !a.sha) continue;
+      const blob = buildBlob(artifactPointer(a.sha)); add(blob);
       artEntries.push({ mode: '100644', name: sanitize(a.name), sha: blob.sha });
     }
     if (artEntries.length) {
@@ -301,15 +322,20 @@ async function readLevel(flowId: string, treeSha: string): Promise<FlowFields> {
     }
   }
 
-  // artifacts/
-  const artifacts: Array<{ name: string; data: string }> = [];
+  // artifacts/ — each git blob is a pointer to a sha256 in artifact_blobs.
+  // Legacy commits stored the raw bytes inline; detect that and surface them as
+  // {name,data} so fieldsToDoc re-homes them into artifact_blobs on read.
+  const artifacts: ArtifactEntry[] = [];
   const artEntry = rootEntries.find((e) => e.name === 'artifacts' && e.mode === '40000');
   if (artEntry) {
     const at = await getObject(flowId, artEntry.sha);
     if (at && at.objectType === 'tree') {
       for (const fe of parseTree(at.data)) {
         const blob = await getObject(flowId, fe.sha);
-        if (blob) artifacts.push({ name: fe.name, data: blob.data.toString('base64') });
+        if (!blob) continue;
+        const sha = parseArtifactPointer(blob.data.toString('utf8'));
+        if (sha) artifacts.push({ name: fe.name, sha });
+        else artifacts.push({ name: fe.name, data: blob.data.toString('base64') }); // legacy inline
       }
     }
   }

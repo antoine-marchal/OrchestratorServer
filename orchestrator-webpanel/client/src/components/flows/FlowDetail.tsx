@@ -870,6 +870,16 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     lastSyncedRef.current = serverContent;
   }, [flow.nodes, flow.edges, flow.id]);
 
+  // While the editor is open, poll the flow library so a new commit (git push,
+  // another user's save, a branch rewrite) is picked up without leaving the tab.
+  // loadAll() refreshes flow.nodes/edges from the server; the adopt effect above
+  // then syncs the canvas — but only when there are no local unsaved edits, so
+  // in-progress work is never clobbered.
+  useEffect(() => {
+    const t = setInterval(() => { useFlowLibraryStore.getState().loadAll(); }, 5000);
+    return () => clearInterval(t);
+  }, [flow.id]);
+
   useEffect(() => {
     if (!hydratedRef.current) return;
     // Only the canonical session's edits propagate to the library flow
@@ -918,6 +928,21 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     }
     // Reflect server-side refs locally without resending them through PUT.
     updateFlowLocal(flow.id, { artifacts: latest });
+  };
+
+  const handleArtifactDownload = (a: { name: string; sha?: string }) => {
+    if (!a.sha) return;
+    // Stream straight to disk via the browser — the server streams chunk-by-chunk,
+    // so nothing is held in JS memory. Token in the query because a plain <a>
+    // download can't send an Authorization header.
+    const token = localStorage.getItem('orchestrator_jwt') || '';
+    const url = `/api/v1/flows/${flow.id}/artifacts/${a.sha}/raw?token=${encodeURIComponent(token)}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = a.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   const handleArtifactRemove = async (name: string) => {
@@ -969,7 +994,10 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
                 <div key={a.name} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px' }}>
                   <Paperclip size={10} style={{ color: 'var(--text-3)' }} />
                   <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{a.name}</span>
-                  <button onClick={() => handleArtifactRemove(a.name)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, marginLeft: 2 }}>
+                  <button onClick={() => handleArtifactDownload(a)} title="Download" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, marginLeft: 2 }}>
+                    <Download size={10} />
+                  </button>
+                  <button onClick={() => handleArtifactRemove(a.name)} title="Remove" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, marginLeft: 2 }}>
                     <X size={10} />
                   </button>
                 </div>

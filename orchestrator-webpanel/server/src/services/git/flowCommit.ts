@@ -9,7 +9,8 @@ import {
   listRefs,
   deleteObjectsExcept,
 } from './gitStore';
-import { putArtifacts, resolveRefs, gcArtifacts } from '../executor/artifactStore';
+import { putArtifacts, gcArtifacts } from '../executor/artifactStore';
+import type { ArtifactEntry } from './flowMaterialize';
 import type { BuiltObject } from './gitObjects';
 
 export const DEFAULT_BRANCH = 'main';
@@ -114,10 +115,10 @@ export async function commitFlowState(
   // Carry any user-added top-level files (e.g. a pushed .gitignore / docs) from
   // the current HEAD tree forward so this regenerated save doesn't erase them.
   const preserved = await readPreservedRootEntries(flowId, prevTree);
-  // flow.artifacts are content-addressed refs ({name,sha}); git stores the full
-  // bytes, so resolve them back to {name,data} just for tree construction.
-  const resolvedArtifacts = await resolveRefs(flow.artifacts);
-  const { rootSha, objects } = flowToTree({ ...flow, artifacts: resolvedArtifacts }, preserved);
+  // git stores only a pointer (sha256) per artifact, never the bytes — so we
+  // normalize to refs (storing any straggler inline body into artifact_blobs).
+  const artifactRefs = await ensureArtifactRefs(flow.artifacts);
+  const { rootSha, objects } = flowToTree({ ...flow, artifacts: artifactRefs }, preserved);
   if (rootSha === prevTree) return null; // nothing changed
 
   await persistObjects(flowId, objects);
@@ -132,13 +133,23 @@ export async function commitFlowState(
     }
   }
 
+  // For UI autosaves, append a human-readable diff (vs the previous HEAD) to the
+  // commit body, mirroring the VersionHistoryPanel diff view.
+  let finalMessage = message;
+  if (message.startsWith(AUTOSAVE_PREFIX)) {
+    try {
+      const summary = await diffSummary(flowId, prevTree, flow.nodes || [], flow.edges || []);
+      if (summary) finalMessage = `${message}\n${summary}`;
+    } catch { /* diff is best-effort — never block the commit */ }
+  }
+
   const login = author.login || flow.owner || 'orchestrator';
   const commit = buildCommit({
     tree: rootSha,
     parents,
     authorName: login,
     authorEmail: `${login}@orchestrator.local`,
-    message,
+    message: finalMessage,
   });
   await putObject(flowId, commit.sha, commit.objectType, commit.data);
   await setRef(flowId, ref, commit.sha);
@@ -219,12 +230,77 @@ export async function flowFieldsAtCommit(flowId: string, commitSha: string) {
   return treeToFlowFields(flowId, c.tree);
 }
 
-// Convert git-materialized fields (artifacts as inline {name,data}) into the
-// shape stored on the flow doc, where artifact bodies live content-addressed in
-// artifact_blobs and the doc carries only {name,sha} refs. Keeps fat base64 out
-// of the flows collection on every checkout / restore / push-sync.
+// Human-readable diff between the previous HEAD tree and the new node/edge graph,
+// formatted like the VersionHistoryPanel diff. Empty string when nothing changed
+// at the top level. Used as the body of UI autosave commits.
+async function diffSummary(
+  flowId: string,
+  prevTree: string | null,
+  currNodes: any[],
+  currEdges: any[],
+): Promise<string> {
+  let prevNodes: any[] = [];
+  let prevEdges: any[] = [];
+  if (prevTree) {
+    try {
+      const f = await treeToFlowFields(flowId, prevTree);
+      prevNodes = f.nodes || [];
+      prevEdges = f.edges || [];
+    } catch { /* unreadable prev tree → treat as empty */ }
+  }
+
+  const prevById = new Map(prevNodes.map((n) => [n.id, n]));
+  const currById = new Map(currNodes.map((n) => [n.id, n]));
+  const added: any[] = [];
+  const changed: any[] = [];
+  for (const [id, n] of currById) {
+    if (!prevById.has(id)) added.push(n);
+    else if (JSON.stringify(prevById.get(id)?.data ?? {}) !== JSON.stringify(n?.data ?? {})) changed.push(n);
+  }
+  const removed = prevNodes.filter((n) => !currById.has(n.id));
+
+  const edgeKey = (e: any) => `${e.source}->${e.target}:${e.sourceHandle ?? ''}:${e.targetHandle ?? ''}`;
+  const prevEK = new Set(prevEdges.map(edgeKey));
+  const currEK = new Set(currEdges.map(edgeKey));
+  const addedEdges = currEdges.filter((e) => !prevEK.has(edgeKey(e)));
+  const removedEdges = prevEdges.filter((e) => !currEK.has(edgeKey(e)));
+
+  const label = (n: any) => n?.data?.label || n.id;
+  const type = (n: any) => n?.data?.type || 'node';
+  const lines: string[] = [];
+  if (added.length) { lines.push(`+ Added nodes (${added.length})`); for (const n of added) lines.push(`+ ${label(n)} [${type(n)}]`); }
+  if (removed.length) { lines.push(`- Removed nodes (${removed.length})`); for (const n of removed) lines.push(`- ${label(n)} [${type(n)}]`); }
+  if (changed.length) { lines.push(`~ Changed nodes (${changed.length})`); for (const n of changed) lines.push(`~ ${label(n)}`); }
+  if (addedEdges.length) { lines.push(`+ Added edges (${addedEdges.length})`); for (const e of addedEdges) lines.push(`+ ${e.source} → ${e.target}`); }
+  if (removedEdges.length) { lines.push(`- Removed edges (${removedEdges.length})`); for (const e of removedEdges) lines.push(`- ${e.source} → ${e.target}`); }
+  return lines.join('\n');
+}
+
+// Normalize artifact entries to content-addressed {name,sha} refs. Ref entries
+// (already carry a sha — the common case, since git now stores pointers) pass
+// through untouched; any legacy inline {name,data} is stored into artifact_blobs
+// and replaced with its ref. Never keeps base64 bodies around.
+export async function ensureArtifactRefs(
+  artifacts: ArtifactEntry[] | undefined,
+): Promise<Array<{ name: string; sha: string }>> {
+  const out: Array<{ name: string; sha: string }> = [];
+  for (const a of artifacts || []) {
+    if (!a || typeof a.name !== 'string') continue;
+    if (typeof a.sha === 'string') { out.push({ name: a.name, sha: a.sha }); continue; }
+    if (typeof a.data === 'string') {
+      const [ref] = await putArtifacts([{ name: a.name, data: a.data }]);
+      out.push(ref);
+    }
+  }
+  return out;
+}
+
+// Convert git-materialized fields into the shape stored on the flow doc: artifact
+// bodies live content-addressed in artifact_blobs, the doc carries only {name,sha}
+// refs. Keeps fat base64 out of the flows collection on every checkout / restore
+// / push-sync.
 export async function fieldsToDoc(fields: FlowFields): Promise<any> {
-  const refs = await putArtifacts(fields.artifacts);
+  const refs = await ensureArtifactRefs(fields.artifacts);
   return { ...fields, artifacts: refs };
 }
 

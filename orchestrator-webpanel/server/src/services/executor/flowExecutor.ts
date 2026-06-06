@@ -690,7 +690,8 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   const branch = (overrides?.branch && overrides.branch.trim()) || activeBranch;
   let runNodes: any[] = flow.nodes || [];
   let runEdges: any[] = flow.edges || [];
-  let runArtifacts: Array<{ name: string; data: string }> = flow.artifacts || [];
+  // Artifact refs ({name,sha}) — resolved to bytes once, below.
+  let runArtifacts: Array<{ name: string; sha?: string; data?: string }> = flow.artifacts || [];
   let flowCommit: string | null = null;
   if (branch !== activeBranch) {
     const sha = await getRef(flowId, branchRef(branch));
@@ -709,10 +710,6 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   } else {
     flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
   }
-  // Artifacts on the live flow doc are content-addressed refs ({name,sha});
-  // those reconstructed from a git commit are already inline {name,data}.
-  // resolveRefs handles both (inline entries pass through) → bytes for extract.
-  runArtifacts = await resolveRefs(runArtifacts);
   const graphSnapshot = flowCommit ? {} : { nodes: runNodes, edges: runEdges };
 
   // Effective worker: a variant override (incl. '' for local) wins; otherwise
@@ -773,7 +770,9 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
 
   const jobId = nowUid();
   const flowContent = JSON.stringify({ nodes: runNodes, edges: runEdges });
-  const flowArtifacts: Array<{name: string; data: string}> = runArtifacts;
+  // Resolve artifact refs (live doc = {name,sha}; legacy git commit = {name,data})
+  // to bytes once, for local extraction and worker dispatch.
+  const flowArtifacts: Array<{name: string; data: string}> = await resolveRefs(runArtifacts);
 
   // Extract artifacts locally before execution (for server-side nodes)
   if (flowArtifacts.length && !resolvedWorkerId) {

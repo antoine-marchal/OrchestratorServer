@@ -77,6 +77,26 @@ export async function deleteRef(flowId: string, ref: string): Promise<void> {
   await refs().remove({ _id: `${flowId}:${ref}` });
 }
 
+// Every artifact-pointer sha256 referenced by ANY git blob across ALL flows.
+// Artifact bodies (in artifact_blobs) must survive as long as a commit anywhere
+// still points at them — even commits whose flow doc no longer lists the
+// artifact — so the janitor consults this before reclaiming a blob.
+const POINTER_TAG = 'orchestrator.artifact/v1';
+export async function collectArtifactPointerShas(): Promise<Set<string>> {
+  const out = new Set<string>();
+  const rows: any[] = await objects().find({ objectType: 'blob' });
+  for (const r of rows) {
+    // Pointer blobs are tiny; skip anything too large to be one cheaply.
+    const buf = toBuffer(r.data);
+    if (buf.length > 256) continue;
+    const text = buf.toString('utf8');
+    if (!text.startsWith(POINTER_TAG)) continue;
+    const m = text.match(/sha256:([a-f0-9]+)/);
+    if (m) out.add(m[1]);
+  }
+  return out;
+}
+
 // Delete every object of this flow whose sha is NOT in `keep`. Used by the
 // reachability GC after a history rewrite. Returns the count removed.
 export async function deleteObjectsExcept(flowId: string, keep: Set<string>): Promise<number> {

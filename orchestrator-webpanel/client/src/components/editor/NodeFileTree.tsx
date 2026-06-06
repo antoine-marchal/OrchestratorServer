@@ -3,18 +3,56 @@ import {
   Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal,
   TerminalSquare, MessageSquare, CornerRightDown, ChevronRight,
   ChevronDown, Circle, ArrowDownLeft, ArrowUpRight,
-  Loader2, CheckCircle2, AlertCircle, RefreshCw,
+  Loader2, CheckCircle2, AlertCircle, RefreshCw, Folder as FolderIcon, FolderOpen,
 } from 'lucide-react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { Node, Edge } from 'reactflow';
 
 const CODE_NODE_TYPES = new Set(['javascript', 'jsbackend', 'groovy', 'batch', 'powershell', 'python', 'playwright']);
-// Types that don't carry user code/sub-graph and clutter the tree.
-const HIDDEN_FROM_TREE = new Set(['goto', 'comment', 'variable']);
-const isVisibleInTree = (n: Node) => !HIDDEN_FROM_TREE.has(n.data?.type || 'javascript');
 
-// Live execution status overlay — same colour code as the execution view.
+// Mirror the server materializer (flowMaterialize.ts) so the tree matches a real
+// `git clone`: leaf code nodes → nodes/<camelLabel>.<ext>, flow nodes →
+// sessions/<camelLabel>/ holding their own nodes/ + sessions/ recursively.
+const LANG_TO_EXT: Record<string, string> = {
+  powershell: 'ps1', groovy: 'groovy', python: 'py', javascript: 'js', jsbackend: 'js',
+  typescript: 'ts', batch: 'bat', bash: 'sh', shell: 'sh', sh: 'sh', sql: 'sql',
+  json: 'json', yaml: 'yaml', html: 'html', css: 'css', playwright: 'js',
+};
+function extForNode(node: Node): string {
+  const lang = node?.data?.language;
+  const type = node?.data?.type;
+  const key = ((typeof lang === 'string' && lang) || (typeof type === 'string' && type) || '').toLowerCase();
+  return LANG_TO_EXT[key] || 'txt';
+}
+function sanitize(s: string): string { return String(s).replace(/[^A-Za-z0-9._-]/g, '_'); }
+function camelCase(s: string): string {
+  const parts = String(s || '').split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (!parts.length) return '';
+  return parts.map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1))).join('');
+}
+function baseName(node: Node): string { return camelCase(node?.data?.label || '') || sanitize(String(node?.id ?? 'node')); }
+function uniqueName(candidate: string, used: Set<string>): string {
+  let name = candidate; let n = 1;
+  while (used.has(name)) name = `${candidate}_${n++}`;
+  used.add(name);
+  return name;
+}
+
+// A flow node embeds its sub-graph as JSON in data.code.
+function parseSub(node: Node): { nodes: Node[]; edges: Edge[] } | null {
+  if (node?.data?.type !== 'flow' || typeof node?.data?.code !== 'string' || !node.data.code.trim()) return null;
+  try {
+    const o = JSON.parse(node.data.code);
+    if (Array.isArray(o?.nodes) && Array.isArray(o?.edges)) return { nodes: o.nodes, edges: o.edges };
+  } catch { /* not a graph */ }
+  return null;
+}
+const isFlowSession = (n: Node) => parseSub(n) !== null;
+// File = anything with source code that isn't an expandable flow session
+// (matches the materializer's "typeof data.code === 'string'" externalization).
+const isFile = (n: Node) => !isFlowSession(n) && typeof n?.data?.code === 'string';
+
 function StatusIcon({ status }: { status?: string }) {
   switch (status) {
     case 'running': return <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />;
@@ -41,17 +79,11 @@ function NodeIcon({ type }: { type: string }) {
   }
 }
 
-interface NodeRelations {
-  preds: { id: string; label: string }[];
-  succs: { id: string; label: string }[];
-}
+interface NodeRelations { preds: { id: string; label: string }[]; succs: { id: string; label: string }[]; }
 
-// Topological sort (Kahn's algorithm) — returns nodes in execution order.
-// Disconnected nodes and cycles are appended at the end in original order.
 function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
   const nodeById = new Map<string, Node>();
   for (const n of nodes) nodeById.set(n.id, n);
-
   const inDegree = new Map<string, number>();
   const successors = new Map<string, string[]>();
   for (const n of nodes) { inDegree.set(n.id, 0); successors.set(n.id, []); }
@@ -60,7 +92,6 @@ function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
     successors.get(e.source)!.push(e.target);
     inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
   }
-
   const queue: Node[] = nodes.filter(n => inDegree.get(n.id) === 0);
   const sorted: Node[] = [];
   const visited = new Set<string>();
@@ -79,9 +110,6 @@ function topologicalSort(nodes: Node[], edges: Edge[]): Node[] {
   return sorted;
 }
 
-// Compute predecessor/successor lists for every node id in a flow definition.
-// Children inside flow nodes get their own (sub-graph) relations; top-level
-// nodes use the parent flow's edges.
 function buildRelations(nodes: Node[], edges: Edge[]): Record<string, NodeRelations> {
   const labelById = new Map<string, string>();
   for (const n of nodes) labelById.set(n.id, n.data?.label || n.id);
@@ -118,83 +146,92 @@ function RelationBadge({ direction, items }: { direction: 'in' | 'out'; items: {
   );
 }
 
-function NodeItem({ node, depth, editingNodeId, onSelect, modifiedNodeIds, parentFlow, relations }: {
-  node: Node;
-  depth: number;
-  editingNodeId: string | null;
-  onSelect: (node: Node, parentFlow: Node | null) => void;
-  modifiedNodeIds: Set<string>;
-  parentFlow: Node | null;
-  relations: Record<string, NodeRelations>;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const type = node.data?.type || 'javascript';
-  const isFlow = type === 'flow';
-  const isEditing = editingNodeId === node.id;
-  const isModified = modifiedNodeIds.has(node.id);
-  const isCode = CODE_NODE_TYPES.has(type);
-
-  // Parse child nodes + edges from flow code so children render with their
-  // own sub-graph relations rather than stale parent-graph ones.
-  let childNodes: Node[] = [];
-  let childEdges: Edge[] = [];
-  if (isFlow && node.data?.code) {
-    try {
-      const flowData = JSON.parse(node.data.code);
-      if (Array.isArray(flowData.nodes)) childNodes = flowData.nodes;
-      if (Array.isArray(flowData.edges)) childEdges = flowData.edges;
-    } catch { }
-  }
-  const childRelations = useMemo(
-    () => isFlow && childNodes.length > 0 ? buildRelations(childNodes, childEdges) : {},
-    [childNodes, childEdges, isFlow]
-  );
-
-  const rel = relations[node.id] || { preds: [], succs: [] };
-
+// A collapsible folder row (nodes/ , sessions/ , or a session's <name>/).
+function Folder({ name, depth, children, defaultOpen = true }: { name: string; depth: number; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none
-          ${isEditing ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}
-          ${!isCode && !isFlow ? 'opacity-60' : ''}`}
-        style={{ paddingLeft: `${8 + depth * 14}px` }}
-        onClick={() => onSelect(node, parentFlow)}
+        className="flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none hover:bg-white/5"
+        style={{ paddingLeft: `${8 + depth * 14}px`, color: 'var(--text-3)' }}
+        onClick={() => setOpen(o => !o)}
       >
-        {isFlow && childNodes.length > 0 ? (
-          <button
-            onClick={e => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="p-0 flex-shrink-0"
-          >
-            {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-        ) : (
-          <span className="w-3 h-3 flex-shrink-0" />
-        )}
-        <NodeIcon type={type} />
-        <span className="truncate flex-1 ml-1">{node.data?.label || node.id}</span>
-        <RelationBadge direction="in" items={rel.preds} />
-        <RelationBadge direction="out" items={rel.succs} />
-        {isModified && <Circle className="w-1.5 h-1.5 fill-orange-400 text-orange-400 flex-shrink-0" />}
-        <StatusIcon status={(node.data as any)?.executionStatus} />
+        {open ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+        {open ? <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent)' }} /> : <FolderIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />}
+        <span className="truncate ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{name}</span>
       </div>
-      {isFlow && expanded && childNodes.length > 0 && (
-        <div>
-          {topologicalSort(childNodes, childEdges).filter(isVisibleInTree).map((child: Node) => (
-            <NodeItem
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              editingNodeId={editingNodeId}
-              onSelect={onSelect}
-              modifiedNodeIds={modifiedNodeIds}
-              parentFlow={node}
-              relations={childRelations}
+      {open && <div>{children}</div>}
+    </div>
+  );
+}
+
+interface Handlers {
+  editingNodeId: string | null;
+  modifiedNodeIds: Set<string>;
+  onSelect: (node: Node, parentFlow: Node | null) => void;
+}
+
+function FileRow({ name, node, depth, parentFlow, relations, editingNodeId, modifiedNodeIds, onSelect }: Handlers & {
+  name: string; node: Node; depth: number; parentFlow: Node | null; relations: Record<string, NodeRelations>;
+}) {
+  const type = node.data?.type || 'javascript';
+  const isEditing = editingNodeId === node.id;
+  const isModified = modifiedNodeIds.has(node.id);
+  const rel = relations[node.id] || { preds: [], succs: [] };
+  return (
+    <div
+      className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none ${isEditing ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}`}
+      style={{ paddingLeft: `${8 + depth * 14}px` }}
+      onClick={() => onSelect(node, parentFlow)}
+    >
+      <span className="w-3 h-3 flex-shrink-0" />
+      <NodeIcon type={type} />
+      <span className="truncate flex-1 ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{name}</span>
+      <RelationBadge direction="in" items={rel.preds} />
+      <RelationBadge direction="out" items={rel.succs} />
+      {isModified && <Circle className="w-1.5 h-1.5 fill-orange-400 text-orange-400 flex-shrink-0" />}
+      <StatusIcon status={(node.data as any)?.executionStatus} />
+    </div>
+  );
+}
+
+// Render one graph level as nodes/ + sessions/ folders, recursing into sessions.
+function Level({ nodes, edges, depth, parentFlow, handlers }: {
+  nodes: Node[]; edges: Edge[]; depth: number; parentFlow: Node | null; handlers: Handlers;
+}) {
+  const relations = useMemo(() => buildRelations(nodes, edges), [nodes, edges]);
+  const ordered = useMemo(() => topologicalSort(nodes, edges), [nodes, edges]);
+  const files = ordered.filter(isFile);
+  const flows = ordered.filter(isFlowSession);
+  const usedFiles = new Set<string>();
+  const usedSessions = new Set<string>();
+
+  return (
+    <>
+      {files.length > 0 && (
+        <Folder name="nodes/" depth={depth}>
+          {files.map(n => (
+            <FileRow
+              key={n.id}
+              name={uniqueName(`${baseName(n)}.${extForNode(n)}`, usedFiles)}
+              node={n} depth={depth + 1} parentFlow={parentFlow} relations={relations} {...handlers}
             />
           ))}
-        </div>
+        </Folder>
       )}
-    </div>
+      {flows.length > 0 && (
+        <Folder name="sessions/" depth={depth}>
+          {flows.map(f => {
+            const sub = parseSub(f)!;
+            return (
+              <Folder key={f.id} name={`${uniqueName(baseName(f), usedSessions)}/`} depth={depth + 1}>
+                <Level nodes={sub.nodes} edges={sub.edges} depth={depth + 2} parentFlow={f} handlers={handlers} />
+              </Folder>
+            );
+          })}
+        </Folder>
+      )}
+    </>
   );
 }
 
@@ -203,30 +240,19 @@ export const NodeFileTree: React.FC = () => {
   const { nodes, edges } = useFlowStore();
   const flowState = sessionStore.getActiveFlowState();
   const editingNodeId = flowState?.editingNodeId ?? null;
+  const modifiedNodeIds = useMemo(() => new Set<string>(), []);
 
-  const modifiedNodeIds = new Set<string>();
-  const relations = useMemo(() => buildRelations(nodes, edges), [nodes, edges]);
-
-  // Click handler. If `parentFlow` is provided, the clicked node lives inside
-  // the parent flow node's serialized sub-graph, not in the active session.
-  // We need to hop into the flow node's linked session (creating one on the
-  // fly if missing), then open the sub-node's editor inside that session.
+  // Click handler. If `parentFlow` is provided, the clicked node lives inside the
+  // parent flow node's serialized sub-graph; hop into its linked session first.
   const handleSelect = async (node: Node, parentFlow: Node | null) => {
-    const type = node.data?.type || 'javascript';
-    if (!CODE_NODE_TYPES.has(type)) return;
+    if (typeof node.data?.code !== 'string') return;
 
-    if (!parentFlow) {
-      sessionStore.openNodeEditor(node.id);
-      return;
-    }
+    if (!parentFlow) { sessionStore.openNodeEditor(node.id); return; }
 
-    // Ensure the flow node has a linked session that contains its children.
     let linkedId: string | undefined = parentFlow.data?.linkedSessionId;
     let linked = linkedId ? sessionStore.sessions.find(s => s.id === linkedId) : undefined;
 
     if (!linked) {
-      // Mirrors NodeHeader.handleEditFlowNode: create a session, parse contents,
-      // store back the linkedSessionId on the parent.
       const originalSessionId = sessionStore.activeSessionId;
       const parentFlowId = sessionStore.getActiveSession()?.linkedFlowId;
       const newSessionId = await sessionStore.createSession(parentFlow.data?.label || 'Flow Session', parentFlowId);
@@ -245,20 +271,11 @@ export const NodeFileTree: React.FC = () => {
           }
         } catch { /* leave session empty on parse error */ }
       }
-      // Stamp linkedSessionId back into the original session's flow node.
       if (originalSessionId) {
         useSessionStore.setState(state => ({
           sessions: state.sessions.map(s =>
             s.id === originalSessionId
-              ? {
-                  ...s,
-                  flowState: {
-                    ...s.flowState,
-                    nodes: s.flowState.nodes.map(n =>
-                      n.id === parentFlow.id ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } } : n
-                    ),
-                  },
-                }
+              ? { ...s, flowState: { ...s.flowState, nodes: s.flowState.nodes.map(n => n.id === parentFlow.id ? { ...n, data: { ...n.data, linkedSessionId: newSessionId } } : n) } }
               : s
           ),
         }));
@@ -268,30 +285,20 @@ export const NodeFileTree: React.FC = () => {
     } else {
       sessionStore.switchSession(linkedId!);
     }
-    // Now we're inside the flow node's session; open the child's code panel.
     sessionStore.openNodeEditor(node.id);
   };
+
+  const handlers: Handlers = { editingNodeId, modifiedNodeIds, onSelect: handleSelect };
 
   return (
     <div className="h-full overflow-y-auto py-2" style={{ background: 'var(--bg-2)', borderRight: '1px solid var(--border)' }}>
       <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
-        Nodes
+        Files
       </div>
       {nodes.length === 0 ? (
         <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-3)' }}>No nodes</div>
       ) : (
-        topologicalSort(nodes, edges).filter(isVisibleInTree).map(node => (
-          <NodeItem
-            key={node.id}
-            node={node}
-            depth={0}
-            editingNodeId={editingNodeId}
-            onSelect={handleSelect}
-            modifiedNodeIds={modifiedNodeIds}
-            parentFlow={null}
-            relations={relations}
-          />
-        ))
+        <Level nodes={nodes} edges={edges} depth={0} parentFlow={null} handlers={handlers} />
       )}
     </div>
   );
