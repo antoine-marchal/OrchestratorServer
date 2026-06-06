@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check } from 'lucide-react';
+import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check, Plus, Scissors, ArrowDownToLine } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -148,6 +148,45 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     }
   }, [flowId, activeBranch, applyToSession, loadAll, load, loadBranches]);
 
+  // Create a new branch from the current active HEAD, then switch to it.
+  const createBranch = useCallback(async () => {
+    if (!flowId) return;
+    const name = window.prompt('New branch name (from current HEAD):')?.trim();
+    if (!name) return;
+    try {
+      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/branches`, { name });
+      if (Array.isArray(data?.branches)) setBranches(data.branches);
+      await checkout(name);
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to create branch');
+    }
+  }, [flowId]);
+
+  // Rework the active branch around a commit.
+  //   mode 'root' — make this commit the new root (drop older history).
+  //   mode 'head' — reset the branch tip here (drop newer commits).
+  // Both GC unreachable objects server-side. Irreversible.
+  const reworkTo = useCallback(async (commit: string, mode: 'root' | 'head') => {
+    if (!flowId) return;
+    const msg = mode === 'root'
+      ? `Make ${commit.slice(0, 8)} the new root of "${activeBranch}"?\nOlder commits are permanently deleted.`
+      : `Reset "${activeBranch}" to ${commit.slice(0, 8)}?\nNewer commits are permanently deleted.`;
+    if (!confirm(msg)) return;
+    try {
+      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(activeBranch)}/reset`, { commit, mode });
+      const f = data?.flow;
+      if (f && (Array.isArray(f.nodes) || Array.isArray(f.edges))) {
+        applyToSession(Array.isArray(f.nodes) ? f.nodes : [], Array.isArray(f.edges) ? f.edges : []);
+      }
+      setSelected(null);
+      await loadAll();
+      await load();
+      await loadBranches();
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to rework branch');
+    }
+  }, [flowId, activeBranch, applyToSession, loadAll, load, loadBranches]);
+
   // Poll every 10s while the panel is open so autosaves materialise without a
   // manual refresh.
   useEffect(() => {
@@ -239,6 +278,9 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
               <option key={b} value={b}>{b}{b === activeBranch ? ' (active)' : ''}</option>
             ))}
           </select>
+          <button onClick={createBranch} className="tc-btn ghost" style={{ height: 24, padding: '0 6px' }} title="Create branch from current HEAD">
+            <Plus size={12} />
+          </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
@@ -299,14 +341,30 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
                       className="tc-btn ghost"
                       style={{ height: 22, padding: '0 8px', gap: 4, fontSize: 10 }}
                     >
-                      <Diff size={10} />{showDiff ? 'Hide diff' : 'Show diff'}
+                      <Diff size={10} />
                     </button>
                     <button
                       onClick={e => { e.stopPropagation(); restore(v._id); }}
                       className="tc-btn ghost"
                       style={{ height: 22, padding: '0 8px', gap: 4, fontSize: 10, color: 'var(--warn)' }}
                     >
-                      <RotateCcw size={10} />Restore
+                      <RotateCcw size={10} />
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); reworkTo(v._id, 'root'); }}
+                      className="tc-btn ghost"
+                      style={{ height: 22, padding: '0 8px', gap: 4, fontSize: 10, color: 'var(--err)' }}
+                      title="Make this the new root commit (drop older history)"
+                    >
+                      <Scissors size={10} />
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); reworkTo(v._id, 'head'); }}
+                      className="tc-btn ghost"
+                      style={{ height: 22, padding: '0 8px', gap: 4, fontSize: 10, color: 'var(--err)' }}
+                      title="Reset branch tip here (drop newer commits)"
+                    >
+                      <ArrowDownToLine size={10} />
                     </button>
                   </div>
                 )}

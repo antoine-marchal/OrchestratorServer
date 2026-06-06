@@ -192,6 +192,27 @@ class ApiClient {
     });
   }
 
+  // Raw binary POST (artifact upload). Bypasses JSON serialization so large
+  // files don't hit the V8 string limit ("allocation size overflow") the way
+  // base64-in-JSON did. Body is the File/Blob/ArrayBuffer itself.
+  async postBinary<T = any>(path: string, body: BodyInit): Promise<T> {
+    const endpoint = path.startsWith('/api/v1') ? path.slice('/api/v1'.length) : path;
+    const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
+    const jwt = getJwt();
+    if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+    const response = await fetch(`${this.baseUrl}${endpoint}`, { method: 'POST', body, headers });
+    if (response.status === 401) {
+      clearJwt();
+      window.location.hash = '/login';
+      throw new Error('Session expired. Please log in again.');
+    }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ message: 'Upload failed' }));
+      throw new Error(err.error?.message || err.message || `HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
   async delete<T = any>(path: string): Promise<T> {
     return this.request<T>(path.startsWith('/api/v1') ? path.slice('/api/v1'.length) : path, {
       method: 'DELETE',

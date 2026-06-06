@@ -1,12 +1,25 @@
 import { Router, Request, Response } from 'express';
 import { jobs, jobLogBuffers, jobLogListeners, processJob, terminateJobAndChildren, nowUid } from '../services/executor/nodeExecutor';
 import { resolveSecretsDetailed } from './secrets';
+import { getCollection } from '../services/db/index';
+import { resolveRefs } from '../services/executor/artifactStore';
 
 const router = Router();
 
 router.post('/', async (req: Request, res: Response) => {
-  const { type, code, codeFilePath, input, timeout, basePath, sessionId, runnerId, variables, workerId, artifacts } = req.body;
+  const { type, code, codeFilePath, input, timeout, basePath, sessionId, runnerId, variables, workerId, artifacts, flowId } = req.body;
   if (!type) return res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Job type is required' } }) as any;
+
+  // Artifacts are no longer shipped inline (base64) from the browser — the editor
+  // sends the linked flowId and we resolve its content-addressed artifact refs to
+  // bytes here. A caller may still pass inline `artifacts` (legacy); prefer those.
+  let jobArtifacts: Array<{ name: string; data: string }> | undefined =
+    Array.isArray(artifacts) && artifacts.length ? artifacts : undefined;
+  if (!jobArtifacts && flowId) {
+    const flow = await getCollection('flows').findOne({ _id: flowId });
+    const resolved = await resolveRefs(flow?.artifacts);
+    if (resolved.length) jobArtifacts = resolved;
+  }
 
   // Resolve ${{ secrets.NAME }} placeholders only for jobs that run locally —
   // right before they're queued to execute. Worker-bound jobs keep the
@@ -24,7 +37,7 @@ router.post('/', async (req: Request, res: Response) => {
   const job: any = {
     jobId, type, code: resolvedCode, codeFilePath, input, timeout, basePath, sessionId, runnerId,
     variables: variables || {}, workerId: workerId || null,
-    artifacts: Array.isArray(artifacts) && artifacts.length ? artifacts : undefined,
+    artifacts: jobArtifacts,
     status: 'queued', startTime: new Date().toISOString(), stopRequested: false,
   };
   jobs.set(jobId, job);

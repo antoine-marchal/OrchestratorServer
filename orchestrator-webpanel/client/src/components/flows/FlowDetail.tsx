@@ -791,7 +791,7 @@ const normContent = (nodes: any[], edges: any[]): string =>
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();
   const { sessions, activeSessionId, createSession, switchSession, updateActiveFlowState, getCanonicalSession } = useSessionStore();
-  const { updateFlow } = useFlowLibraryStore();
+  const { updateFlow, updateFlowLocal } = useFlowLibraryStore();
 
   const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -897,27 +897,36 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     return () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current); };
   }, [nodes, edges, activeSessionId]);
 
-  const handleArtifactUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleArtifactUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    Promise.all(files.map(file => new Promise<{name: string; data: string}>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = ev => resolve({ name: file.name, data: (ev.target?.result as string).split(',')[1] });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    }))).then(newArtifacts => {
-      const merged = [...artifacts];
-      for (const a of newArtifacts) {
-        const idx = merged.findIndex(x => x.name === a.name);
-        if (idx >= 0) merged[idx] = a; else merged.push(a);
-      }
-      updateFlow(flow.id, { artifacts: merged });
-    });
     e.target.value = '';
+    if (!files.length) return;
+    // Upload each file as raw binary — the server content-addresses the body and
+    // returns the updated {name,sha} ref list. No base64-in-JSON, so large files
+    // no longer trigger "allocation size overflow".
+    let latest = artifacts;
+    for (const file of files) {
+      try {
+        const resp: any = await apiClient.postBinary(
+          `/api/v1/flows/${flow.id}/artifacts?name=${encodeURIComponent(file.name)}`,
+          file,
+        );
+        if (Array.isArray(resp?.artifacts)) latest = resp.artifacts;
+      } catch (err) {
+        console.error('artifact upload failed', err);
+      }
+    }
+    // Reflect server-side refs locally without resending them through PUT.
+    updateFlowLocal(flow.id, { artifacts: latest });
   };
 
-  const handleArtifactRemove = (name: string) => {
-    updateFlow(flow.id, { artifacts: artifacts.filter(a => a.name !== name) });
+  const handleArtifactRemove = async (name: string) => {
+    try {
+      const resp: any = await apiClient.delete(`/api/v1/flows/${flow.id}/artifacts/${encodeURIComponent(name)}`);
+      updateFlowLocal(flow.id, { artifacts: Array.isArray(resp?.artifacts) ? resp.artifacts : artifacts.filter(a => a.name !== name) });
+    } catch (err) {
+      console.error('artifact remove failed', err);
+    }
   };
 
   return (

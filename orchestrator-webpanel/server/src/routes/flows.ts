@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { getCollection } from '../services/db/index';
 import { nowUid } from '../services/executor/nodeExecutor';
 import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
@@ -10,10 +10,20 @@ import {
   flowFieldsAtCommit,
   listBranches,
   checkoutBranchToDoc,
+  createBranch,
+  resetBranch,
   activeRef,
+  type ResetMode,
 } from '../services/git/flowCommit';
+import { putArtifacts, getArtifactBase64 } from '../services/executor/artifactStore';
 
 const router = Router();
+
+// Raw binary body parser for artifact uploads. Artifacts used to ride inside the
+// flow PUT as base64 inside JSON, which blew the V8 string limit on large files
+// ("allocation size overflow") regardless of JSON_BODY_LIMIT. Uploading the raw
+// bytes sidesteps base64 inflation and the JSON parser entirely.
+const rawArtifact = express.raw({ type: () => true, limit: process.env.ARTIFACT_UPLOAD_LIMIT || '1024mb' });
 
 // Operators can edit any flow whose owner is either themselves or another
 // operator. They cannot edit admin-owned flows. Admins can edit anything.
@@ -107,6 +117,20 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
         return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to use worker "${worker.name}"` } }) as any;
       }
     }
+    // Normalize artifacts to content-addressed {name,sha} refs. Callers may send
+    // refs (the editor) or inline {name,data} (an imported .or file / legacy);
+    // either way we never store base64 bodies on the flow doc.
+    if (req.body.artifacts !== undefined) {
+      const incoming = Array.isArray(req.body.artifacts) ? req.body.artifacts : [];
+      const refs: Array<{ name: string; sha: string }> = [];
+      for (const a of incoming) {
+        if (!a || typeof a.name !== 'string') continue;
+        if (typeof a.sha === 'string') { refs.push({ name: a.name, sha: a.sha }); continue; }
+        const [ref] = await putArtifacts([{ name: a.name, data: a.data ?? '' }]);
+        refs.push(ref);
+      }
+      req.body.artifacts = refs;
+    }
     const col = getCollection('flows');
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
@@ -194,8 +218,11 @@ router.post('/:id/versions/:vid/restore', requireFlowEditAccess, async (req: Req
     } catch (e: any) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: e.message } }) as any;
     }
+    // Persist artifacts as content-addressed refs, not the inline base64 the
+    // git tree round-trips (keeps the flows collection lean).
+    const artifactRefs = await putArtifacts(fields.artifacts);
     await col.update({ _id: req.params.id }, { $set: {
-      nodes: fields.nodes, edges: fields.edges, artifacts: fields.artifacts, updatedAt: now,
+      nodes: fields.nodes, edges: fields.edges, artifacts: artifactRefs, updatedAt: now,
     } });
     // Record the restore as a new commit so it's itself part of history.
     const login = (req as any).user?.login || 'unknown';
@@ -226,6 +253,95 @@ router.post('/:id/branches/:name/checkout', requireFlowEditAccess, async (req: R
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
+  }
+});
+
+// Create a git branch from the current active HEAD (or an explicit commit/branch
+// via `from`). Used by the editor's branch switcher "+" button.
+router.post('/:id/branches', requireFlowEditAccess, async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const { name, from } = req.body || {};
+    if (!name || typeof name !== 'string') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } }) as any;
+    const branches = await createBranch(req.params.id, name, from);
+    res.status(201).json({ branches, active: flow.activeBranch || 'main' });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
+  }
+});
+
+// Rework a branch around a commit. mode 'head' = reset --hard (drop descendants);
+// mode 'root' = make the commit the new root (drop ancestors, replay descendants).
+// Unreachable git objects + orphaned artifact blobs are GC'd immediately.
+router.post('/:id/branches/:name/reset', requireFlowEditAccess, async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const { commit, mode } = req.body || {};
+    if (!commit || typeof commit !== 'string') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'commit is required' } }) as any;
+    if (mode !== 'head' && mode !== 'root') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: "mode must be 'head' or 'root'" } }) as any;
+    const tip = await resetBranch(req.params.id, req.params.name, commit, mode as ResetMode);
+    res.json({ tip, flow: await getCollection('flows').findOne({ _id: req.params.id }) });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
+  }
+});
+
+// Upload one artifact as raw binary (filename in ?name= or X-Artifact-Name).
+// Body is content-addressed into artifact_blobs; the flow doc keeps a {name,sha}
+// ref. Committed to git so the artifact is versioned alongside the graph.
+router.post('/:id/artifacts', requireFlowEditAccess, rawArtifact, async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('flows');
+    const flow = await col.findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const name = (req.query.name as string) || req.header('x-artifact-name');
+    if (!name) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'artifact name required (?name= or X-Artifact-Name)' } }) as any;
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'empty body' } }) as any;
+    const [ref] = await putArtifacts([{ name, data: buf.toString('base64') }]);
+    const artifacts = [...(flow.artifacts || []).filter((a: any) => a.name !== name), ref];
+    await col.update({ _id: req.params.id }, { $set: { artifacts, updatedAt: new Date().toISOString() } });
+    try {
+      await commitFlowState(req.params.id, { login: (req as any).user?.login }, `Add artifact ${name}`);
+    } catch (e: any) { console.warn('[flows] artifact commit failed:', e.message); }
+    res.status(201).json({ artifact: ref, artifacts });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Download one artifact body (base64) by sha — only if referenced by this flow.
+router.get('/:id/artifacts/:sha', async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const ref = (flow.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
+    if (!ref) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact not referenced by this flow' } }) as any;
+    const data = await getArtifactBase64(req.params.sha);
+    if (data == null) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact blob not found' } }) as any;
+    res.json({ name: ref.name, sha: ref.sha, data });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Remove an artifact ref from the flow (blob is reclaimed later by the janitor).
+router.delete('/:id/artifacts/:name', requireFlowEditAccess, async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('flows');
+    const flow = await col.findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const name = decodeURIComponent(req.params.name);
+    const artifacts = (flow.artifacts || []).filter((a: any) => a.name !== name);
+    await col.update({ _id: req.params.id }, { $set: { artifacts, updatedAt: new Date().toISOString() } });
+    try {
+      await commitFlowState(req.params.id, { login: (req as any).user?.login }, `Remove artifact ${name}`);
+    } catch (e: any) { console.warn('[flows] artifact commit failed:', e.message); }
+    res.json({ artifacts });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
   }
 });
 

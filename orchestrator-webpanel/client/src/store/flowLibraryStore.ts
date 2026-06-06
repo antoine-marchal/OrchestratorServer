@@ -90,6 +90,10 @@ interface FlowLibraryState {
   loadAll: () => void;
   createFlow: (data: { name: string; namespace?: string; description?: string; workerId?: string }) => OrchestratorFlow;
   updateFlow: (id: string, data: Partial<OrchestratorFlow>) => Promise<void>;
+  // Patch a flow in the local store only (no PUT). Used when the server already
+  // persisted the change via a dedicated endpoint (e.g. artifact upload) and we
+  // just need the UI to reflect the authoritative response.
+  updateFlowLocal: (id: string, data: Partial<OrchestratorFlow>) => void;
   deleteFlow: (id: string) => void;
   syncWorkerFlows: () => Promise<number>;
 
@@ -303,6 +307,12 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         owner: updated.owner,
         variants: updated.variants || [],
       }).then(() => undefined).catch(err => { console.error(err); });
+    },
+
+    updateFlowLocal: (id, data) => {
+      const existing = getFlows().find(f => f.id === id);
+      if (!existing) return;
+      persistFlows(getFlows().map(f => f.id === id ? { ...f, ...data } : f));
     },
 
     deleteFlow: (id) => {

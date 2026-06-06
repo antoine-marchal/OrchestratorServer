@@ -4,7 +4,10 @@ export type ExecutionStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'KILLED' | 'QUE
 
 export interface FlowArtifact {
   name: string;
-  data: string; // base64
+  // Content-addressed sha of the artifact body (stored in artifact_blobs, not on
+  // the flow doc). `data` only appears transiently on legacy/unmigrated flows.
+  sha?: string;
+  data?: string; // base64 — legacy inline only
 }
 
 export interface FlowVariant {

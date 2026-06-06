@@ -11,7 +11,7 @@ import { DEFAULT_ROLES } from './services/db/models/Role';
 import { setExecuteFlowFn, loadAll as loadCronSchedules } from './services/scheduler/cronScheduler';
 import { eventBus } from './services/scheduler/eventBus';
 import { executeOrchestratorFlow } from './services/executor/flowExecutor';
-import { gcArtifacts } from './services/executor/artifactStore';
+import { gcArtifacts, putArtifacts } from './services/executor/artifactStore';
 
 import jobsRouter from './routes/jobs';
 import flowsRouter from './routes/flows';
@@ -236,6 +236,28 @@ async function backfillFlowOwners(): Promise<void> {
   }
 }
 
+// One-time: earlier versions stored a flow's artifacts inline as base64 on the
+// flow doc (flow.artifacts = [{name,data}]). That bloated the flows collection
+// and made the save PUT body huge. Move each body into the content-addressed
+// artifact_blobs store and replace the doc field with {name,sha} refs.
+async function migrateInlineArtifacts(): Promise<void> {
+  try {
+    const flowsCol = getCollection('flows');
+    const flows: any[] = await flowsCol.find({});
+    let migrated = 0;
+    for (const f of flows) {
+      const arts = Array.isArray(f.artifacts) ? f.artifacts : [];
+      if (!arts.length || !arts.some((a: any) => typeof a?.data === 'string')) continue;
+      const refs = await putArtifacts(arts.map((a: any) => ({ name: a.name, data: a.data ?? '' })));
+      await flowsCol.update({ _id: f._id }, { $set: { artifacts: refs } });
+      migrated++;
+    }
+    if (migrated > 0) console.log(`[Startup] Migrated inline artifacts on ${migrated} flow(s) to content-addressed refs`);
+  } catch (err) {
+    console.warn('[Startup] Inline artifact migration failed:', (err as Error).message);
+  }
+}
+
 async function migrateLegacyFlowSchedules(): Promise<void> {
   try {
     const flowsCol = getCollection('flows');
@@ -297,6 +319,7 @@ async function start(): Promise<void> {
   await connectDB();
   await seedDefaultData();
   await migrateLegacyFlowSchedules();
+  await migrateInlineArtifacts();
   await backfillFlowOwners();
   await reconcileStrandedExecutions();
 

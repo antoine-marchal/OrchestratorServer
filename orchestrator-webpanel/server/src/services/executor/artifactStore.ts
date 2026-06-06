@@ -38,6 +38,26 @@ export async function putArtifacts(artifacts: ArtifactInput[] | undefined): Prom
   return refs;
 }
 
+// Resolve name->sha refs back to the inline {name, data(base64)} shape the
+// executor and git materializer consume. Missing blobs are skipped (logged).
+export async function resolveRefs(
+  refs: Array<{ name: string; sha?: string; data?: string }> | undefined,
+): Promise<Array<{ name: string; data: string }>> {
+  if (!refs || !refs.length) return [];
+  const out: Array<{ name: string; data: string }> = [];
+  for (const r of refs) {
+    if (!r || typeof r.name !== 'string') continue;
+    // Tolerate legacy inline artifacts (carry their own base64 data) so a
+    // half-migrated flow still resolves.
+    if (typeof r.data === 'string' && !r.sha) { out.push({ name: r.name, data: r.data }); continue; }
+    if (!r.sha) continue;
+    const data = await getArtifactBase64(r.sha);
+    if (data == null) { console.warn(`[artifact] blob ${r.sha} (${r.name}) missing`); continue; }
+    out.push({ name: r.name, data });
+  }
+  return out;
+}
+
 // Return one artifact body as base64 (the wire format the worker decodes), or
 // null when the sha is unknown.
 export async function getArtifactBase64(sha: string): Promise<string | null> {
@@ -65,6 +85,14 @@ export async function gcArtifacts(minAgeMs = 600000): Promise<number> {
   const referenced = new Set<string>();
   for (const j of jobs) {
     for (const ref of j.artifacts || []) {
+      if (ref && typeof ref.sha === 'string') referenced.add(ref.sha);
+    }
+  }
+  // Flows now reference artifact blobs by sha too (flow.artifacts = [{name,sha}]).
+  // Without this scan the janitor would reclaim every flow's artifacts.
+  const flows: any[] = await getCollection('flows').find({}, { projection: { artifacts: 1 } });
+  for (const f of flows) {
+    for (const ref of f.artifacts || []) {
       if (ref && typeof ref.sha === 'string') referenced.add(ref.sha);
     }
   }

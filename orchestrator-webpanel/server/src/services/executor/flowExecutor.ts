@@ -3,6 +3,7 @@ import { getCollection } from '../db/index';
 import { dispatchToWorker, isWorkerOnline, canUserUseWorker } from '../../routes/workers';
 import { resolveSecretsDetailed } from '../../routes/secrets';
 import { snapshotFlowForExecution, flowFieldsAtCommit, branchRef } from '../git/flowCommit';
+import { resolveRefs } from './artifactStore';
 import { getRef } from '../git/gitStore';
 import { saveExecutionLogs } from './executionLogs';
 import { eventBus } from '../scheduler/eventBus';
@@ -90,7 +91,9 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
           throw new Error(`Referenced flow "${referencedFlow.name}" is assigned to ${refW ? `offline worker "${refW.name}"` : 'a missing worker'}`);
         }
       }
-      const refArtifacts: Array<{name: string; data: string}> = referencedFlow.artifacts || [];
+      // Referenced flow's artifacts are content-addressed refs on its doc;
+      // resolve to bytes before merge/extract.
+      const refArtifacts: Array<{name: string; data: string}> = await resolveRefs(referencedFlow.artifacts);
       if (refArtifacts.length) {
         // De-dupe by name — parent wins so a flow1 artifact still shadows a
         // flow2 artifact when both ship the same filename. Then extract the
@@ -706,6 +709,10 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   } else {
     flowCommit = await snapshotFlowForExecution(flowId, { login: triggeredUser || flow.owner });
   }
+  // Artifacts on the live flow doc are content-addressed refs ({name,sha});
+  // those reconstructed from a git commit are already inline {name,data}.
+  // resolveRefs handles both (inline entries pass through) → bytes for extract.
+  runArtifacts = await resolveRefs(runArtifacts);
   const graphSnapshot = flowCommit ? {} : { nodes: runNodes, edges: runEdges };
 
   // Effective worker: a variant override (incl. '' for local) wins; otherwise

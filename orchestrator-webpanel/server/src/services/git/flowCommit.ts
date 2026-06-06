@@ -1,13 +1,15 @@
 import { getCollection } from '../db/index';
-import { buildCommit, parseCommit } from './gitObjects';
-import { flowToTree, treeToFlowFields, nodeContentSignature, readPreservedRootEntries, type NodeSignature } from './flowMaterialize';
+import { buildCommit, parseCommit, parseTree } from './gitObjects';
+import { flowToTree, treeToFlowFields, nodeContentSignature, readPreservedRootEntries, type NodeSignature, type FlowFields } from './flowMaterialize';
 import {
   getObject,
   putObject,
   setRef,
   getRef,
   listRefs,
+  deleteObjectsExcept,
 } from './gitStore';
+import { putArtifacts, resolveRefs, gcArtifacts } from '../executor/artifactStore';
 import type { BuiltObject } from './gitObjects';
 
 export const DEFAULT_BRANCH = 'main';
@@ -112,7 +114,10 @@ export async function commitFlowState(
   // Carry any user-added top-level files (e.g. a pushed .gitignore / docs) from
   // the current HEAD tree forward so this regenerated save doesn't erase them.
   const preserved = await readPreservedRootEntries(flowId, prevTree);
-  const { rootSha, objects } = flowToTree(flow, preserved);
+  // flow.artifacts are content-addressed refs ({name,sha}); git stores the full
+  // bytes, so resolve them back to {name,data} just for tree construction.
+  const resolvedArtifacts = await resolveRefs(flow.artifacts);
+  const { rootSha, objects } = flowToTree({ ...flow, artifacts: resolvedArtifacts }, preserved);
   if (rootSha === prevTree) return null; // nothing changed
 
   await persistObjects(flowId, objects);
@@ -214,13 +219,22 @@ export async function flowFieldsAtCommit(flowId: string, commitSha: string) {
   return treeToFlowFields(flowId, c.tree);
 }
 
+// Convert git-materialized fields (artifacts as inline {name,data}) into the
+// shape stored on the flow doc, where artifact bodies live content-addressed in
+// artifact_blobs and the doc carries only {name,sha} refs. Keeps fat base64 out
+// of the flows collection on every checkout / restore / push-sync.
+export async function fieldsToDoc(fields: FlowFields): Promise<any> {
+  const refs = await putArtifacts(fields.artifacts);
+  return { ...fields, artifacts: refs };
+}
+
 // Materialize a branch's HEAD into the flow document (executor reads the doc).
 export async function checkoutBranchToDoc(flowId: string, branch: string): Promise<any> {
   const flows = getCollection('flows');
   const ref = branchRef(branch);
   const sha = await getRef(flowId, ref);
   if (!sha) throw new Error(`Branch ${branch} not found`);
-  const fields = await flowFieldsAtCommit(flowId, sha);
+  const fields = await fieldsToDoc(await flowFieldsAtCommit(flowId, sha));
   const now = new Date().toISOString();
   await flows.update(
     { _id: flowId },
@@ -237,8 +251,145 @@ export async function syncDocFromRefIfActive(flowId: string, ref: string): Promi
   if (branchRef(activeBranchName(flow)) !== ref) return;
   const sha = await getRef(flowId, ref);
   if (!sha) return;
-  const fields = await flowFieldsAtCommit(flowId, sha);
+  const fields = await fieldsToDoc(await flowFieldsAtCommit(flowId, sha));
   await flows.update({ _id: flowId }, { $set: { ...fields, updatedAt: new Date().toISOString() } });
+}
+
+// Create a new branch ref at `from` (a commit sha or existing branch name);
+// defaults to the active branch's HEAD. Rejects duplicate / malformed names.
+export async function createBranch(flowId: string, name: string, from?: string): Promise<string[]> {
+  const clean = name.trim();
+  if (!/^[A-Za-z0-9._\/-]+$/.test(clean) || clean.startsWith('/') || clean.endsWith('/') || clean.includes('..')) {
+    throw new Error(`Invalid branch name: ${name}`);
+  }
+  const target = branchRef(clean);
+  if (await getRef(flowId, target)) throw new Error(`Branch ${clean} already exists`);
+
+  const flow = await getCollection('flows').findOne({ _id: flowId });
+  if (!flow) throw new Error(`Flow ${flowId} not found`);
+  await ensureInitialized(flowId);
+
+  // Resolve `from`: explicit commit sha, an existing branch, or active HEAD.
+  let sha: string | null = null;
+  if (from) {
+    const obj = await getObject(flowId, from);
+    if (obj && obj.objectType === 'commit') sha = from;
+    else sha = await getRef(flowId, branchRef(from));
+  } else {
+    sha = await getRef(flowId, activeRef(flow));
+  }
+  if (!sha) throw new Error(`Cannot resolve start point for branch ${clean}`);
+  await setRef(flowId, target, sha);
+  return listBranches(flowId);
+}
+
+// Walk first-parent chain from `tip` down to (and including) `stop`. Returns the
+// commits newest->oldest, or null if `stop` is not a first-parent ancestor.
+async function firstParentPath(flowId: string, tip: string, stop: string): Promise<string[] | null> {
+  const path: string[] = [];
+  let sha: string | null = tip;
+  const seen = new Set<string>();
+  while (sha && !seen.has(sha)) {
+    seen.add(sha);
+    path.push(sha);
+    if (sha === stop) return path;
+    const c = await getCommit(flowId, sha);
+    if (!c) break;
+    sha = c.parents[0] || null;
+  }
+  return null;
+}
+
+export type ResetMode = 'head' | 'root';
+
+// Rework the active branch around a selected commit, then GC unreachable objects.
+//   mode 'head': git reset --hard — branch tip becomes `commit`, descendants dropped.
+//   mode 'root': `commit` becomes the new root — ancestors dropped, descendants
+//                rebuilt on top (their shas change). Result keeps commit..HEAD.
+// Returns the new branch tip sha.
+export async function resetBranch(
+  flowId: string,
+  branch: string,
+  commit: string,
+  mode: ResetMode,
+): Promise<string> {
+  const ref = branchRef(branch);
+  const head = await getRef(flowId, ref);
+  if (!head) throw new Error(`Branch ${branch} not found`);
+  const target = await getCommit(flowId, commit);
+  if (!target) throw new Error(`Commit ${commit} not found`);
+
+  const path = await firstParentPath(flowId, head, commit); // [head, …, commit]
+  if (!path) throw new Error(`Commit ${commit} is not on branch ${branch}`);
+
+  let newTip: string;
+  if (mode === 'head') {
+    newTip = commit; // drop everything newer than `commit`
+  } else {
+    // Rebuild `commit` with no parents, then replay its descendants (path
+    // entries newer than commit) onto the rewritten chain.
+    const chain = path.slice().reverse(); // [commit, …, head], oldest->newest
+    let parentSha: string | null = null;
+    const rebuilt: string[] = [];
+    for (const sha of chain) {
+      const c = await getCommit(flowId, sha);
+      if (!c) throw new Error(`Commit ${sha} not found during rebuild`);
+      const author = c.author.match(/^(.*?)\s*<(.*?)>/);
+      const built = buildCommit({
+        tree: c.tree,
+        parents: parentSha ? [parentSha] : [],
+        authorName: author?.[1]?.trim() || 'orchestrator',
+        authorEmail: author?.[2]?.trim() || 'orchestrator@orchestrator.local',
+        message: c.message,
+        when: c.authorDate ?? new Date(),
+      });
+      await putObject(flowId, built.sha, built.objectType, built.data);
+      parentSha = built.sha;
+      rebuilt.push(built.sha);
+    }
+    newTip = parentSha!;
+  }
+
+  await setRef(flowId, ref, newTip);
+  await syncDocFromRefIfActive(flowId, ref);
+  await gcFlowObjects(flowId);
+  await gcArtifacts(0); // reclaim artifact blobs no surviving flow/job references
+  return newTip;
+}
+
+// Reachability GC: collect every git object reachable from any ref of this flow
+// (commits -> trees -> subtrees/blobs), then delete the rest. Frees space after
+// history rewrites. Scoped per flow — never touches another flow's objects.
+export async function gcFlowObjects(flowId: string): Promise<number> {
+  const refs = await listRefs(flowId);
+  const reachable = new Set<string>();
+
+  const walkTree = async (sha: string): Promise<void> => {
+    if (reachable.has(sha)) return;
+    reachable.add(sha);
+    const obj = await getObject(flowId, sha);
+    if (!obj || obj.objectType !== 'tree') return;
+    for (const e of parseTree(obj.data)) await walkTree(e.sha);
+  };
+
+  for (const r of refs) {
+    let sha: string | null = r.sha;
+    const seen = new Set<string>();
+    while (sha && !seen.has(sha)) {
+      seen.add(sha);
+      if (reachable.has(sha)) break;
+      reachable.add(sha);
+      const c = await getCommit(flowId, sha);
+      if (!c) break;
+      await walkTree(c.tree);
+      sha = c.parents[0] || null;
+      for (const p of c.parents.slice(1)) {
+        // Cover merge parents too (rare here, but keep GC correct).
+        if (!reachable.has(p)) refs.push({ ref: '', sha: p });
+      }
+    }
+  }
+  return deleteObjectsExcept(flowId, reachable);
 }
 
 export async function listBranches(flowId: string): Promise<string[]> {

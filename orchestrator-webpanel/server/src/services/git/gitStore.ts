@@ -76,3 +76,16 @@ export async function setRef(flowId: string, ref: string, sha: string): Promise<
 export async function deleteRef(flowId: string, ref: string): Promise<void> {
   await refs().remove({ _id: `${flowId}:${ref}` });
 }
+
+// Delete every object of this flow whose sha is NOT in `keep`. Used by the
+// reachability GC after a history rewrite. Returns the count removed.
+export async function deleteObjectsExcept(flowId: string, keep: Set<string>): Promise<number> {
+  const rows: any[] = await objects().find({ flowId }, { projection: { _id: 1, sha: 1 } });
+  let removed = 0;
+  for (const r of rows) {
+    if (keep.has(r.sha)) continue;
+    await objects().remove({ _id: r._id });
+    removed++;
+  }
+  return removed;
+}
