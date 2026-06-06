@@ -13,7 +13,14 @@ export interface StoredObject {
 }
 
 const objects = () => getCollection('git_objects');
+const objectChunks = () => getCollection('git_object_chunks');
 const refs = () => getCollection('git_refs');
+
+// Git objects (incl. artifact blobs, which now carry real bytes so `git clone`
+// gets the files) can exceed MongoDB's 16MB BSON document cap. Split large
+// objects into chunk docs in git_object_chunks; the manifest in git_objects then
+// records `chunks:n` and readers reassemble. 8MB raw → ~8MB BinData, under 16MB.
+const GIT_CHUNK_BYTES = 8 * 1024 * 1024;
 
 // Normalise a stored `data` field back to a Buffer regardless of how it was
 // persisted: native Buffer (Mongo BinData), Mongo Binary ({buffer}), or base64
@@ -25,13 +32,30 @@ function toBuffer(data: any): Buffer {
 }
 
 export async function getObject(flowId: string, sha: string): Promise<StoredObject | null> {
-  const doc = await objects().findOne({ _id: `${flowId}:${sha}` });
+  const _id = `${flowId}:${sha}`;
+  const doc = await objects().findOne({ _id });
   if (!doc) return null;
-  return { objectType: doc.objectType, data: toBuffer(doc.data) };
+  if (doc.data !== undefined && doc.data !== null) return { objectType: doc.objectType, data: toBuffer(doc.data) };
+  // Chunked: reassemble in order.
+  const n = doc.chunks || 0;
+  const parts: Buffer[] = [];
+  for (let i = 0; i < n; i++) {
+    const c = await objectChunks().findOne({ _id: `${_id}:${i}` });
+    if (!c) throw new Error(`git object ${_id} missing chunk ${i}/${n}`);
+    parts.push(toBuffer(c.data));
+  }
+  return { objectType: doc.objectType, data: Buffer.concat(parts) };
 }
 
 export async function hasObject(flowId: string, sha: string): Promise<boolean> {
   return !!(await objects().findOne({ _id: `${flowId}:${sha}` }));
+}
+
+// Read just the object's type from its manifest — no chunk reassembly. Lets the
+// reachability GC skip recursing into (and loading) large blobs.
+export async function getObjectType(flowId: string, sha: string): Promise<GitObjectType | null> {
+  const doc = await objects().findOne({ _id: `${flowId}:${sha}` });
+  return doc ? doc.objectType : null;
 }
 
 export async function putObject(
@@ -42,10 +66,18 @@ export async function putObject(
 ): Promise<void> {
   const _id = `${flowId}:${sha}`;
   if (await objects().findOne({ _id })) return; // immutable — skip duplicates
-  await objects().insert({
-    _id, flowId, sha, objectType,
-    data: isMongoMode() ? data : data.toString('base64'),
-  });
+  const mongo = isMongoMode();
+  const enc = (b: Buffer) => (mongo ? b : b.toString('base64'));
+  if (data.length <= GIT_CHUNK_BYTES) {
+    await objects().insert({ _id, flowId, sha, objectType, data: enc(data), chunks: 0 });
+  } else {
+    const n = Math.ceil(data.length / GIT_CHUNK_BYTES);
+    for (let i = 0; i < n; i++) {
+      const part = Buffer.from(data.subarray(i * GIT_CHUNK_BYTES, (i + 1) * GIT_CHUNK_BYTES));
+      await objectChunks().insert({ _id: `${_id}:${i}`, key: _id, idx: i, data: enc(part) });
+    }
+    await objects().insert({ _id, flowId, sha, objectType, chunks: n });
+  }
 }
 
 export interface RefRow {
@@ -91,6 +123,7 @@ export async function collectArtifactPointerShas(): Promise<Set<string>> {
   const out = new Set<string>();
   const rows: any[] = await objects().find({ objectType: 'blob' });
   for (const r of rows) {
+    if (r.data == null) continue; // chunked (large) → not a tiny pointer blob
     // Pointer blobs are tiny; skip anything too large to be one cheaply.
     const buf = toBuffer(r.data);
     if (buf.length > 256) continue;
@@ -110,6 +143,7 @@ export async function deleteObjectsExcept(flowId: string, keep: Set<string>): Pr
   for (const r of rows) {
     if (keep.has(r.sha)) continue;
     await objects().remove({ _id: r._id });
+    await objectChunks().remove({ key: r._id }, { multi: true }); // reclaim chunks
     removed++;
   }
   return removed;

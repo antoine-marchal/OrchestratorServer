@@ -100,14 +100,12 @@ export interface FlowFields {
   artifacts: ArtifactEntry[];
 }
 
-// Artifact bodies are NOT duplicated into git. Instead git holds a tiny
-// content-addressed *pointer* (git-LFS style): the file's bytes live once in the
-// artifact_blobs store (keyed by sha256), and the git blob carries only that
-// sha256. A `git clone` therefore gets a pointer file, not the raw bytes.
+// Artifact bodies are stored as real git blobs (raw bytes) so a `git clone`
+// gets the actual files, and a push that adds files under artifacts/ round-trips
+// back into the flow. The bytes are ALSO content-addressed in artifact_blobs for
+// the frontend/worker paths (accepted duplication). Older commits stored an
+// LFS-style pointer blob instead — still read here for back-compat.
 const ARTIFACT_POINTER_TAG = 'orchestrator.artifact/v1';
-function artifactPointer(sha: string): Buffer {
-  return Buffer.from(`${ARTIFACT_POINTER_TAG}\nsha256:${sha}\n`, 'utf8');
-}
 function parseArtifactPointer(text: string): string | null {
   if (!text.startsWith(ARTIFACT_POINTER_TAG)) return null;
   const m = text.match(/sha256:([a-f0-9]+)/);
@@ -212,11 +210,10 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
   if (artifacts.length) {
     const artEntries: TreeEntry[] = [];
     for (const a of artifacts) {
-      // Only refs (carry a sha) become pointers — bodies already stored in
-      // artifact_blobs. Entries lacking a sha are skipped (caller normalizes to
-      // refs before commit; see ensureArtifactRefs).
-      if (!a || typeof a.name !== 'string' || !a.sha) continue;
-      const blob = buildBlob(artifactPointer(a.sha)); add(blob);
+      // Write the real bytes as a git blob so clone gets the file. Caller resolves
+      // refs → {name,data} before commit (see commitFlowState).
+      if (!a || typeof a.name !== 'string' || typeof a.data !== 'string') continue;
+      const blob = buildBlob(Buffer.from(a.data, 'base64')); add(blob);
       artEntries.push({ mode: '100644', name: sanitize(a.name), sha: blob.sha });
     }
     if (artEntries.length) {

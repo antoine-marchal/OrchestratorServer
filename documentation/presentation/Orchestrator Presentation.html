@@ -6,22 +6,16 @@
 <title>Orchestrator — Présentation</title>
 <template id="__bundler_thumbnail" data-bg-color="#fafbfc">
   <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
-    <!-- Background -->
     <rect width="1200" height="800" fill="#fafbfc"/>
-    <!-- Grid texture -->
     <defs>
       <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
         <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#cdd3da" stroke-width="0.8"/>
       </pattern>
     </defs>
     <rect width="1200" height="800" fill="url(#grid)" opacity="0.4"/>
-    <!-- Logo text -->
     <text x="600" y="340" text-anchor="middle" font-family="monospace" font-size="80" font-weight="700" fill="#111827">Orchestrator</text>
-    <!-- Blue accent underline -->
     <rect x="340" y="368" width="520" height="5" rx="3" fill="oklch(0.45 0.20 235)"/>
-    <!-- Tagline -->
     <text x="600" y="430" text-anchor="middle" font-family="monospace" font-size="28" fill="#6b7280">Plateforme d'automatisation auto-hébergée</text>
-    <!-- Version badge -->
     <rect x="530" y="460" width="140" height="40" rx="20" fill="none" stroke="oklch(0.45 0.20 235)" stroke-width="2"/>
     <text x="600" y="486" text-anchor="middle" font-family="monospace" font-size="22" fill="oklch(0.45 0.20 235)">v3.2.4</text>
   </svg>
@@ -49,6 +43,7 @@
     --red:       oklch(0.48 0.22 25);
     --red-dim:   oklch(0.48 0.22 25 / 0.12);
     --purple:    oklch(0.48 0.19 292);
+    --purple-dim:oklch(0.48 0.19 292 / 0.12);
     --font-sans: 'DM Sans', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
   }
@@ -65,8 +60,6 @@
     position: relative;
     overflow: hidden;
   }
-
-  /* Subtle grid texture */
   section::before {
     content: '';
     position: absolute; inset: 0;
@@ -89,43 +82,48 @@
   .tag-green { color: var(--green); border-color: var(--green); background: var(--green-dim); }
   .tag-amber { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
   .tag-red   { color: var(--red);   border-color: var(--red);   background: var(--red-dim); }
-  .tag-purple{ color: var(--purple);border-color: var(--purple);background: oklch(0.48 0.19 292 / 0.12); }
+  .tag-purple{ color: var(--purple);border-color: var(--purple);background: var(--purple-dim); }
 
   .section-label {
     font-family: var(--font-mono); font-size: 24px; font-weight: 600;
     color: var(--blue); letter-spacing: 0.12em; text-transform: uppercase;
     margin-bottom: 24px;
   }
-
   .slide-num {
     position: absolute; bottom: 52px; right: 72px;
     font-family: var(--font-mono); font-size: 24px; color: var(--muted);
   }
-
   .corner-logo {
     position: absolute; top: 40px; right: 72px;
     font-family: var(--font-mono); font-size: 24px; font-weight: 600;
     color: var(--muted); letter-spacing: 0.05em;
   }
+  h1.s-title { font-size: 60px; font-weight: 700; letter-spacing: -1px; line-height: 1.08; }
+  .s-sub { font-size: 24px; color: var(--muted); margin-top: 12px; text-wrap: pretty; line-height: 1.5; }
+
+  /* standard two-column inset layout */
+  .layout { position: absolute; inset: 86px 120px 60px; display: flex; gap: 56px; }
+  .col { flex: 1; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 
   /* ── CODE BLOCK ─────────────────────────────────────── */
   .code-block {
     background: var(--bg2);
     border: 1.5px solid var(--border);
     border-radius: 12px;
-    padding: 28px 36px;
+    padding: 26px 32px;
     font-family: var(--font-mono);
-    font-size: 22px;
+    font-size: 21px;
     line-height: 1.7;
     color: var(--text);
     position: relative;
   }
+  .code-block.sm { font-size: 18px; padding: 18px 24px; line-height: 1.65; }
   .code-block .comment { color: var(--muted); }
   .code-block .kw  { color: var(--blue); }
   .code-block .str { color: var(--green); }
   .code-block .key { color: var(--amber); }
   .code-block .num { color: var(--red); }
-  .code-block .url { color: oklch(0.72 0.15 200); }
+  .code-block .url { color: oklch(0.55 0.13 200); }
   .code-block .met { color: var(--purple); }
 
   /* ── CARD ────────────────────────────────────────────── */
@@ -133,124 +131,129 @@
     background: var(--bg2);
     border: 1.5px solid var(--border);
     border-radius: 16px;
-    padding: 36px 40px;
+    padding: 28px 32px;
   }
   .card.accent-blue  { border-color: var(--blue);   background: var(--blue-dim); }
   .card.accent-green { border-color: var(--green);  background: var(--green-dim); }
   .card.accent-amber { border-color: var(--amber);  background: var(--amber-dim); }
   .card.accent-red   { border-color: var(--red);    background: var(--red-dim); }
+  .card.accent-purple{ border-color: var(--purple); background: var(--purple-dim); }
+  .card-title { font-size: 24px; font-weight: 600; margin-bottom: 12px; display:flex; align-items:center; gap:10px; }
+  .card-body  { font-size: 20px; color: var(--muted); line-height: 1.55; }
+  .card-body strong { color: var(--text); }
+  .card-body code, .card-title code { font-family: var(--font-mono); font-size: 0.92em; color: var(--blue); }
+
+  /* feature grid */
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .feat {
+    background: var(--bg2); border: 1.5px solid var(--border); border-radius: 16px;
+    padding: 24px 26px;
+  }
+  .feat .ic { font-size: 32px; margin-bottom: 12px; line-height: 1; }
+  .feat .t  { font-size: 24px; font-weight: 600; margin-bottom: 6px; }
+  .feat .d  { font-size: 18px; color: var(--muted); line-height: 1.45; }
+  .feat.b { border-color: var(--blue); }   .feat.g { border-color: var(--green); }
+  .feat.a { border-color: var(--amber); }  .feat.p { border-color: var(--purple); }
+  .feat.r { border-color: var(--red); }
 
   /* ── DIAGRAM BOX ─────────────────────────────────────── */
   .diag-box {
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    background: var(--bg2);
-    padding: 20px 28px;
-    font-family: var(--font-mono);
-    font-size: 22px;
-    text-align: center;
-    position: relative;
+    border: 1.5px solid var(--border); border-radius: 12px; background: var(--bg2);
+    padding: 16px 22px; font-family: var(--font-mono); font-size: 20px;
+    text-align: center; position: relative;
   }
   .diag-box.blue  { border-color: var(--blue);  background: var(--blue-dim);  color: var(--blue); }
   .diag-box.green { border-color: var(--green); background: var(--green-dim); color: var(--green); }
   .diag-box.amber { border-color: var(--amber); background: var(--amber-dim); color: var(--amber); }
+  .diag-box.purple{ border-color: var(--purple);background: var(--purple-dim);color: var(--purple); }
   .diag-box.ghost { border-style: dashed; color: var(--muted); }
+  .arrow { color: var(--muted); font-size: 30px; display: flex; align-items: center; justify-content: center; }
+  .arrow-label { font-family: var(--font-mono); font-size: 17px; color: var(--muted); text-align: center; }
 
-  .arrow {
-    color: var(--muted);
-    font-size: 32px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .arrow-label {
-    font-family: var(--font-mono); font-size: 18px; color: var(--muted);
-    text-align: center; margin-top: 4px;
-  }
-
-  /* pill */
   .pill {
-    display: inline-block;
-    font-family: var(--font-mono); font-size: 24px; font-weight: 500;
-    padding: 4px 14px; border-radius: 6px;
-    background: var(--bg3); color: var(--text);
+    display: inline-block; font-family: var(--font-mono); font-size: 22px; font-weight: 500;
+    padding: 4px 14px; border-radius: 6px; background: var(--bg3); color: var(--text);
     border: 1px solid var(--border);
   }
 
-  /* method badges */
-  .method { font-family: var(--font-mono); font-size: 18px; font-weight: 700; padding: 3px 10px; border-radius: 6px; }
+  /* steps */
+  .step { display: flex; gap: 18px; align-items: flex-start; }
+  .step-num {
+    flex-shrink: 0; width: 44px; height: 44px; border-radius: 12px;
+    background: var(--blue-dim); color: var(--blue); border: 1.5px solid var(--blue);
+    font-family: var(--font-mono); font-weight: 700; font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-body .t { font-size: 22px; font-weight: 600; margin-bottom: 2px; }
+  .step-body .d { font-size: 19px; color: var(--muted); line-height: 1.45; }
+  .step-body code { font-family: var(--font-mono); font-size: 0.9em; color: var(--blue); }
+  .connector { width: 2px; height: 16px; background: var(--border); margin-left: 21px; }
+
+  /* method badges + api rows */
+  .api-group { margin-bottom: 16px; }
+  .api-group-title { font-family: var(--font-mono); font-size: 20px; font-weight: 700; color: var(--blue); margin-bottom: 8px; letter-spacing: 0.04em; }
+  .api-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 18px; }
+  .api-path { font-family: var(--font-mono); font-size: 18px; color: var(--text); }
+  .api-path .param { color: var(--amber); }
+  .api-desc { color: var(--muted); font-size: 17px; margin-left: auto; text-align: right; }
+  .method { font-family: var(--font-mono); font-size: 16px; font-weight: 700; padding: 3px 9px; border-radius: 6px; min-width: 64px; text-align:center; }
   .get    { background: oklch(0.44 0.18 152 / 0.14); color: var(--green); }
   .post   { background: oklch(0.55 0.16 78 / 0.16);  color: var(--amber); }
+  .put    { background: oklch(0.45 0.20 235 / 0.14); color: var(--blue); }
   .patch  { background: oklch(0.48 0.19 292 / 0.14); color: var(--purple); }
   .delete { background: oklch(0.48 0.22 25 / 0.14);  color: var(--red); }
 
-  /* dot indicator */
   .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   .dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot-amber { background: var(--amber); }
   .dot-red   { background: var(--red); }
 
-  /* ── SCREENSHOT PLACEHOLDER ──────────────────────────────
-     Remplacer chaque .shot par la capture indiquée.
-     Pour insérer l'image : <div class="shot has-img">
-       <img src="screenshots/xxx.png" alt="…">
-     </div>  (le bloc texte est masqué quand .has-img est présent) */
+  /* generic table */
+  .gtable { width: 100%; border-collapse: collapse; font-size: 19px; }
+  .gtable th { text-align: left; font-family: var(--font-mono); font-size: 16px; color: var(--blue); font-weight: 700; padding: 8px 14px; border-bottom: 2px solid var(--border); text-transform: uppercase; letter-spacing: 0.05em; }
+  .gtable td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .gtable td.k { font-family: var(--font-mono); color: var(--blue); white-space: nowrap; }
+  .gtable td.m { color: var(--muted); }
+  .gtable tr:last-child td { border-bottom: none; }
+
+  /* coll rows */
+  .coll-row { display: flex; gap: 16px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .coll-name { font-family: var(--font-mono); font-size: 19px; color: var(--blue); flex-shrink: 0; width: 250px; }
+  .coll-desc { font-size: 18px; color: var(--muted); }
+
+  /* ── SCREENSHOT ──────────────────────────────────────── */
   .shot {
-    position: relative;
-    border: 2px dashed var(--blue);
-    border-radius: 16px;
-    background:
-      repeating-linear-gradient(45deg, var(--blue-dim) 0 14px, transparent 14px 28px),
-      var(--bg2);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; text-align: center; padding: 32px; overflow: hidden;
-    min-height: 240px;
+    position: relative; border: 2px solid var(--border); border-radius: 16px;
+    background: var(--bg2); overflow: hidden; min-height: 240px;
+    box-shadow: 0 8px 30px oklch(0.45 0.20 235 / 0.08);
   }
-  .shot.green { border-color: var(--green); background:
-      repeating-linear-gradient(45deg, var(--green-dim) 0 14px, transparent 14px 28px), var(--bg2); }
-  .shot.amber { border-color: var(--amber); background:
-      repeating-linear-gradient(45deg, var(--amber-dim) 0 14px, transparent 14px 28px), var(--bg2); }
-  .shot.purple { border-color: var(--purple); background:
-      repeating-linear-gradient(45deg, oklch(0.48 0.19 292 / 0.10) 0 14px, transparent 14px 28px), var(--bg2); }
-  .shot.red { border-color: var(--red); background:
-      repeating-linear-gradient(45deg, var(--red-dim) 0 14px, transparent 14px 28px), var(--bg2); }
   .shot > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-  .shot.has-img { border-style: solid; background: var(--bg2); }
-  .shot.has-img .shot-body { display: none; }
-  .shot-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  .shot-cam { font-size: 46px; line-height: 1; opacity: 0.85; }
-  .shot-name { font-size: 26px; font-weight: 700; color: var(--text); }
-  .shot-url {
-    font-family: var(--font-mono); font-size: 19px; font-weight: 500;
-    color: var(--blue); background: var(--blue-dim);
-    border: 1px solid var(--blue); border-radius: 8px; padding: 6px 16px;
-  }
-  .shot.green  .shot-url { color: var(--green);  background: var(--green-dim);  border-color: var(--green); }
-  .shot.amber  .shot-url { color: var(--amber);  background: var(--amber-dim);  border-color: var(--amber); }
-  .shot.purple .shot-url { color: var(--purple); background: oklch(0.48 0.19 292 / 0.12); border-color: var(--purple); }
-  .shot.red    .shot-url { color: var(--red);    background: var(--red-dim);    border-color: var(--red); }
-  .shot-hint { font-family: var(--font-mono); font-size: 16px; color: var(--muted); letter-spacing: 0.04em; }
+  .shot.contain > img { object-fit: contain; background: var(--bg); }
   .shot-badge {
-    position: absolute; top: 14px; left: 14px;
+    position: absolute; top: 14px; left: 14px; z-index: 2;
     font-family: var(--font-mono); font-size: 15px; font-weight: 700;
-    padding: 4px 12px; border-radius: 100px;
-    background: var(--blue); color: #fff; letter-spacing: 0.06em;
+    padding: 4px 12px; border-radius: 100px; background: var(--blue); color: #fff; letter-spacing: 0.06em;
   }
   .shot.green .shot-badge  { background: var(--green); }
   .shot.amber .shot-badge  { background: var(--amber); }
   .shot.purple .shot-badge { background: var(--purple); }
   .shot.red .shot-badge    { background: var(--red); }
+  .shot.green  { border-color: var(--green); }
+  .shot.amber  { border-color: var(--amber); }
+  .shot.purple { border-color: var(--purple); }
+  .shot.red    { border-color: var(--red); }
 
-  /* ── CAPTURE DETAIL SLIDE (format slide 17) ──────────────── */
+  /* capture slide layout */
   .cap-layout { position: absolute; inset: 80px 120px 60px; display: flex; gap: 56px; }
-  .cap-left  { flex: 0.78; display: flex; flex-direction: column; gap: 18px; }
-  .cap-right { flex: 1.22; display: flex; flex-direction: column; gap: 22px; }
+  .cap-left  { flex: 0.82; display: flex; flex-direction: column; gap: 16px; }
+  .cap-right { flex: 1.18; display: flex; flex-direction: column; gap: 22px; }
   .cap-right .shot { flex: 1; width: 100%; min-height: 0; }
-  .cap-title { font-size: 48px; font-weight: 700; letter-spacing: -1px; line-height: 1.1; }
-  .cap-url   { font-family: var(--font-mono); font-size: 20px; color: var(--blue); margin-top: 12px; }
+  .cap-title { font-size: 46px; font-weight: 700; letter-spacing: -1px; line-height: 1.1; }
+  .cap-url   { font-family: var(--font-mono); font-size: 20px; color: var(--blue); margin-top: 10px; }
   .cap-intro { font-size: 21px; color: var(--muted); line-height: 1.5; margin-top: 6px; text-wrap: pretty; }
   .cap-callout {
     display: flex; gap: 16px; align-items: flex-start;
-    padding: 15px 20px; background: var(--bg2);
-    border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 14px 20px; background: var(--bg2); border: 1.5px solid var(--border); border-radius: 12px;
   }
   .cap-callout .co-key {
     font-family: var(--font-mono); font-size: 16px; font-weight: 700;
@@ -259,2142 +262,1015 @@
   }
   .cap-callout.green  .co-key { background: var(--green-dim);  color: var(--green);  border-color: var(--green); }
   .cap-callout.amber  .co-key { background: var(--amber-dim);  color: var(--amber);  border-color: var(--amber); }
-  .cap-callout.purple .co-key { background: oklch(0.48 0.19 292 / 0.12); color: var(--purple); border-color: var(--purple); }
+  .cap-callout.purple .co-key { background: var(--purple-dim); color: var(--purple); border-color: var(--purple); }
   .cap-callout.red    .co-key { background: var(--red-dim);    color: var(--red);    border-color: var(--red); }
   .cap-callout .co-text { font-size: 19px; line-height: 1.4; }
   .cap-callout .co-text .t { font-weight: 600; }
   .cap-callout .co-text .d { color: var(--muted); font-size: 17px; }
-
+  .cap-callout .co-text code { font-family: var(--font-mono); font-size: 0.9em; color: var(--blue); }
 </style>
 </head>
 <body>
 
 <deck-stage width="1920" height="1080">
 
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 1 — COVER
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SLIDE 1 — COVER ═══ -->
 <section data-label="Cover">
   <style>
-    #s1-glow {
-      position: absolute; width: 900px; height: 900px;
-      border-radius: 50%;
-      background: radial-gradient(circle, oklch(0.45 0.20 235 / 0.07) 0%, transparent 70%);
-      top: -200px; left: -100px;
-      pointer-events: none;
-    }
-    #s1-glow2 {
-      position: absolute; width: 600px; height: 600px;
-      border-radius: 50%;
-      background: radial-gradient(circle, oklch(0.44 0.18 152 / 0.06) 0%, transparent 70%);
-      bottom: -100px; right: 200px;
-      pointer-events: none;
-    }
-    #s1-content {
-      position: absolute;
-      left: 160px; top: 50%;
-      transform: translateY(-50%);
-      max-width: 900px;
-    }
-    #s1-right {
-      position: absolute;
-      right: 140px; top: 50%;
-      transform: translateY(-50%);
-      display: flex; flex-direction: column; gap: 20px;
-    }
-    #s1-logo {
-      font-family: var(--font-mono);
-      font-size: 100px; font-weight: 700;
-      letter-spacing: -2px;
-      background: linear-gradient(135deg, var(--text) 30%, var(--blue) 80%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text;
-      line-height: 1;
-    }
-    #s1-tagline {
-      font-size: 34px; font-weight: 400; color: var(--muted);
-      line-height: 1.5; margin-top: 28px; max-width: 780px;
-      text-wrap: pretty;
-    }
-    #s1-pills {
-      display: flex; gap: 16px; margin-top: 52px; flex-wrap: wrap;
-    }
-    .s1-feat-card {
-      background: var(--bg2);
-      border: 1.5px solid var(--border);
-      border-radius: 14px;
-      padding: 28px 36px;
-      width: 320px;
-      font-size: 24px;
-    }
-    .s1-feat-card .icon { font-size: 34px; margin-bottom: 10px; }
-    .s1-feat-card .title { font-weight: 600; margin-bottom: 6px; }
-    .s1-feat-card .desc { color: var(--muted); font-size: 24px; line-height: 1.5; }
+    #s1-glow { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+      background: radial-gradient(circle, oklch(0.45 0.20 235 / 0.08) 0%, transparent 70%); top: -200px; left: -120px; pointer-events: none; }
+    #s1-glow2 { position: absolute; width: 600px; height: 600px; border-radius: 50%;
+      background: radial-gradient(circle, oklch(0.44 0.18 152 / 0.07) 0%, transparent 70%); bottom: -120px; right: 220px; pointer-events: none; }
+    #s1-content { position: absolute; left: 160px; top: 50%; transform: translateY(-50%); max-width: 940px; }
+    #s1-logo { font-family: var(--font-mono); font-size: 104px; font-weight: 700; letter-spacing: -2px;
+      background: linear-gradient(135deg, var(--text) 30%, var(--blue) 85%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
+    #s1-tagline { font-size: 33px; font-weight: 400; color: var(--muted); line-height: 1.5; margin-top: 28px; max-width: 820px; text-wrap: pretty; }
+    #s1-pills { display: flex; gap: 14px; margin-top: 46px; flex-wrap: wrap; }
+    #s1-right { position: absolute; right: 130px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 18px; }
+    .s1-feat { background: var(--bg2); border: 1.5px solid var(--border); border-radius: 14px; padding: 22px 28px; width: 360px; }
+    .s1-feat .icon { font-size: 30px; margin-bottom: 8px; }
+    .s1-feat .title { font-weight: 600; font-size: 23px; margin-bottom: 4px; }
+    .s1-feat .desc { color: var(--muted); font-size: 19px; line-height: 1.4; }
   </style>
   <div id="s1-glow"></div>
   <div id="s1-glow2"></div>
-
   <div id="s1-content">
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:32px;">
       <span class="tag tag-blue">v3.2.4</span>
       <span class="tag tag-green"><span class="dot dot-green"></span> Node.js ≥ 18</span>
-      <span class="tag tag-amber">TypeScript</span>
+      <span class="tag tag-amber">TypeScript strict</span>
     </div>
     <div id="s1-logo">Orchestrator</div>
-    <div id="s1-tagline">Plateforme d'automatisation auto-hébergée.<br>Éditeur visuel · Moteur DAG · Workers distants · Secrets chiffrés.</div>
+    <div id="s1-tagline">Plateforme d'automatisation auto-hébergée : éditeur de flux visuel, moteur d'exécution en graphe (DAG), versionnage git, planification, secrets chiffrés et agents d'exécution distants — le tout dans un seul dépôt.</div>
     <div id="s1-pills">
-      <span class="pill">JavaScript</span>
-      <span class="pill">Python</span>
-      <span class="pill">Groovy</span>
-      <span class="pill">PowerShell</span>
-      <span class="pill">Playwright</span>
-      <span class="pill">Batch / Shell</span>
+      <span class="pill">DAG polyglotte</span>
+      <span class="pill">Git par flux</span>
+      <span class="pill">Workers distants</span>
+      <span class="pill">NeDB / MongoDB</span>
     </div>
   </div>
-
   <div id="s1-right">
-    <div class="s1-feat-card">
-      <div class="icon">⬡</div>
-      <div class="title">Éditeur de flux visuel</div>
-      <div class="desc">Graphe drag-and-drop, éditeur Monaco par nœud</div>
-    </div>
-    <div class="s1-feat-card">
-      <div class="icon">⟳</div>
-      <div class="title">Moteur d'exécution DAG</div>
-      <div class="desc">Retry, timeout, conditions, sous-flux imbriqués</div>
-    </div>
-    <div class="s1-feat-card">
-      <div class="icon">⇄</div>
-      <div class="title">Workers distants</div>
-      <div class="desc">Long-poll · zéro port entrant · derrière NAT/firewall</div>
-    </div>
+    <div class="s1-feat"><div class="icon">⬡</div><div class="title">Éditeur visuel</div><div class="desc">Glisser-déposer + Monaco par nœud</div></div>
+    <div class="s1-feat"><div class="icon">⎇</div><div class="title">Versionné comme du code</div><div class="desc">Commits, branches, clone/push</div></div>
+    <div class="s1-feat"><div class="icon">⇄</div><div class="title">Exécution distribuée</div><div class="desc">Workers en long-poll, sans port entrant</div></div>
   </div>
+  <div class="slide-num">01 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 2 — CAS D'USAGE
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Cas d'usage">
-  <style>
-    #s-uc-layout {
-      position: absolute; inset: 90px 120px 75px;
-      display: flex; flex-direction: column; gap: 40px;
-    }
-    #s-uc-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr);
-      gap: 24px; flex: 1;
-    }
-    .uc-card {
-      border-radius: 18px; border: 2px solid var(--border);
-      padding: 32px 34px; background: var(--bg2);
-      display: flex; flex-direction: column; gap: 12px;
-    }
-    .uc-title { font-size: 28px; font-weight: 700; }
-    .uc-tagrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-    .uc-tag { font-family: var(--font-mono); font-size: 18px; padding: 3px 10px; border-radius: 6px; background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
-  </style>
-  <div id="s-uc-layout">
+<!-- ═══ SLIDE 2 — À QUOI ÇA SERT ═══ -->
+<section data-label="À quoi ça sert">
+  <div class="layout" style="flex-direction:column; gap:34px;">
     <div>
-      <div class="section-label">Cas d'usage</div>
-      <h1 style="font-size:62px;font-weight:700;letter-spacing:-1px;">Concrètement, à quoi ça sert ?</h1>
+      <div class="section-label">Le problème</div>
+      <h1 class="s-title">Concrètement, à quoi ça sert ?</h1>
+      <div class="s-sub" style="max-width:1400px;">On construit des flux dans un éditeur de graphe en glisser-déposer, on les déclenche (cron, événement, HTTP, ou à la demande), et on regarde les logs défiler en direct dans le navigateur. Le travail lourd ou propre à un OS est délégué à des <strong style="color:var(--text)">workers</strong> distants.</div>
     </div>
-    <div id="s-uc-grid">
-      <div class="uc-card" style="border-color:var(--blue)">
-        <div style="font-size:40px;line-height:1;">🚀</div>
-        <div class="uc-title" style="color:var(--blue)">Déploiement &amp; CI/CD</div>
-        <div class="uc-tagrow"><span class="uc-tag">git pull</span><span class="uc-tag">build</span><span class="uc-tag">tests auto</span><span class="uc-tag">deploy SSH</span><span class="uc-tag">notification</span></div>
-      </div>
-      <div class="uc-card" style="border-color:var(--green)">
-        <div style="font-size:40px;line-height:1;">🗄️</div>
-        <div class="uc-title" style="color:var(--green)">Migration de données</div>
-        <div class="uc-tagrow"><span class="uc-tag">ETL</span><span class="uc-tag">SQL → NoSQL</span><span class="uc-tag">transformation</span><span class="uc-tag">validation</span></div>
-      </div>
-      <div class="uc-card" style="border-color:var(--amber)">
-        <div style="font-size:40px;line-height:1;">⚙️</div>
-        <div class="uc-title" style="color:var(--amber)">Logique métier</div>
-        <div class="uc-tagrow"><span class="uc-tag">facturation</span><span class="uc-tag">rapports</span><span class="uc-tag">règles tarifaires</span><span class="uc-tag">clôture mensuelle</span></div>
-      </div>
-      <div class="uc-card" style="border-color:var(--purple)">
-        <div style="font-size:40px;line-height:1;">🌐</div>
-        <div class="uc-title" style="color:var(--purple)">Automatisation web</div>
-        <div class="uc-tagrow"><span class="uc-tag">scraping</span><span class="uc-tag">monitoring</span><span class="uc-tag">screenshots</span><span class="uc-tag">formulaires</span></div>
-      </div>
-      <div class="uc-card" style="border-color:var(--red)">
-        <div style="font-size:40px;line-height:1;">🔔</div>
-        <div class="uc-title" style="color:var(--red)">Alerting &amp; Monitoring</div>
-        <div class="uc-tagrow"><span class="uc-tag">health checks</span><span class="uc-tag">seuils</span><span class="uc-tag">Slack / email</span><span class="uc-tag">escalade</span></div>
-      </div>
-      <div class="uc-card">
-        <div style="font-size:40px;line-height:1;">🔗</div>
-        <div class="uc-title">Intégrations système</div>
-        <div class="uc-tagrow"><span class="uc-tag">API tierces</span><span class="uc-tag">ERP / CRM</span><span class="uc-tag">synchronisation</span><span class="uc-tag">file d'attente</span></div>
+    <div class="feat-grid" style="grid-template-columns:repeat(4,1fr); gap:20px;">
+      <div class="feat b"><div class="ic">✎</div><div class="t">Construire</div><div class="d">Un graphe de nœuds de script — JS, Python, Groovy, PowerShell, Batch, Bash, Playwright, sous-flux, conditions.</div></div>
+      <div class="feat a"><div class="ic">⏱</div><div class="t">Déclencher</div><div class="d">Cron, arrivée de fichier (inbox), requête HTTP (trigger), ou bouton « Execute ».</div></div>
+      <div class="feat g"><div class="ic">▶</div><div class="t">Exécuter</div><div class="d">Parcours du DAG, retry et timeouts par nœud, logs SSE en temps réel.</div></div>
+      <div class="feat p"><div class="ic">⎇</div><div class="t">Versionner</div><div class="d">Chaque flux = un dépôt git : commits auto, branches, variantes, clone/push.</div></div>
+    </div>
+    <div class="card accent-blue" style="display:flex; align-items:center; gap:20px;">
+      <div style="font-size:34px;">◎</div>
+      <div class="card-body" style="font-size:22px;">
+        <strong>Auto-hébergeable, peu de dépendances.</strong> Tourne sur NeDB embarqué dès le départ ; bascule sur MongoDB en posant une seule variable. Le tout se livre en <strong>binaire unique</strong> (<code>pkg</code>), <code>groovyExec.jar</code> embarqué.
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">02 / 25</div>
+  <div class="slide-num">02 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 3 — EXEMPLES DE FLUX
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Exemples de flux">
-  <style>
-    #s-ex-layout {
-      position: absolute; inset: 90px 120px 70px;
-      display: flex; flex-direction: column; gap: 30px;
-    }
-    .flow-row {
-      flex: 1; background: var(--bg2); border: 1.5px solid var(--border);
-      border-radius: 16px; padding: 22px 30px;
-      display: flex; flex-direction: column; gap: 14px;
-    }
-    .flow-title { font-size: 26px; font-weight: 700; display: flex; align-items: center; gap: 12px; }
-    .flow-steps { display: flex; align-items: center; gap: 0; }
-    .flow-node {
-      font-family: var(--font-mono); font-size: 17px; font-weight: 500;
-      padding: 10px 14px; border-radius: 10px; border: 1.5px solid;
-      text-align: center; white-space: nowrap; line-height: 1.4; flex-shrink: 0;
-    }
-    .flow-arrow { font-size: 20px; color: var(--muted); padding: 0 8px; flex-shrink: 0; }
-    .fn-trigger { border-color: var(--purple); background: oklch(0.48 0.19 292 / 0.10); color: var(--purple); }
-    .fn-bash    { border-color: var(--muted);  background: var(--bg3); color: var(--muted); }
-    .fn-js      { border-color: var(--blue);   background: var(--blue-dim); color: var(--blue); }
-    .fn-python  { border-color: var(--green);  background: var(--green-dim); color: var(--green); }
-    .fn-groovy  { border-color: var(--amber);  background: var(--amber-dim); color: var(--amber); }
-    .fn-cond    { border-color: var(--amber);  background: var(--amber-dim); color: var(--amber); }
-    .fn-cron    { border-color: var(--red);    background: var(--red-dim); color: var(--red); }
-  </style>
-  <div id="s-ex-layout">
+<!-- ═══ SLIDE 3 — FONCTIONNALITÉS ═══ -->
+<section data-label="Fonctionnalités">
+  <div class="layout" style="flex-direction:column; gap:28px;">
     <div>
-      <div class="section-label">Exemples</div>
-      <h1 style="font-size:56px;font-weight:700;letter-spacing:-1px;line-height:1.1;">Flux concrets</h1>
+      <div class="section-label">Tour d'horizon</div>
+      <h1 class="s-title">Ce qu'Orchestrator fait pour vous</h1>
     </div>
-    <div class="flow-row" style="border-color:var(--blue)">
-      <div class="flow-title">
-        <span style="font-size:32px;">🚀</span>
-        <span style="color:var(--blue)">Déploiement automatisé</span>
-        <span class="tag tag-blue" style="font-size:18px;padding:3px 14px;margin-left:8px;">Webhook → Prod</span>
-      </div>
-      <div class="flow-steps">
-        <div class="flow-node fn-trigger">🔗 Webhook CI</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-bash">bash<br>git pull</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">node<br>npm build</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-python">python<br>pytest</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-cond">◇ tests OK ?</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-bash">bash<br>rsync prod</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">JS<br>Slack notif</div>
-      </div>
-    </div>
-    <div class="flow-row" style="border-color:var(--green)">
-      <div class="flow-title">
-        <span style="font-size:32px;">🗄️</span>
-        <span style="color:var(--green)">Migration ETL quotidienne</span>
-        <span class="tag tag-green" style="font-size:18px;padding:3px 14px;margin-left:8px;">Cron 02:00 → Data warehouse</span>
-      </div>
-      <div class="flow-steps">
-        <div class="flow-node fn-cron">⏱ Cron<br>02:00</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-groovy">Groovy<br>Extract SQL</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-python">Python<br>Transform</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-python">Python<br>Validate</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">JS<br>Load MongoDB</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">JS<br>Email rapport</div>
-      </div>
-    </div>
-    <div class="flow-row" style="border-color:var(--amber)">
-      <div class="flow-title">
-        <span style="font-size:32px;">⚙️</span>
-        <span style="color:var(--amber)">Clôture mensuelle</span>
-        <span class="tag tag-amber" style="font-size:18px;padding:3px 14px;margin-left:8px;">Cron 1er du mois → ERP</span>
-      </div>
-      <div class="flow-steps">
-        <div class="flow-node fn-cron">⏱ Cron<br>1er mois</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">JS<br>Fetch ERP API</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-groovy">Groovy<br>Calculs JVM</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-python">Python<br>PDF report</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-bash">bash<br>archive S3</div><div class="flow-arrow">→</div>
-        <div class="flow-node fn-js">JS<br>Email DG</div>
-      </div>
+    <div class="feat-grid">
+      <div class="feat b"><div class="ic">⬡</div><div class="t">Éditeur de flux</div><div class="d">Canvas React Flow + éditeur Monaco par nœud. Goto / condition pour le branchement.</div></div>
+      <div class="feat g"><div class="ic">⚙</div><div class="t">Moteur DAG</div><div class="d">Parcours depuis les racines, retry, timeouts par nœud et par flux, stop-on-error.</div></div>
+      <div class="feat a"><div class="ic">⇄</div><div class="t">Workers distants</div><div class="d">Agents qui s'enregistrent en HTTP, long-poll, exécutent en processus enfants isolés.</div></div>
+      <div class="feat p"><div class="ic">⎇</div><div class="t">Versionnage git</div><div class="d">Dépôt git par flux, commits autosave, branches, <code>clone</code> / <code>push</code> smart-HTTP.</div></div>
+      <div class="feat b"><div class="ic">⧉</div><div class="t">Variantes</div><div class="d">Même flux, worker/branche différents — exécutables et planifiables indépendamment.</div></div>
+      <div class="feat g"><div class="ic">📎</div><div class="t">Artefacts</div><div class="d">Fichiers joints, stockés une fois par <code>sha256</code>, chunkés, auto-décompressés.</div></div>
+      <div class="feat a"><div class="ic">⏱</div><div class="t">Planification</div><div class="d">Cron, événements (inbox), triggers HTTP — activables/désactivables sans suppression.</div></div>
+      <div class="feat r"><div class="ic">⚿</div><div class="t">Secrets & RBAC</div><div class="d">AES-256-GCM au repos. Rôles admin/operator/viewer + politiques d'accès workers.</div></div>
+      <div class="feat p"><div class="ic">🔑</div><div class="t">Auth & SSO</div><div class="d">JWT + refresh, clés API, et proxy-auth CAS/SSO optionnel avec redirection auto.</div></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">03 / 25</div>
+  <div class="slide-num">03 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 4 — VUE D'ENSEMBLE
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Vue d'ensemble">
+<!-- ═══ SLIDE 4 — CARTE DES COMPOSANTS ═══ -->
+<section data-label="Composants">
   <style>
-    #s2-layout {
-      position: absolute; inset: 100px 120px 80px;
-      display: flex; flex-direction: column; gap: 0;
-    }
-    #s2-header { margin-bottom: 56px; }
-    #s2-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 24px;
-    }
-    .feat-card {
-      background: #ffffff;
-      border: 1.5px solid var(--border);
-      border-radius: 16px;
-      padding: 42px 44px;
-      display: flex; flex-direction: column; gap: 16px;
-    }
-    .feat-card:hover { border-color: var(--blue); }
-    .feat-card .fc-icon {
-      width: 56px; height: 56px;
-      border-radius: 14px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 28px;
-    }
-    .fc-icon.blue   { background: var(--blue-dim); }
-    .fc-icon.green  { background: var(--green-dim); }
-    .fc-icon.amber  { background: var(--amber-dim); }
-    .fc-icon.purple { background: oklch(0.48 0.19 292 / 0.12); }
-    .feat-card .fc-title { font-size: 28px; font-weight: 600; }
-    .feat-card .fc-desc { font-size: 24px; color: var(--muted); line-height: 1.55; text-wrap: pretty; }
+    #s4-wrap { position:absolute; inset: 86px 120px 60px; display:flex; flex-direction:column; gap:24px; }
+    #s4-diag { display:flex; align-items:stretch; gap:18px; }
+    #s4-diag .node { flex:1; display:flex; flex-direction:column; gap:10px; }
+    .s4-box { border:1.5px solid var(--border); border-radius:14px; background:var(--bg2); padding:20px 22px; }
+    .s4-box h3 { font-size:23px; font-weight:700; margin-bottom:4px; }
+    .s4-box .tagline { font-family:var(--font-mono); font-size:15px; color:var(--blue); margin-bottom:12px; }
+    .s4-box ul { list-style:none; display:flex; flex-direction:column; gap:6px; }
+    .s4-box li { font-size:17px; color:var(--muted); padding-left:18px; position:relative; line-height:1.35; }
+    .s4-box li::before { content:'▸'; position:absolute; left:0; color:var(--blue); }
+    .s4-box.blue { border-color:var(--blue); } .s4-box.green { border-color:var(--green); } .s4-box.amber { border-color:var(--amber); }
+    .s4-conn { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:120px; }
+    .s4-conn .l { font-family:var(--font-mono); font-size:15px; color:var(--muted); text-align:center; line-height:1.3; }
+    .s4-conn .a { font-size:34px; color:var(--blue); }
   </style>
-  <div id="s2-layout">
-    <div id="s2-header">
-      <div class="section-label">Vue d'ensemble</div>
-      <h1 style="font-size:62px;font-weight:700;letter-spacing:-1px;line-height:1.1">Ce qu'Orchestrator fait pour vous</h1>
-    </div>
-    <div id="s2-grid">
-      <div class="feat-card">
-        <div class="fc-icon blue">▣</div>
-        <div class="fc-title">Éditeur visuel React Flow</div>
-        <div class="fc-desc">Construction de workflows par glisser-déposer. Code par nœud dans Monaco. Conditions, goto, sous-flux.</div>
-      </div>
-      <div class="feat-card">
-        <div class="fc-icon green">⚙</div>
-        <div class="fc-title">Moteur d'exécution polyglotte</div>
-        <div class="fc-desc">JS inline, Python, Groovy, PowerShell, Batch, Bash, Playwright — tous dans un même flux.</div>
-      </div>
-      <div class="feat-card">
-        <div class="fc-icon amber">⇄</div>
-        <div class="fc-title">Workers distants stateless</div>
-        <div class="fc-desc">Agents auto-enregistrés via long-poll. Zéro port entrant. Tourne derrière n'importe quel NAT ou firewall.</div>
-      </div>
-      <div class="feat-card">
-        <div class="fc-icon purple">◷</div>
-        <div class="fc-title">Planification & Triggers</div>
-        <div class="fc-desc">Cron node-cron, déclencheur événement (inbox), trigger HTTP public, et exécution à la demande.</div>
-      </div>
-      <div class="feat-card">
-        <div class="fc-icon blue">⚿</div>
-        <div class="fc-title">Secrets chiffrés AES-256-GCM</div>
-        <div class="fc-desc">Référencés en <code style="font-family:var(--font-mono);color:var(--amber)">$&#123;&#123; secrets.NOM &#125;&#125;</code>. Jamais dans les logs. Résolus au runtime côté serveur.</div>
-      </div>
-      <div class="feat-card">
-        <div class="fc-icon green">◎</div>
-        <div class="fc-title">NeDB → MongoDB en une variable</div>
-        <div class="fc-desc">NeDB embarqué dès le départ. Posez <code style="font-family:var(--font-mono);color:var(--green)">MONGO_URI</code> pour basculer sur MongoDB. Même API de requête.</div>
-      </div>
-    </div>
-  </div>
-  <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">04 / 25</div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 3 — ARCHITECTURE
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Architecture">
-  <style>
-    #s3-layout {
-      position: absolute; inset: 80px 120px 60px;
-      display: flex; flex-direction: column; gap: 32px;
-    }
-    #s3-diagram {
-      display: flex; gap: 0; align-items: stretch; flex: 1;
-    }
-    .arch-col {
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      gap: 16px;
-    }
-    .arch-zone {
-      border: 2px solid var(--border);
-      border-radius: 20px;
-      padding: 18px 22px;
-      background: var(--bg2);
-      display: flex; flex-direction: column; gap: 10px;
-      flex: 1;
-    }
-    .arch-zone-title {
-      font-family: var(--font-mono); font-size: 20px; font-weight: 600;
-      color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase;
-      border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 8px;
-    }
-    .arch-node {
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 16px;
-      font-family: var(--font-mono); font-size: 19px;
-      background: var(--bg3);
-      text-align: center;
-    }
-    .arch-node.blue  { border-color: var(--blue);  color: var(--blue);  background: var(--blue-dim); }
-    .arch-node.green { border-color: var(--green); color: var(--green); background: var(--green-dim); }
-    .arch-node.amber { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
-    .arch-arrow-v {
-      width: 80px; display: flex; align-items: center; justify-content: center;
-      flex-direction: column; gap: 6px;
-    }
-    .arch-arrow-line {
-      width: 2px; flex: 1; background: linear-gradient(to bottom, var(--border), var(--blue), var(--border));
-    }
-    .arch-arrow-label {
-      font-family: var(--font-mono); font-size: 17px; color: var(--muted);
-      writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
-      letter-spacing: 0.04em;
-    }
-    .big-arrow {
-      font-size: 40px; color: var(--muted);
-      display: flex; flex-direction: column; align-items: center; gap: 8px;
-      padding: 0 16px;
-    }
-    .big-arrow span {
-      font-family: var(--font-mono); font-size: 17px; color: var(--muted);
-      text-align: center; line-height: 1.4; max-width: 100px;
-    }
-  </style>
-  <div id="s3-layout">
+  <div id="s4-wrap">
     <div>
       <div class="section-label">Architecture</div>
-      <h1 style="font-size:62px;font-weight:700;letter-spacing:-1px">Carte des composants</h1>
+      <h1 class="s-title">Carte des composants</h1>
     </div>
-    <div id="s3-diagram">
-
-      <!-- Browser -->
-      <div class="arch-col" style="width:280px">
-        <div class="arch-zone" style="border-color:var(--blue);width:100%">
-          <div class="arch-zone-title" style="color:var(--blue)">Navigateur</div>
-          <div class="arch-node blue">React 18 + Vite</div>
-          <div class="arch-node blue">React Flow<br><span style="font-size:17px;color:var(--muted)">éditeur graphe</span></div>
-          <div class="arch-node blue">Monaco Editor<br><span style="font-size:17px;color:var(--muted)">code par nœud</span></div>
-          <div class="arch-node blue">Zustand<br><span style="font-size:17px;color:var(--muted)">état client</span></div>
+    <div id="s4-diag">
+      <div class="node">
+        <div class="s4-box blue">
+          <h3>Interface web</h3>
+          <div class="tagline">client/ · React 18 + Vite</div>
+          <ul>
+            <li>Canvas React Flow + Monaco</li>
+            <li>Sélecteur de branche / variantes</li>
+            <li>Logs SSE en direct</li>
+            <li>Admin : secrets, users, workers</li>
+            <li>Stores Zustand · apiClient</li>
+          </ul>
         </div>
       </div>
-
-      <!-- Arrow 1 -->
-      <div class="big-arrow">
-        ⇄
-        <span>HTTP/SSE<br>/api/v1</span>
-      </div>
-
-      <!-- Server -->
-      <div class="arch-col" style="flex:1">
-        <div class="arch-zone" style="border-color:var(--amber);width:100%">
-          <div class="arch-zone-title" style="color:var(--amber)">Serveur Orchestrator · Express + TypeScript</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-            <div class="arch-node amber">Routes REST<br><span style="font-size:17px;color:var(--muted)">flows · exec · jobs</span></div>
-            <div class="arch-node amber">flowExecutor<br><span style="font-size:17px;color:var(--muted)">parcours DAG</span></div>
-            <div class="arch-node amber">Routeur Worker<br><span style="font-size:17px;color:var(--muted)">dispatch · long-poll</span></div>
-            <div class="arch-node amber">Auth JWT/API<br><span style="font-size:17px;color:var(--muted)">RBAC</span></div>
-            <div class="arch-node amber">Planificateur<br><span style="font-size:17px;color:var(--muted)">cron · event</span></div>
-            <div class="arch-node amber">Crypto AES<br><span style="font-size:17px;color:var(--muted)">secrets au repos</span></div>
-          </div>
-          <div class="arch-node" style="border-color:var(--border);text-align:center;font-size:20px;">
-            DB · <span style="color:var(--green)">NeDB</span> <span style="color:var(--muted)">ou</span> <span style="color:var(--green)">MongoDB</span> <span style="color:var(--muted)">— même interface ICollection</span>
-          </div>
+      <div class="s4-conn"><div class="l">HTTP / SSE</div><div class="a">⇄</div><div class="l">/api/v1 · /git</div></div>
+      <div class="node">
+        <div class="s4-box green">
+          <h3>Serveur</h3>
+          <div class="tagline">server/ · Express + TS</div>
+          <ul>
+            <li>Routes REST + exécuteur DAG</li>
+            <li>Planificateur cron + eventBus</li>
+            <li>Versionnage git (objets/refs en base)</li>
+            <li>Store d'artefacts (sha256)</li>
+            <li>Auth/RBAC · crypto AES · DB</li>
+          </ul>
         </div>
       </div>
-
-      <!-- Arrow 2 -->
-      <div class="big-arrow">
-        ⇄
-        <span>long-poll<br>HTTP</span>
-      </div>
-
-      <!-- Workers -->
-      <div class="arch-col" style="width:300px">
-        <div class="arch-zone" style="border-color:var(--green);width:100%">
-          <div class="arch-zone-title" style="color:var(--green)">Worker(s) distants</div>
-          <div class="arch-node green">agent.ts<br><span style="font-size:17px;color:var(--muted)">register · poll · hb</span></div>
-          <div class="arch-node green">nodeExecutor<br><span style="font-size:17px;color:var(--muted)">processus enfants</span></div>
-          <div class="arch-node" style="font-size:18px;line-height:1.7">
-            node · python · java<br>pwsh · cmd · playwright<br>bash · shell
-          </div>
-        </div>
-
-        <!-- Triggers -->
-        <div class="arch-zone" style="border-color:var(--purple);width:100%;margin-top:16px;">
-          <div class="arch-zone-title" style="color:var(--purple)">Déclencheurs entrants</div>
-          <div class="arch-node" style="font-size:19px">⏱ Cron · 📁 Event · 🔗 HTTP trigger</div>
+      <div class="s4-conn"><div class="l">long-poll HTTP<br>(workers pollent)</div><div class="a">⇄</div><div class="l">jobs · logs</div></div>
+      <div class="node">
+        <div class="s4-box amber">
+          <h3>Worker(s)</h3>
+          <div class="tagline">orchestrator-worker/ · TS</div>
+          <ul>
+            <li>S'enregistre → poll → exécute</li>
+            <li>Processus enfants par langage</li>
+            <li>node / python / java / pwsh / cmd</li>
+            <li>Télécharge artefacts par sha</li>
+            <li>Sans état — tout vit sur le serveur</li>
+          </ul>
         </div>
       </div>
-
+    </div>
+    <div class="card" style="display:flex; gap:32px; align-items:center; padding:18px 28px;">
+      <div class="card-body" style="font-size:19px;"><strong>Pas de <code>package.json</code> racine</strong> — <code>orchestrator-webpanel</code> (server + client) et <code>orchestrator-worker</code> sont des projets npm indépendants.</div>
+      <div class="card-body" style="font-size:19px; border-left:1.5px solid var(--border); padding-left:32px;"><strong>Stockage masqué derrière <code>ICollection</code></strong> — même sémantique sur NeDB et MongoDB, choisie selon <code>MONGO_URI</code>.</div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">05 / 25</div>
+  <div class="slide-num">04 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 4 — MODÈLE D'EXÉCUTION DAG
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Modèle d'exécution">
-  <style>
-    #s4-layout {
-      position: absolute; inset: 90px 120px 80px;
-      display: flex; gap: 72px;
-    }
-    #s4-left { flex: 1.1; display: flex; flex-direction: column; gap: 36px; }
-    #s4-right { flex: 0.9; display: flex; flex-direction: column; gap: 24px; }
-
-    .dag-flow {
-      display: flex; flex-direction: column; align-items: flex-start; gap: 0;
-    }
-    .dag-node {
-      border: 2px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 28px;
-      font-family: var(--font-mono); font-size: 22px;
-      background: var(--bg2);
-      display: inline-flex; align-items: center; gap: 14px;
-    }
-    .dag-node.root  { border-color: var(--blue);   background: var(--blue-dim);  color: var(--blue); }
-    .dag-node.mid   { border-color: var(--border);  background: var(--bg2); }
-    .dag-node.cond  { border-color: var(--amber);  background: var(--amber-dim); color: var(--amber); }
-    .dag-node.leaf  { border-color: var(--green);  background: var(--green-dim); color: var(--green); }
-    .dag-node.remote{ border-color: var(--purple); background: oklch(0.48 0.19 292 / 0.12); color: var(--purple); }
-    .dag-node.sub   { border-color: var(--muted);  border-style: dashed; color: var(--muted); }
-
-    .dag-line {
-      width: 2px; height: 28px; background: var(--border); margin-left: 34px;
-    }
-    .dag-branch {
-      display: flex; gap: 32px; align-items: flex-start; margin-left: 34px;
-    }
-    .dag-branch-line {
-      width: 2px; height: 28px; background: var(--border); margin-left: 34px;
-    }
-
-    .exec-rule {
-      display: flex; gap: 16px; align-items: flex-start;
-      padding: 22px 28px;
-      background: var(--bg2); border: 1.5px solid var(--border); border-radius: 12px;
-    }
-    .exec-rule .er-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      margin-top: 7px; flex-shrink: 0;
-    }
-    .exec-rule .er-text { font-size: 23px; line-height: 1.5; color: var(--text); }
-    .exec-rule .er-text em { color: var(--amber); font-style: normal; font-family: var(--font-mono); }
-  </style>
-  <div id="s4-layout">
-    <div id="s4-left">
+<!-- ═══ SLIDE 5 — MODÈLE D'EXÉCUTION ═══ -->
+<section data-label="Moteur DAG">
+  <div class="layout">
+    <div class="col" style="flex:0.92;">
       <div>
-        <div class="section-label">Exécution</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Moteur DAG<br>— comment ça marche</h1>
+        <div class="section-label">Moteur</div>
+        <h1 class="s-title">Modèle d'exécution<br>— le DAG</h1>
+        <div class="s-sub">Un flux est un document JSON de <code style="color:var(--blue);font-family:var(--font-mono)">nodes</code> + <code style="color:var(--blue);font-family:var(--font-mono)">edges</code>. <code style="color:var(--blue);font-family:var(--font-mono)">parseFlowContent</code> construit les cartes d'arêtes et identifie les <strong style="color:var(--text)">racines</strong> (nœuds sans arête entrante).</div>
       </div>
-
-      <div class="dag-flow" style="margin-top:8px;">
-        <div class="dag-node root">⬡ Racine (nœud sans arête entrante)</div>
-        <div class="dag-line"></div>
-        <div class="dag-node mid">▣ Script JS inline <span style="color:var(--muted);font-size:18px">— in-process</span></div>
-        <div class="dag-line"></div>
-        <div class="dag-node cond">◇ Condition / goto</div>
-        <div class="dag-line"></div>
-        <div class="dag-branch">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:0">
-            <div style="width:2px;height:28px;background:var(--border)"></div>
-            <div class="dag-node remote">⇄ Python / Groovy / pwsh<br><span style="font-size:17px;color:var(--muted)">→ dispatché au worker</span></div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:0;margin-top:56px">
-            <div class="dag-node sub">⬡ Sous-flux (flowRef)<br><span style="font-size:17px;color:var(--muted)">son propre worker</span></div>
-          </div>
+      <div class="card accent-blue">
+        <div class="card-title">⊳ Règles du moteur</div>
+        <div class="card-body">
+          • Parcours depuis les racines, en DFS.<br>
+          • Branchement <code>goto</code> / <code>condition</code>.<br>
+          • <strong>Retry par nœud</strong> + timeouts par nœud et par flux (<code>DEFAULT_FLOW_TIMEOUT_MS</code>).<br>
+          • Stop-on-error configurable par nœud.
         </div>
-        <div class="dag-branch-line"></div>
-        <div class="dag-node leaf">✓ Résultat final</div>
       </div>
     </div>
-
-    <div id="s4-right">
-      <h2 style="font-size:34px;font-weight:600;color:var(--muted);margin-bottom:4px;">Règles du moteur</h2>
-      <div class="exec-rule">
-        <div class="er-dot" style="background:var(--blue)"></div>
-        <div class="er-text"><em>parseFlowContent</em> identifie les racines (nœuds sans arête entrante) et construit les maps in/out.</div>
+    <div class="col">
+      <div class="card accent-green">
+        <div class="card-title"><span class="dot dot-green"></span> Local vs distant</div>
+        <div class="card-body">
+          Les types dans <code>REMOTE_TYPES</code> — <span class="pill" style="font-size:17px">powershell</span> <span class="pill" style="font-size:17px">batch</span> <span class="pill" style="font-size:17px">python</span> <span class="pill" style="font-size:17px">groovy</span> <span class="pill" style="font-size:17px">jsbackend</span> <span class="pill" style="font-size:17px">playwright</span> <span class="pill" style="font-size:17px">shell</span> <span class="pill" style="font-size:17px">bash</span> — partent au worker assigné. Le <strong>JavaScript inline</strong> tourne en cours de processus.
+        </div>
       </div>
-      <div class="exec-rule">
-        <div class="er-dot" style="background:var(--amber)"></div>
-        <div class="er-text">Les types <em>REMOTE_TYPES</em> (python, groovy, pwsh, batch, playwright…) sont envoyés au worker assigné.</div>
+      <div class="card">
+        <div class="card-title">⧉ Sous-flux (<code>flowRef</code>)</div>
+        <div class="card-body">Un nœud de type <code>flow</code> charge un autre flux par ID et l'exécute inline, avec son propre enregistrement d'exécution (<code>triggered - &lt;parent&gt;</code>). Il tourne sous <strong>son propre</strong> worker assigné, sinon celui du parent.</div>
       </div>
-      <div class="exec-rule">
-        <div class="er-dot" style="background:var(--green)"></div>
-        <div class="er-text">Le JS inline tourne <em>in-process</em> — rapide, mais non sandboxé. Utilisez un worker pour du code non fiable.</div>
-      </div>
-      <div class="exec-rule">
-        <div class="er-dot" style="background:var(--purple)"></div>
-        <div class="er-text">Un nœud <em>flowRef</em> exécute un sous-flux inline avec son propre enregistrement d'exécution.</div>
-      </div>
-      <div class="exec-rule">
-        <div class="er-dot" style="background:var(--red)"></div>
-        <div class="er-text">Retry par nœud, timeout par nœud et timeout global. Dispatch borné à <em>5 min</em>.</div>
-      </div>
-      <div class="code-block" style="font-size:19px;padding:20px 24px;">
-        <span class="comment"># Variables injectées dans chaque script</span><br>
-        <span class="key">$VARIABLE_NAME</span> = <span class="str">"valeur"</span><br>
-        <span class="key">$&#123;&#123; secrets.TOKEN &#125;&#125;</span> <span class="comment">← résolu côté serveur</span>
+      <div class="card accent-amber">
+        <div class="card-title">⚿ Variables & secrets</div>
+        <div class="card-body">Les variables de flux sont injectées dans chaque script (mécanisme par langage). Les secrets <code>${{ secrets.NAME }}</code> sont résolus côté serveur juste avant l'exécution — <strong>jamais écrits dans les logs</strong>.</div>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">06 / 25</div>
+  <div class="slide-num">05 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 5 — TYPES DE NŒUDS
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Types de nœuds">
-  <style>
-    #s5-layout {
-      position: absolute; inset: 90px 120px 80px;
-      display: flex; flex-direction: column; gap: 48px;
-    }
-    #s5-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 24px; flex: 1;
-    }
-    .node-type-card {
-      background: var(--bg2);
-      border: 1.5px solid var(--border);
-      border-radius: 16px;
-      padding: 32px 30px;
-      display: flex; flex-direction: column; gap: 14px;
-      transition: border-color 0.2s;
-    }
-    .node-type-card .ntc-header {
-      display: flex; align-items: center; gap: 14px;
-    }
-    .ntc-badge {
-      font-family: var(--font-mono); font-size: 13px; font-weight: 700;
-      padding: 3px 10px; border-radius: 6px; letter-spacing: 0.05em;
-    }
-    .node-type-card .ntc-name {
-      font-size: 26px; font-weight: 600;
-    }
-    .node-type-card .ntc-where {
-      font-family: var(--font-mono); font-size: 17px;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .node-type-card .ntc-desc {
-      font-size: 20px; color: var(--muted); line-height: 1.5;
-    }
-    .node-type-card .ntc-code {
-      font-family: var(--font-mono); font-size: 18px;
-      background: var(--bg3); border-radius: 8px; padding: 10px 14px;
-      color: var(--text); border: 1px solid var(--border);
-    }
-    .where-server { color: var(--blue); }
-    .where-worker { color: var(--purple); }
-    .where-both   { color: var(--amber); }
-  </style>
-  <div id="s5-layout">
+<!-- ═══ SLIDE 6 — POLYGLOTTE ═══ -->
+<section data-label="Polyglotte">
+  <div class="layout" style="flex-direction:column; gap:24px;">
     <div>
-      <div class="section-label">Nœuds</div>
-      <h1 style="font-size:62px;font-weight:700;letter-spacing:-1px">Exécution polyglotte</h1>
+      <div class="section-label">Runners</div>
+      <h1 class="s-title">Exécution polyglotte</h1>
+      <div class="s-sub">Chaque runner enveloppe le code, injecte <code>input</code> + variables, streame stdout/stderr, et capture les sorties via des fichiers temporaires. Serveur et worker partagent la même logique de runners.</div>
     </div>
-    <div id="s5-grid">
-      <div class="node-type-card" style="border-color:var(--blue)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--blue-dim);color:var(--blue)">JS</span>
-          <span class="ntc-name">JavaScript</span>
-        </div>
-        <div class="ntc-where where-both">⚡ Serveur ou worker</div>
-        <div class="ntc-desc">Node.js in-process (rapide). Accès aux variables de flux et aux secrets.</div>
-        <div class="ntc-code">const res = await fetch(url);<br>return res.json();</div>
-      </div>
+    <table class="gtable">
+      <thead><tr><th>Type de nœud</th><th>Runtime</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="k">javascript</td><td>Node.js (in-process)</td><td class="m">Inline, non sandboxé — rapide, pas de spawn.</td></tr>
+        <tr><td class="k">jsbackend</td><td>Node.js (child)</td><td class="m">Module ESM ; <code>input</code>/<code>output</code> + variables nommées. Timeout <code>JS_BACKEND_TIMEOUT_MS</code>.</td></tr>
+        <tr><td class="k">python</td><td><code>python</code> sur $PATH</td><td class="m">Variables round-trippées en JSON via fichiers temp.</td></tr>
+        <tr><td class="k">groovy</td><td><code>java -jar groovyExec.jar</code></td><td class="m">Java 11+ requis ; JsonSlurper / JsonOutput.</td></tr>
+        <tr><td class="k">powershell</td><td><code>powershell.exe</code> / <code>pwsh</code></td><td class="m">Variables via ConvertFrom-Json ; sortie via $env:OUTPUT.</td></tr>
+        <tr><td class="k">batch</td><td><code>cmd.exe</code> (Windows)</td><td class="m">Variables exportées en <code>%VAR%</code> ; pas de capture retour.</td></tr>
+        <tr><td class="k">bash / shell</td><td><code>bash</code> / <code>sh</code> sur $PATH</td><td class="m">Shells POSIX ; variables en env.</td></tr>
+        <tr><td class="k">playwright</td><td>Node.js + Chromium</td><td class="m"><code>npx playwright install chromium</code> une fois.</td></tr>
+        <tr><td class="k">flow / variable / comment / goto</td><td>—</td><td class="m">Orchestration / valeur de variable / pass-through.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">06 / 30</div>
+</section>
 
-      <div class="node-type-card" style="border-color:var(--green)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--green-dim);color:var(--green)">PY</span>
-          <span class="ntc-name">Python</span>
-        </div>
-        <div class="ntc-where where-worker">⇄ Worker uniquement</div>
-        <div class="ntc-desc">Exécuté en processus enfant. Variables via fichier JSON annexe.</div>
-        <div class="ntc-code">import json, os<br>vars = json.load(open("vars.json"))</div>
+<!-- ═══ SLIDE 7 — DISTRIBUÉ / LONG-POLL ═══ -->
+<section data-label="Long-poll">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
+      <div>
+        <div class="section-label">Architecture distribuée</div>
+        <h1 class="s-title">Workers : long-poll,<br>zéro port entrant</h1>
+        <div class="s-sub">Les workers <strong style="color:var(--text)">interrogent</strong> le serveur — le serveur ne les appelle jamais. Ils tournent donc derrière n'importe quel NAT/pare-feu.</div>
       </div>
-
-      <div class="node-type-card" style="border-color:var(--amber)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--amber-dim);color:var(--amber)">GVY</span>
-          <span class="ntc-name">Groovy</span>
+      <div class="card accent-amber">
+        <div class="card-title">⏱ Garde-fous</div>
+        <div class="card-body">
+          • Long-poll ~25 s (<code>WORKER_LONG_POLL_MS</code>) ; une nouvelle répartition réveille l'attente immédiatement.<br>
+          • Timeout dur par nœud : <code>DISPATCH_TIMEOUT_MIN</code> (5 min).<br>
+          • <strong>Reaper</strong> (30 s) : annule les jobs d'un worker muet depuis <code>WORKER_OFFLINE_TIMEOUT_MS</code> (60 s).
         </div>
-        <div class="ntc-where where-worker">⇄ Worker (Java 11+)</div>
-        <div class="ntc-desc">Via <code style="font-family:var(--font-mono)">groovyExec.jar</code> embarqué. Idéal pour les intégrations JVM.</div>
-        <div class="ntc-code">def vars = new JsonSlurper()<br>  .parse(new File("vars.json"))</div>
       </div>
-
-      <div class="node-type-card" style="border-color:var(--purple)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:oklch(0.48 0.19 292 / 0.12);color:var(--purple)">PS</span>
-          <span class="ntc-name">PowerShell</span>
+    </div>
+    <div class="col">
+      <div class="card" style="padding:24px 28px;">
+        <div class="card-title">Cycle de vie d'un job</div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+          <div class="diag-box blue">dispatchToWorker → insert worker_job (pending)</div>
+          <div class="arrow">↓</div>
+          <div class="diag-box amber">Worker GET /jobs — long-poll ouvert</div>
+          <div class="arrow">↓</div>
+          <div class="diag-box">ack → status → log* → (artifacts par sha)</div>
+          <div class="arrow">↓</div>
+          <div class="diag-box green">complete → l'exécuteur poursuit le DAG</div>
         </div>
-        <div class="ntc-where where-worker">⇄ Worker (pwsh)</div>
-        <div class="ntc-desc">Scripts Windows/cross-platform. Variables en arguments nommés.</div>
-        <div class="ntc-code">param($VARIABLE_NAME)<br>Write-Host $VARIABLE_NAME</div>
       </div>
-
-      <div class="node-type-card">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--bg3);color:var(--text)">BAT</span>
-          <span class="ntc-name">Batch / Shell</span>
-        </div>
-        <div class="ntc-where where-worker">⇄ Worker (cmd / sh)</div>
-        <div class="ntc-desc">Scripts système natifs. Batch sur Windows, Shell sur Linux/macOS.</div>
-        <div class="ntc-code">@echo off<br>echo %VARIABLE_NAME%</div>
-      </div>
-
-      <div class="node-type-card" style="border-color:var(--red)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--red-dim);color:var(--red)">PW</span>
-          <span class="ntc-name">Playwright</span>
-        </div>
-        <div class="ntc-where where-worker">⇄ Worker (chromium)</div>
-        <div class="ntc-desc">Automatisation navigateur. Scraping, tests E2E, captures d'écran.</div>
-        <div class="ntc-code">const page = await browser.newPage();<br>await page.goto(url);</div>
-      </div>
-
-      <div class="node-type-card" style="border-color:var(--muted);border-style:dashed">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--bg3);color:var(--muted)">↓</span>
-          <span class="ntc-name" style="color:var(--muted)">Sous-flux</span>
-        </div>
-        <div class="ntc-where" style="color:var(--muted)">⟳ Récursion</div>
-        <div class="ntc-desc">Référence un autre flux par ID. Son propre worker, son propre enregistrement d'exécution.</div>
-        <div class="ntc-code" style="color:var(--muted)">type: "flow"<br>flowId: "abc123"</div>
-      </div>
-
-      <div class="node-type-card" style="border-color:var(--green)">
-        <div class="ntc-header">
-          <span class="ntc-badge" style="background:var(--green-dim);color:var(--green)">◇</span>
-          <span class="ntc-name">Condition</span>
-        </div>
-        <div class="ntc-where where-both" style="color:var(--green)">✓ Serveur (in-process)</div>
-        <div class="ntc-desc">Branchement conditionnel dans le DAG. Évalue une expression JS.</div>
-        <div class="ntc-code">return vars.status === "ok"<br>  ? "branche-A" : "branche-B";</div>
+      <div class="card accent-blue">
+        <div class="card-body" style="font-size:19px;"><strong>Logs en direct.</strong> Streamés en <strong>SSE</strong> (<code>GET /executions/:id/stream</code>). EventSource ne pose pas d'en-têtes → JWT accepté en <code>?token=</code>. Les workers poussent leurs lignes vers <code>/jobs/:id/log</code>, redistribuées aux abonnés.</div>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">07 / 25</div>
+  <div class="slide-num">07 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 6 — WORKERS & LONG-POLL
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Workers distants">
-  <style>
-    #s6-layout {
-      position: absolute; inset: 90px 120px 80px;
-      display: flex; gap: 72px;
-    }
-    #s6-left { flex: 1; display: flex; flex-direction: column; gap: 36px; }
-    #s6-right { flex: 1; display: flex; flex-direction: column; gap: 24px; }
-
-    .lifecycle-step {
-      display: flex; align-items: center; gap: 22px;
-    }
-    .lc-num {
-      width: 48px; height: 48px; border-radius: 50%;
-      background: var(--bg3); border: 2px solid var(--border);
-      font-family: var(--font-mono); font-size: 22px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .lc-num.active { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
-    .lc-content { font-size: 24px; line-height: 1.4; }
-    .lc-content em { color: var(--amber); font-style: normal; font-family: var(--font-mono); }
-    .lc-content .sub { color: var(--muted); font-size: 20px; }
-
-    .lc-connector { width: 2px; height: 22px; background: var(--border); margin-left: 23px; }
-
-    .poll-flow {
-      display: flex; flex-direction: column; gap: 0;
-    }
-    .pf-step {
-      display: grid;
-      grid-template-columns: 160px 1fr;
-      gap: 20px; align-items: center;
-      padding: 18px 24px;
-      border-radius: 10px;
-    }
-    .pf-step:hover { background: var(--bg2); }
-    .pf-actor {
-      font-family: var(--font-mono); font-size: 18px; font-weight: 600;
-      padding: 6px 14px; border-radius: 8px; text-align: center;
-    }
-    .pf-actor.srv { background: var(--amber-dim); color: var(--amber); }
-    .pf-actor.wkr { background: var(--green-dim); color: var(--green); }
-    .pf-desc { font-size: 21px; color: var(--text); }
-    .pf-desc .mono { font-family: var(--font-mono); color: var(--muted); font-size: 18px; }
-    .pf-connector { height: 18px; width: 2px; background: var(--border); margin: 0 79px; }
-
-    .reaper-box {
-      background: var(--red-dim);
-      border: 1.5px solid var(--red);
-      border-radius: 12px;
-      padding: 22px 28px;
-      font-size: 22px; line-height: 1.5;
-    }
-    .reaper-box strong { color: var(--red); font-family: var(--font-mono); }
-  </style>
-  <div id="s6-layout">
-    <div id="s6-left">
+<!-- ═══ SLIDE 8 — GIT MATÉRIALISATION ═══ -->
+<section data-label="Git — matérialisation">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
       <div>
-        <div class="section-label">Workers</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Architecture distribuée<br>— long-poll</h1>
+        <div class="section-label">Versionnage · nouveau</div>
+        <h1 class="s-title">Chaque flux est<br>un dépôt git</h1>
+        <div class="s-sub">Pas de <code>.git</code> sur disque : objets et refs sont des documents en base (<code>git_objects</code>, <code>git_refs</code>), scopés par flux. Un flux JSON est projeté dans une arborescence lisible — et relue <strong style="color:var(--text)">sans perte</strong>.</div>
       </div>
-
-      <div>
-        <div class="lifecycle-step">
-          <div class="lc-num active">1</div>
-          <div class="lc-content">
-            <div>Worker démarre → <em>POST /workers/register</em></div>
-            <div class="sub">Protégé par <em>WORKER_REGISTRATION_SECRET</em>. Reçoit <em>&#123; id, token &#125;</em>.</div>
-          </div>
-        </div>
-        <div class="lc-connector"></div>
-        <div class="lifecycle-step">
-          <div class="lc-num active">2</div>
-          <div class="lc-content">
-            <div>Long-poll <em>GET /workers/:id/jobs</em></div>
-            <div class="sub">Le serveur garde la connexion ouverte ~25 s. Réveil immédiat à la dispatch.</div>
-          </div>
-        </div>
-        <div class="lc-connector"></div>
-        <div class="lifecycle-step">
-          <div class="lc-num active">3</div>
-          <div class="lc-content">
-            <div>Worker exécute le job</div>
-            <div class="sub"><em>ack → status → log* → complete</em></div>
-          </div>
-        </div>
-        <div class="lc-connector"></div>
-        <div class="lifecycle-step">
-          <div class="lc-num active">4</div>
-          <div class="lc-content">
-            <div>Serveur résout l'awaiter → DAG continue</div>
-            <div class="sub">Logs redistribués aux abonnés SSE en temps réel.</div>
-          </div>
-        </div>
-        <div class="lc-connector"></div>
-        <div class="lifecycle-step">
-          <div class="lc-num active">♡</div>
-          <div class="lc-content">
-            <div>Heartbeat <em>POST /workers/:id/heartbeat</em></div>
-            <div class="sub">Toutes les 10 s. Le reaper détecte l'absence > 60 s.</div>
-          </div>
-        </div>
+      <div class="card accent-blue">
+        <div class="card-body" style="font-size:19px;">Les noms de fichiers dérivent du libellé du nœud (camelCase) ; <code>relations.json</code> mappe chaque <em>id de nœud → chemin exact</em>, donc le round-trip survit aux collisions. Les fichiers ajoutés au clone (<code>.gitignore</code>, <code>README</code>…) sont <strong>reportés</strong>, pas écrasés.</div>
       </div>
     </div>
-
-    <div id="s6-right">
-      <h2 style="font-size:32px;font-weight:600;color:var(--muted)">Cycle de vie d'un job</h2>
-
-      <div class="poll-flow">
-        <div class="pf-step">
-          <div class="pf-actor srv">Serveur</div>
-          <div class="pf-desc">Insère <code class="mono">worker_jobs</code> (<em style="color:var(--amber);font-family:var(--font-mono)">status=pending</em>) + enregistre awaiter en mémoire</div>
-        </div>
-        <div class="pf-connector"></div>
-        <div class="pf-step">
-          <div class="pf-actor wkr">Worker</div>
-          <div class="pf-desc"><code class="mono">GET /jobs</code> — long-poll réveillé par la dispatch</div>
-        </div>
-        <div class="pf-connector"></div>
-        <div class="pf-step">
-          <div class="pf-actor wkr">Worker</div>
-          <div class="pf-desc"><code class="mono">POST /ack</code> → <em style="color:var(--amber);font-family:var(--font-mono)">acked</em> → <code class="mono">POST /status</code> → <em style="color:var(--amber);font-family:var(--font-mono)">running</em></div>
-        </div>
-        <div class="pf-connector"></div>
-        <div class="pf-step">
-          <div class="pf-actor wkr">Worker</div>
-          <div class="pf-desc"><code class="mono">POST /log</code> × N — redistribué SSE → navigateur</div>
-        </div>
-        <div class="pf-connector"></div>
-        <div class="pf-step">
-          <div class="pf-actor wkr">Worker</div>
-          <div class="pf-desc"><code class="mono">POST /complete</code> — résultat final (idempotent)</div>
-        </div>
-        <div class="pf-connector"></div>
-        <div class="pf-step">
-          <div class="pf-actor srv">Serveur</div>
-          <div class="pf-desc">Résout l'awaiter → <em style="color:var(--green);font-family:var(--font-mono)">success</em> ou <em style="color:var(--red);font-family:var(--font-mono)">error</em></div>
-        </div>
+    <div class="col">
+      <div class="code-block">
+        <span class="comment"># Arborescence matérialisée d'un flux</span><br>
+        <span class="kw">nodes/</span>&lt;titreCamel&gt;.<span class="key">ext</span>   <span class="comment"># 1 fichier / nœud feuille (code)</span><br>
+        <span class="kw">sessions/</span>&lt;titreCamel&gt;/   <span class="comment"># 1 dossier / nœud 'flow'</span><br>
+        &nbsp;&nbsp;<span class="comment"># sous-graphe, récursivement</span><br>
+        <span class="kw">artifacts/</span>&lt;name&gt;        <span class="comment"># pointeur sha256 (pas les bytes)</span><br>
+        <span class="kw">relations.json</span>          <span class="comment"># nodes (sans code) + edges</span><br>
+        &nbsp;&nbsp;<span class="comment"># + meta + maps id→chemin</span>
       </div>
-
-      <div class="reaper-box" style="margin-top:16px;">
-        <strong>Reaper</strong> — balayage toutes les 30 s. Un worker silencieux depuis &gt; <strong>60 s</strong> → jobs <strong>cancelled</strong> → awaiter rejeté → exécuteur non bloqué.
+      <div class="card">
+        <div class="card-title">↻ Extensions par langage</div>
+        <div class="card-body" style="font-size:18px;"><span class="pill" style="font-size:16px">.ps1</span> <span class="pill" style="font-size:16px">.py</span> <span class="pill" style="font-size:16px">.js</span> <span class="pill" style="font-size:16px">.groovy</span> <span class="pill" style="font-size:16px">.bat</span> <span class="pill" style="font-size:16px">.sh</span> <span class="pill" style="font-size:16px">.sql</span> <span class="pill" style="font-size:16px">.json</span> … — code éditable hors de l'app, re-importé au push.</div>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">08 / 25</div>
+  <div class="slide-num">08 / 30</div>
 </section>
 
+<!-- ═══ SLIDE 9 — GIT COMMITS & BRANCHES ═══ -->
+<section data-label="Git — commits & branches">
+  <div class="layout">
+    <div class="col">
+      <div>
+        <div class="section-label">Versionnage · nouveau</div>
+        <h1 class="s-title">Commits & branches</h1>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title">⎙ Décision amender ou commiter</div>
+        <div class="card-body">Une sauvegarde de l'éditeur compare les <strong>arbres git</strong> (insensible au formatage) :<br>
+          • nœud ajouté/supprimé → <strong>nouveau commit</strong><br>
+          • édits mineurs (positions, edges, libellés) → <strong>amende HEAD</strong><br>
+          • contenu d'un nœud modifié → nouveau commit, <em>sauf</em> session d'édition continue sur le même nœud → amende.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="font-size:19px;">L'amend ne touche <strong>que</strong> les commits d'autosave UI (préfixe <code>Save by </code>). Jamais un commit venu d'un push, d'un checkpoint manuel, d'une restauration ou d'un import.</div>
+      </div>
+    </div>
+    <div class="col" style="flex:0.95;">
+      <div class="card accent-blue">
+        <div class="card-title">⎇ Branches</div>
+        <div class="card-body">Un flux porte une <code>activeBranch</code> (défaut <code>main</code>). L'exécuteur lance toujours le <strong>HEAD de la branche active</strong>, matérialisé dans le document.</div>
+      </div>
+      <table class="gtable" style="font-size:18px;">
+        <thead><tr><th>Action</th><th>Effet</th></tr></thead>
+        <tbody>
+          <tr><td class="k">create</td><td class="m">Nouvelle branche depuis le HEAD courant ou un commit/branche <code>from</code>.</td></tr>
+          <tr><td class="k">checkout</td><td class="m">Bascule la branche active + re-matérialise son HEAD dans le doc.</td></tr>
+          <tr><td class="k">reset · head</td><td class="m"><code>reset --hard</code> : jette les descendants.</td></tr>
+          <tr><td class="k">reset · root</td><td class="m">Fait du commit la nouvelle racine : jette les ancêtres.</td></tr>
+        </tbody>
+      </table>
+      <div class="card" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Après un rework, les objets git inatteignables et les blobs d'artefacts orphelins sont <strong>GC'd dans la foulée</strong>.</div></div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">09 / 30</div>
+</section>
 
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 7 — DÉCLENCHEURS
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SLIDE 10 — GIT SMART-HTTP ═══ -->
+<section data-label="Git smart-HTTP">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
+      <div>
+        <div class="section-label">Versionnage · nouveau</div>
+        <h1 class="s-title">Clone & push<br>avec git standard</h1>
+        <div class="s-sub">Chaque flux est exposé sous <code>/git/:flowId</code>. Un client git ordinaire peut <code>clone</code> / <code>pull</code> / <code>push</code>. Implémentation smart-HTTP <strong style="color:var(--text)">maison</strong> (report-status, thin-packs, upload-pack).</div>
+      </div>
+      <div class="card accent-red">
+        <div class="card-title">⚿ Auth HTTP Basic</div>
+        <div class="card-body">Login + <strong>clé API</strong> (pas le mot de passe — les corps git sont binaires <code>application/x-git-*</code>).</div>
+      </div>
+      <div class="card">
+        <div class="card-body" style="font-size:19px;">Un <strong>push</strong> met à jour le flux : l'arbre poussé est relu en document, les pointeurs d'artefacts résolus, et un nouveau commit devient le HEAD de la branche.</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="code-block">
+        <span class="comment"># Cloner un flux</span><br>
+        <span class="kw">git</span> clone http://<span class="key">login</span>:<span class="key">apikey</span>@host:3939<span class="url">/git/&lt;flowId&gt;</span> flux<br><br>
+        <span class="comment"># Éditer nodes/*.py, sessions/…, relations.json</span><br>
+        <span class="kw">git</span> add . &amp;&amp; <span class="kw">git</span> commit -m <span class="str">"edit"</span><br>
+        <span class="kw">git</span> push<br><br>
+        <span class="comment"># 3 endpoints (hors /api/v1) :</span><br>
+        <span class="comment">#   GET  /git/:id/info/refs</span><br>
+        <span class="comment">#   POST /git/:id/git-upload-pack   (fetch)</span><br>
+        <span class="comment">#   POST /git/:id/git-receive-pack  (push)</span>
+      </div>
+      <div class="card accent-green" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Les artefacts apparaissent dans le clone sous <code>artifacts/</code> en <strong>pointeurs</strong> sha256 (style git-LFS), pas en bytes.</div></div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">10 / 30</div>
+</section>
+
+<!-- ═══ SLIDE 11 — VARIANTES ═══ -->
+<section data-label="Variantes">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
+      <div>
+        <div class="section-label">Exécution · nouveau</div>
+        <h1 class="s-title">Variantes (« subrows »)</h1>
+        <div class="s-sub">Un flux peut déclarer des <code>variants[]</code> : la même définition exécutée avec un <strong style="color:var(--text)">worker</strong> et/ou une <strong style="color:var(--text)">branche</strong> différents — lançable et planifiable indépendamment.</div>
+      </div>
+      <div class="code-block sm">
+        <span class="kw">interface</span> <span class="met">FlowVariant</span> {<br>
+        &nbsp;&nbsp;id: <span class="key">string</span>;<br>
+        &nbsp;&nbsp;workerId: <span class="key">string</span>;  <span class="comment">// '' = local/serveur</span><br>
+        &nbsp;&nbsp;branch: <span class="key">string</span>;<br>
+        }
+      </div>
+    </div>
+    <div class="col">
+      <div class="card accent-blue">
+        <div class="card-title">▶ À l'exécution</div>
+        <div class="card-body"><code>POST /flows/:id/execute</code> accepte des overrides <code>{ workerId, branch }</code>. <code>workerId: ""</code> force l'exécution locale. L'accès au worker effectif est contrôlé (403 si interdit).</div>
+      </div>
+      <div class="card accent-amber">
+        <div class="card-title">⏱ Planification de variante</div>
+        <div class="card-body">Les schedules / triggers d'une variante portent <code>variantId</code> + <code>workerId</code> + <code>branch</code>. Le cronScheduler évite les <strong>« ghost runs »</strong> des variantes supprimées.</div>
+      </div>
+      <div class="card" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Cas d'usage : un même pipeline tournant sur <em>dev-worker</em> (branche <code>dev</code>) et <em>prod-worker</em> (branche <code>main</code>), chacun sur son propre cron.</div></div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">11 / 30</div>
+</section>
+
+<!-- ═══ SLIDE 12 — ARTEFACTS ═══ -->
+<section data-label="Artefacts">
+  <div class="layout">
+    <div class="col">
+      <div>
+        <div class="section-label">Artefacts · nouveau</div>
+        <h1 class="s-title">Adressés par contenu</h1>
+        <div class="s-sub">Jars, CSV, binaires, archives — joints au flux, déposés sur disque avant chaque run. Le corps est stocké <strong style="color:var(--text)">une seule fois</strong> par <code>sha256</code> ; le flux et les jobs ne gardent qu'une ref <code>{ name, sha }</code>.</div>
+      </div>
+      <div class="step"><div class="step-num">1</div><div class="step-body"><div class="t">Stockage CAS</div><div class="d"><code>artifact_blobs</code> par sha256. Dédup entre nœuds et entre runs. Bytes en BinData (Mongo) / base64 (NeDB).</div></div></div>
+      <div class="connector"></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><div class="t">Chunking &gt; 8 Mo</div><div class="d">Découpé dans <code>artifact_chunks</code> (contourne le plafond BSON de 16 Mo). Download streamé, jamais tout en mémoire.</div></div></div>
+      <div class="connector"></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><div class="t">Extraction au run</div><div class="d">Écrit dans <code>EXECUTION_DIR</code>. Worker : télécharge chaque corps par sha avant de lancer le nœud.</div></div></div>
+      <div class="connector"></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><div class="t">Auto-décompression</div><div class="d">Archive (.zip/.tar/.gz/.7z) extraite via <code>tar</code> (repli <code>7z</code>), puis supprimée. Garder via <code>KEEP_ARTIFACTS</code>.</div></div></div>
+    </div>
+    <div class="col" style="flex:0.92;">
+      <div class="card accent-green">
+        <div class="card-title">⤓ Upload / download</div>
+        <div class="card-body">Upload en <strong>binaire brut</strong> (<code>POST /flows/:id/artifacts</code>, limite <code>ARTIFACT_UPLOAD_LIMIT</code> 1 Go) — évite l'inflation base64. Download streamé <code>/:sha/raw</code> ou base64 <code>/:sha</code>.</div>
+      </div>
+      <div class="card accent-blue">
+        <div class="card-title">⎇ Versionné en pointeur git</div>
+        <div class="card-body">Committé dans git en pointeur sha256 (git-LFS). Un clone récupère le pointeur, pas le fichier.</div>
+      </div>
+      <div class="card accent-red">
+        <div class="card-title">⚿ Path-traversal + GC</div>
+        <div class="card-body"><code>safeArtifactPath</code> rejette chemins absolus, <code>..</code>, noms vides. Le <strong>janitor</strong> réclame les blobs non référencés (par job, flow, ou pointeur git) hors fenêtre <code>ARTIFACT_GC_MIN_AGE_MS</code>.</div>
+      </div>
+      <div class="card" style="padding:14px 22px;"><div class="card-body" style="font-size:18px;"><strong>Héritage sous-flux :</strong> parent + siens ; en cas de collision, <strong style="color:var(--amber)">le parent gagne</strong>.</div></div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">12 / 30</div>
+</section>
+
+<!-- ═══ SLIDE 13 — DÉCLENCHEURS ═══ -->
 <section data-label="Déclencheurs">
-  <style>
-    #s7-layout {
-      position: absolute; inset: 90px 120px 80px;
-      display: flex; flex-direction: column; gap: 48px;
-    }
-    #s7-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; flex: 1;
-    }
-    .trigger-card {
-      border-radius: 20px; border: 2px solid var(--border);
-      padding: 44px 36px;
-      display: flex; flex-direction: column; gap: 20px;
-      background: var(--bg2);
-    }
-    .trigger-card .tc-icon {
-      font-size: 52px; line-height: 1;
-    }
-    .trigger-card .tc-name { font-size: 32px; font-weight: 700; }
-    .trigger-card .tc-how  { font-family: var(--font-mono); font-size: 19px; padding: 8px 14px; border-radius: 8px; background: var(--bg3); border: 1px solid var(--border); }
-    .trigger-card .tc-desc { font-size: 22px; color: var(--muted); line-height: 1.5; text-wrap: pretty; flex: 1; }
-    .trigger-card .tc-example { font-family: var(--font-mono); font-size: 19px; color: var(--muted); }
-  </style>
-  <div id="s7-layout">
+  <div class="layout" style="flex-direction:column; gap:28px;">
     <div>
       <div class="section-label">Planification</div>
-      <h1 style="font-size:62px;font-weight:700;letter-spacing:-1px">4 façons de déclencher un flux</h1>
+      <h1 class="s-title">4 façons de déclencher un flux</h1>
     </div>
-    <div id="s7-grid">
-      <div class="trigger-card" style="border-color:var(--blue)">
-        <div class="tc-icon">⏱</div>
-        <div class="tc-name" style="color:var(--blue)">Cron</div>
-        <div class="tc-how" style="color:var(--blue)">POST /schedules/cron</div>
-        <div class="tc-desc"><code style="font-family:var(--font-mono)">node-cron</code> charge les lignes <code style="font-family:var(--font-mono)">type=cron</code> au démarrage. Rechargement à chaud à chaque mise à jour.</div>
-        <div class="tc-example">cronExpr: "0 9 * * 1-5"<br><span style="color:var(--muted)">// Lundi–Vendredi à 9h</span></div>
-      </div>
-
-      <div class="trigger-card" style="border-color:var(--green)">
-        <div class="tc-icon">📁</div>
-        <div class="tc-name" style="color:var(--green)">Événement</div>
-        <div class="tc-how" style="color:var(--green)">POST /schedules/event</div>
-        <div class="tc-desc"><code style="font-family:var(--font-mono)">eventBus.watchInbox()</code> surveille <code style="font-family:var(--font-mono)">&lt;WORK_DIR&gt;/inbox</code>. Dépôt d'un fichier → <code style="font-family:var(--font-mono)">file.arrived</code>.</div>
-        <div class="tc-example">eventName: "file.arrived"<br>eventName: "flow.completed"<br>eventName: "flow.failed"</div>
-      </div>
-
-      <div class="trigger-card" style="border-color:var(--amber)">
-        <div class="tc-icon">🔗</div>
-        <div class="tc-name" style="color:var(--amber)">HTTP Trigger</div>
-        <div class="tc-how" style="color:var(--amber)">POST /schedules/api-trigger</div>
-        <div class="tc-desc">Génère un token d'URL publique sans auth. Expiration automatique. Révocable à tout moment.</div>
-        <div class="tc-example">GET /trigger/:token<br><span style="color:var(--muted)">// public, aucun header</span></div>
-      </div>
-
-      <div class="trigger-card" style="border-color:var(--purple)">
-        <div class="tc-icon">▶</div>
-        <div class="tc-name" style="color:var(--purple)">À la demande</div>
-        <div class="tc-how" style="color:var(--purple)">POST /flows/:id/execute</div>
-        <div class="tc-desc">Depuis l'interface web ou via l'API REST. Renvoie immédiatement l'<code style="font-family:var(--font-mono)">executionId</code>.</div>
-        <div class="tc-example">→ &#123; executionId: "abc123" &#125;<br><span style="color:var(--muted)">// streamer via SSE ensuite</span></div>
-      </div>
+    <div class="feat-grid" style="grid-template-columns:repeat(4,1fr);">
+      <div class="feat b"><div class="ic">▶</div><div class="t">À la demande</div><div class="d">Bouton « Execute » ou <code>POST /flows/:id/execute</code>. Admin / operator. Overrides de variante possibles.</div></div>
+      <div class="feat a"><div class="ic">⏱</div><div class="t">Cron</div><div class="d"><code>cronScheduler</code> charge les lignes <code>type=cron</code> et enregistre des jobs node-cron.</div></div>
+      <div class="feat g"><div class="ic">📂</div><div class="t">Événement</div><div class="d"><code>eventBus</code> surveille <code>&lt;WORK_DIR&gt;/inbox</code> → <code>file.arrived</code>. Aussi <code>flow.completed</code> / <code>flow.failed</code>.</div></div>
+      <div class="feat p"><div class="ic">🔗</div><div class="t">Trigger HTTP</div><div class="d"><code>GET /trigger/:token</code> non authentifié. Tokens à expiration auto (balayés chaque minute).</div></div>
+    </div>
+    <div class="card accent-blue" style="display:flex; gap:24px; align-items:center;">
+      <div style="font-size:30px;">⧉</div>
+      <div class="card-body" style="font-size:20px;">Cron et trigger peuvent cibler une <strong>variante</strong> : la ligne de schedule porte alors <code>variantId</code> + <code>workerId</code> + <code>branch</code>, et lance le flux avec cet override worker/branche.</div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">09 / 25</div>
+  <div class="slide-num">13 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 8 — AUTH & SÉCURITÉ
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Auth & Sécurité">
-  <style>
-    #s8-layout {
-      position: absolute; inset: 90px 120px 80px;
-      display: flex; gap: 72px;
-    }
-    #s8-left { flex: 1; display: flex; flex-direction: column; gap: 28px; }
-    #s8-right { flex: 1; display: flex; flex-direction: column; gap: 28px; }
-
-    .auth-row {
-      display: flex; align-items: flex-start; gap: 20px;
-      padding: 26px 30px;
-      background: var(--bg2); border: 1.5px solid var(--border); border-radius: 14px;
-    }
-    .auth-row .ar-badge {
-      font-family: var(--font-mono); font-size: 15px; font-weight: 700;
-      padding: 5px 12px; border-radius: 8px; flex-shrink: 0; margin-top: 2px;
-    }
-    .auth-row .ar-content { flex: 1; }
-    .auth-row .ar-title { font-size: 24px; font-weight: 600; margin-bottom: 6px; }
-    .auth-row .ar-desc { font-size: 20px; color: var(--muted); line-height: 1.5; }
-    .auth-row .ar-desc code { font-family: var(--font-mono); color: var(--text); }
-
-    .rbac-table { width: 100%; border-collapse: collapse; }
-    .rbac-table th, .rbac-table td {
-      padding: 14px 20px; text-align: left; font-size: 22px;
-      border-bottom: 1px solid var(--border);
-    }
-    .rbac-table th { font-family: var(--font-mono); font-size: 18px; color: var(--muted); font-weight: 600; }
-    .rbac-table td:first-child { font-family: var(--font-mono); font-weight: 600; }
-    .role-admin { color: var(--red); }
-    .role-op { color: var(--amber); }
-    .role-view { color: var(--green); }
-    .check { color: var(--green); font-size: 20px; }
-    .cross { color: var(--muted); font-size: 20px; }
-
-    .secrets-box {
-      background: var(--bg2); border: 1.5px solid var(--amber); border-radius: 14px;
-      padding: 28px 32px;
-    }
-    .secrets-box .sb-title { font-size: 26px; font-weight: 600; color: var(--amber); margin-bottom: 14px; }
-    .secrets-box .sb-flow {
-      display: flex; align-items: center; gap: 12px;
-      font-family: var(--font-mono); font-size: 19px; flex-wrap: wrap;
-    }
-    .sb-node {
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
-      padding: 8px 16px;
-    }
-    .sb-arr { color: var(--muted); }
-  </style>
-  <div id="s8-layout">
-    <div id="s8-left">
+<!-- ═══ SLIDE 14 — AUTH & RBAC ═══ -->
+<section data-label="Auth & RBAC">
+  <div class="layout">
+    <div class="col">
       <div>
         <div class="section-label">Sécurité</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Auth & Autorisation</h1>
+        <h1 class="s-title">Auth & autorisation</h1>
       </div>
-
-      <div class="auth-row" style="border-color:var(--blue)">
-        <div class="ar-badge" style="background:var(--blue-dim);color:var(--blue)">JWT</div>
-        <div class="ar-content">
-          <div class="ar-title">Session JWT</div>
-          <div class="ar-desc"><code>Authorization: Bearer &lt;jwt&gt;</code><br>Accès 8h, refresh 7j (secret dérivé). Aussi via <code>?token=</code> (SSE, téléchargements).</div>
-        </div>
+      <div class="card accent-blue">
+        <div class="card-title">🔑 Deux identifiants</div>
+        <div class="card-body"><strong>JWT</strong> <code>Bearer &lt;jwt&gt;</code> — émis par <code>/auth/login</code> (8 h) + <code>/auth/refresh</code> (7 j). Accepté en <code>?token=</code> pour SSE/downloads.<br><strong>Clé API</strong> <code>ApiKey &lt;rawkey&gt;</code> — par utilisateur, stockée hashée SHA-256.</div>
       </div>
-
-      <div class="auth-row" style="border-color:var(--green)">
-        <div class="ar-badge" style="background:var(--green-dim);color:var(--green)">KEY</div>
-        <div class="ar-content">
-          <div class="ar-title">Clé API</div>
-          <div class="ar-desc"><code>Authorization: ApiKey &lt;rawkey&gt;</code><br>Stockée hashée SHA-256. <code>rawKey</code> montrée une seule fois à la création.</div>
-        </div>
-      </div>
-
-      <div class="auth-row" style="border-color:var(--purple)">
-        <div class="ar-badge" style="background:oklch(0.48 0.19 292 / 0.12);color:var(--purple)">SSO</div>
-        <div class="ar-content">
-          <div class="ar-title">Proxy Auth / CAS</div>
-          <div class="ar-desc"><code>ORCHESTRATOR_PROXYAUTH_URL</code> + <code>_REGEX</code>. Le front redirige automatiquement vers le login SSO. Comptes SSO-only : mot de passe désactivé.</div>
-        </div>
-      </div>
-
-      <div class="auth-row" style="border-color:var(--amber)">
-        <div class="ar-badge" style="background:var(--amber-dim);color:var(--amber)">WRK</div>
-        <div class="ar-content">
-          <div class="ar-title">Auth Workers</div>
-          <div class="ar-desc">Registration via <code>WORKER_REGISTRATION_SECRET</code>. Ensuite bearer propre au worker, hashé, comparé en temps constant.</div>
-        </div>
+      <div class="card">
+        <div class="card-title">⇄ Auth des workers (à part)</div>
+        <div class="card-body"><code>/workers/register</code> protégé par <code>WORKER_REGISTRATION_SECRET</code> ; renvoie un token bearer propre au worker, exigé partout ailleurs (comparé en temps constant).</div>
       </div>
     </div>
-
-    <div id="s8-right">
-      <h2 style="font-size:34px;font-weight:600;margin-bottom:4px;">RBAC — 3 rôles</h2>
-      <div class="card" style="padding:0;overflow:hidden">
-        <table class="rbac-table">
-          <thead>
-            <tr>
-              <th>Rôle</th>
-              <th>Lire</th>
-              <th>Exécuter</th>
-              <th>Admin</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="role-admin">admin</td>
-              <td class="check">✓</td>
-              <td class="check">✓</td>
-              <td class="check">✓</td>
-            </tr>
-            <tr>
-              <td class="role-op">operator</td>
-              <td class="check">✓</td>
-              <td class="check">✓</td>
-              <td class="cross">—</td>
-            </tr>
-            <tr>
-              <td class="role-view">viewer</td>
-              <td class="check">✓</td>
-              <td class="cross">—</td>
-              <td class="cross">—</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="secrets-box">
-        <div class="sb-title">⚿ Secrets AES-256-GCM</div>
-        <div class="sb-flow">
-          <div class="sb-node">$&#123;&#123; secrets.TOKEN &#125;&#125;</div>
-          <div class="sb-arr">→</div>
-          <div class="sb-node">Résolu serveur</div>
-          <div class="sb-arr">→</div>
-          <div class="sb-node">Injecté en mémoire</div>
-          <div class="sb-arr">→</div>
-          <div class="sb-node" style="color:var(--green)">Jamais loggé</div>
+    <div class="col" style="flex:0.95;">
+      <div class="card accent-green">
+        <div class="card-title">👤 RBAC — 3 rôles</div>
+        <div class="card-body">
+          <span class="tag tag-red" style="font-size:18px">admin</span> tout &nbsp; <span class="tag tag-amber" style="font-size:18px">operator</span> exécuter / gérer &nbsp; <span class="tag tag-blue" style="font-size:18px">viewer</span> lecture seule<br><br>
+          <code>requireRole(...)</code> protège les routes. Suppression d'exécutions : admin = toutes ; operator = les siennes.
         </div>
-        <div style="margin-top:14px;font-size:19px;color:var(--muted);text-wrap:pretty;">Clé maître <code style="font-family:var(--font-mono)">ORCHESTRATOR_MASTER_KEY</code> — AES-256-GCM au repos.<br><strong style="color:var(--amber)">Ne jamais changer après création des secrets.</strong></div>
       </div>
-
-      <div class="card" style="border-color:var(--red)">
-        <div style="font-size:22px;font-weight:600;color:var(--red);margin-bottom:10px;">⚠ Garde-fou production</div>
-        <div style="font-size:21px;color:var(--muted);line-height:1.6;">
-          Avec <code style="font-family:var(--font-mono)">NODE_ENV=production</code>, le serveur <strong style="color:var(--red)">refuse de démarrer</strong> si <code style="font-family:var(--font-mono)">JWT_SECRET</code>, <code style="font-family:var(--font-mono)">ORCHESTRATOR_MASTER_KEY</code>, <code style="font-family:var(--font-mono)">WORKER_REGISTRATION_SECRET</code> ou <code style="font-family:var(--font-mono)">ADMIN_PASSWORD</code> sont sur leurs valeurs par défaut.
+      <div class="card accent-purple">
+        <div class="card-title">⛉ Politiques d'accès workers · nouveau</div>
+        <div class="card-body">Un worker porte <code>access = { mode, roles[], users[] }</code> :<br>
+          • <strong>allow</strong> = seuls les listés peuvent l'utiliser<br>
+          • <strong>deny</strong> = les listés exclus, les autres OK<br>
+          • absente = ouvert à tous.<br>
+          Les admins gardent toujours l'accès. Gate appliqué à <code>execute</code>.
         </div>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">10 / 25</div>
+  <div class="slide-num">14 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 9 — API REST
-═══════════════════════════════════════════════════════════ -->
-<section data-label="API REST">
-  <style>
-    #s9-layout {
-      position: absolute; inset: 80px 120px 65px;
-      display: flex; gap: 56px;
-    }
-    #s9-left { flex: 1; display: flex; flex-direction: column; gap: 18px; }
-    #s9-right { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-
-    .api-group { display: flex; flex-direction: column; gap: 8px; }
-    .api-group-title {
-      font-family: var(--font-mono); font-size: 18px; font-weight: 700;
-      color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase;
-      padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
-    }
-    .api-row {
-      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-      border-radius: 8px; background: var(--bg2);
-    }
-    .api-row:hover { background: var(--bg3); }
-    .api-path {
-      font-family: var(--font-mono); font-size: 18px; color: var(--text); flex: 1;
-    }
-    .api-path .param { color: var(--blue); }
-    .api-desc { font-size: 17px; color: var(--muted); }
-  </style>
-  <div id="s9-layout">
-    <div id="s9-left">
+<!-- ═══ SLIDE 15 — SSO / PROXY-AUTH ═══ -->
+<section data-label="SSO / proxy-auth">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
       <div>
-        <div class="section-label">API REST</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Référence des endpoints</h1>
-        <div style="font-family:var(--font-mono);font-size:22px;color:var(--muted);margin-top:12px;">Base URL : <span style="color:var(--blue)">http://localhost:3939/api/v1</span></div>
+        <div class="section-label">Sécurité</div>
+        <h1 class="s-title">SSO / proxy-auth<br>(CAS)</h1>
+        <div class="s-sub">Quand <code>PROXYAUTH_URL</code> + <code>PROXYAUTH_REGEX</code> sont définis, le login SSO est activé. Toute route atteinte sans session redirige le navigateur vers <code>PROXYAUTH_LOGIN_URL</code> pour obtenir un ticket, puis l'échange.</div>
       </div>
-
-      <div class="api-group">
-        <div class="api-group-title">Auth</div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/auth/login</span><span class="api-desc">→ accessToken + refreshToken</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/auth/refresh</span><span class="api-desc">→ nouveau accessToken</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/ping</span><span class="api-desc">Santé — public</span></div>
+      <div class="card">
+        <div class="card-body" style="font-size:19px;"><code>/authProxy</code> valide le ticket externe (construit <code>service=&lt;DOMAIN&gt;:&lt;PORT&gt;</code>), extrait le login via la regex (groupe 1), et émet des tokens. Le formulaire mot de passe reste à <code>#/login</code> (échappatoire, sans redirection auto).</div>
       </div>
+      <div class="card accent-amber" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Un utilisateur <strong>sans <code>passwordHash</code></strong> est SSO-only : login mot de passe refusé, connexion par ticket uniquement.</div></div>
+    </div>
+    <div class="col">
+      <div class="card accent-blue">
+        <div class="card-title">⇲ Pont oauth_proxy</div>
+        <div class="card-body">Dossier <code>oauth_proxy/</code> : un fournisseur OAuth2 (Authorization Code) de test qui <strong>ponte Grafana → CAS</strong>. Endpoints <code>/authorize</code>, <code>/token</code>, <code>/userinfo</code>, discovery OIDC. Délègue l'auth à <code>authent_test_service</code>.</div>
+      </div>
+      <div class="code-block sm">
+        <span class="comment"># Variables proxy-auth (serveur)</span><br>
+        ORCHESTRATOR_PROXYAUTH_URL=<span class="url">…/validate</span><br>
+        ORCHESTRATOR_PROXYAUTH_REGEX=<span class="str">&lt;cas:user&gt;([^&lt;]+)&lt;/cas:user&gt;</span><br>
+        ORCHESTRATOR_PROXYAUTH_LOGIN_URL=<span class="url">…/login</span><br>
+        ORCHESTRATOR_PROXYAUTH_NAME=<span class="key">ticket</span>
+      </div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">15 / 30</div>
+</section>
 
+<!-- ═══ SLIDE 16 — ENDPOINTS ═══ -->
+<section data-label="Endpoints API">
+  <style>#s16 { position:absolute; inset:70px 110px 56px; display:flex; gap:48px; }
+    #s16 .col { flex:1; }</style>
+  <div id="s16">
+    <div class="col">
+      <div style="margin-bottom:18px;">
+        <div class="section-label" style="margin-bottom:8px;">Référence</div>
+        <h1 style="font-size:46px;font-weight:700;letter-spacing:-1px;">Endpoints</h1>
+        <div style="font-family:var(--font-mono);font-size:18px;color:var(--blue);margin-top:6px;">base : http://host:3939/api/v1</div>
+      </div>
       <div class="api-group">
         <div class="api-group-title">Flux</div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows</span><span class="api-desc">Liste tous les flux</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows</span><span class="api-desc">Créer un flux</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span></span><span class="api-desc">Graphe + planification + worker</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/execute</span><span class="api-desc">Lancer → executionId</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span>/branches</span><span class="api-desc">Branches git + active</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/artifacts</span><span class="api-desc">Upload artefact (binaire brut)</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/versions/<span class="param">:vid</span>/restore</span><span class="api-desc">Restaurer snapshot</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows</span><span class="api-desc">Liste</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/execute</span><span class="api-desc">Run (+ overrides variante)</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span>/branches</span><span class="api-desc">Branches git</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/branches/<span class="param">:n</span>/checkout</span><span class="api-desc">Basculer</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/flows/<span class="param">:id</span>/artifacts</span><span class="api-desc">Upload binaire</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/flows/<span class="param">:id</span>/versions</span><span class="api-desc">Snapshots</span></div>
       </div>
-
       <div class="api-group">
         <div class="api-group-title">Exécutions</div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/executions</span><span class="api-desc">Liste + filtres + pagination</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/executions/<span class="param">:id</span>/stream</span><span class="api-desc">Logs SSE en direct</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/executions/<span class="param">:id</span>/kill</span><span class="api-desc">Arrêter un run</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/executions/<span class="param">:id</span>/stream</span><span class="api-desc">Logs SSE</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/executions/<span class="param">:id</span>/kill</span><span class="api-desc">Arrêter</span></div>
+        <div class="api-row"><span class="method delete">DELETE</span><span class="api-path">/executions/<span class="param">:id</span></span><span class="api-desc">Supprimer (admin/owner)</span></div>
       </div>
     </div>
-
-    <div id="s9-right" style="padding-top:95px;">
-      <div class="api-group">
+    <div class="col">
+      <div class="api-group" style="margin-top:6px;">
         <div class="api-group-title">Planifications & Triggers</div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/schedules/cron</span><span class="api-desc">Créer planification cron</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/schedules/event</span><span class="api-desc">Créer déclencheur événement</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/schedules/api-trigger</span><span class="api-desc">Créer trigger HTTP → token</span></div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/trigger/<span class="param">:token</span></span><span class="api-desc">Déclencher (public)</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/schedules/cron</span><span class="api-desc">+ variantId</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/schedules/api-trigger</span><span class="api-desc">→ token</span></div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/trigger/<span class="param">:token</span></span><span class="api-desc">Public</span></div>
       </div>
-
       <div class="api-group">
-        <div class="api-group-title">Secrets</div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/secrets</span><span class="api-desc">Noms/métadonnées seulement</span></div>
-        <div class="api-row"><span class="method post">POST</span><span class="api-path">/secrets</span><span class="api-desc">Créer &#123; name, value &#125; → stocké chiffré</span></div>
+        <div class="api-group-title">Workers</div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/workers</span><span class="api-desc">Liste + statut</span></div>
+        <div class="api-row"><span class="method patch">PATCH</span><span class="api-path">/workers/groups/<span class="param">:g</span>/access</span><span class="api-desc">Politique (admin)</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/workers/register</span><span class="api-desc">Auto-enregistrement</span></div>
+      </div>
+      <div class="api-group">
+        <div class="api-group-title">Secrets & Users</div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/secrets</span><span class="api-desc">Chiffré (admin/op)</span></div>
         <div class="api-row"><span class="method get">GET</span><span class="api-path">/secrets/<span class="param">:id</span>/reveal</span><span class="api-desc">Déchiffrer (admin)</span></div>
-        <div class="api-row"><span class="method delete">DELETE</span><span class="api-path">/secrets/<span class="param">:id</span></span><span class="api-desc">Supprimer</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/users/<span class="param">:id</span>/apikeys</span><span class="api-desc">Émettre clé</span></div>
       </div>
-
       <div class="api-group">
-        <div class="api-group-title">Workers (UI)</div>
-        <div class="api-row"><span class="method get">GET</span><span class="api-path">/workers</span><span class="api-desc">Liste + statut en ligne</span></div>
-        <div class="api-row"><span class="method patch">PATCH</span><span class="api-path">/workers/groups/<span class="param">:group</span>/access</span><span class="api-desc">Politique d'accès (admin)</span></div>
-        <div class="api-row"><span class="method delete">DELETE</span><span class="api-path">/workers/<span class="param">:id</span>/record</span><span class="api-desc">Retirer de l'UI</span></div>
-      </div>
-
-      <div class="code-block" style="font-size:18px;padding:14px 20px;margin-top:4px;">
-        <span class="comment"># Auth : Bearer &lt;jwt&gt; ou ApiKey &lt;key&gt;</span><br>
-        <span class="comment"># Git  : git clone http://login:apikey@host/git/&lt;flowId&gt;</span><br>
-        <span class="comment"># SSE  : GET /executions/:id/stream?token=&lt;jwt&gt;</span>
+        <div class="api-group-title">Git smart-HTTP (hors /api/v1)</div>
+        <div class="api-row"><span class="method get">GET</span><span class="api-path">/git/<span class="param">:flowId</span>/info/refs</span><span class="api-desc">Basic auth</span></div>
+        <div class="api-row"><span class="method post">POST</span><span class="api-path">/git/<span class="param">:flowId</span>/git-receive-pack</span><span class="api-desc">push</span></div>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">11 / 25</div>
+  <div class="slide-num">16 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 10 — EXEMPLE API COMPLET
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Exemple API">
-  <style>
-    #s10-layout {
-      position: absolute; inset: 80px 100px 60px;
-      display: flex; gap: 52px;
-    }
-    #s10-left  { flex: 1; display: flex; flex-direction: column; gap: 18px; }
-    #s10-right { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-    .step-num {
-      font-family: var(--font-mono); font-size: 18px; font-weight: 700;
-      color: var(--muted); margin-bottom: 8px;
-    }
-    #s10-layout .code-block {
-      font-size: 17px !important;
-      padding: 15px 18px !important;
-      line-height: 1.6 !important;
-    }
-  </style>
-  <div id="s10-layout">
-    <div id="s10-left">
+<!-- ═══ SLIDE 17 — VIA API / GIT ═══ -->
+<section data-label="Via API">
+  <div class="layout">
+    <div class="col" style="flex:0.78;">
       <div>
-        <div class="section-label">Exemple</div>
-        <h1 style="font-size:52px;font-weight:700;letter-spacing:-1px;line-height:1.1">Lancer un flux<br>via l'API</h1>
+        <div class="section-label">Intégration</div>
+        <h1 class="s-title">Piloter Orchestrator<br>par script</h1>
+        <div class="s-sub">Tout passe par l'API REST (préfixe <code>/api/v1</code>) ou par git. Forme d'erreur standard : <code>{ error: { code, message } }</code>.</div>
       </div>
-
-      <div>
-        <div class="step-num">01 — Connexion</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -X POST <span class="url">http://localhost:3939/api/v1/auth/login</span> \<br>
-&nbsp;&nbsp;-H <span class="str">'Content-Type: application/json'</span> \<br>
-&nbsp;&nbsp;-d <span class="str">'&#123;"login":"admin","password":"admin"&#125;'</span><br>
-<br>
-<span class="comment">→ &#123; "accessToken": "eyJ...", "refreshToken": "...",</span><br>
-<span class="comment">&nbsp;&nbsp;&nbsp;"user": &#123; "login": "admin", "role": "admin" &#125; &#125;</span>
-        </div>
-      </div>
-
-      <div>
-        <div class="step-num">02 — Lancer le flux</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -X POST <span class="url">http://localhost:3939/api/v1/flows/&lt;id&gt;/execute</span> \<br>
-&nbsp;&nbsp;-H <span class="str">'Authorization: Bearer &lt;accessToken&gt;'</span><br>
-<br>
-<span class="comment">→ &#123; "executionId": "exec_abc123" &#125;</span>
-        </div>
-      </div>
-
-      <div>
-        <div class="step-num">03 — Streamer les logs (SSE)</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -N <span class="url">"http://localhost:3939/api/v1/executions/exec_abc123/stream?token=&lt;jwt&gt;"</span><br>
-<br>
-<span class="comment">data: &#123;"type":"log","node":"fetch-data","msg":"OK 200"&#125;</span><br>
-<span class="comment">data: &#123;"type":"log","node":"transform","msg":"Done"&#125;</span><br>
-<span class="comment">data: &#123;"type":"status","status":"SUCCESS"&#125;</span>
-        </div>
-      </div>
+      <div class="card accent-blue" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Codes : <code>BAD_REQUEST</code> 400 · <code>UNAUTHORIZED</code> 401 · <code>FORBIDDEN</code> 403 · <code>NOT_FOUND</code> 404 · <code>CONFLICT</code> 409 · <code>NOT_CONFIGURED</code> 503.</div></div>
     </div>
-
-    <div id="s10-right">
-      <div>
-        <div class="step-num">04 — Créer un secret</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -X POST <span class="url">http://localhost:3939/api/v1/secrets</span> \<br>
-&nbsp;&nbsp;-H <span class="str">'Authorization: Bearer &lt;token&gt;'</span> \<br>
-&nbsp;&nbsp;-H <span class="str">'Content-Type: application/json'</span> \<br>
-&nbsp;&nbsp;-d <span class="str">'&#123;"name":"API_TOKEN","value":"s3cr3t!"&#125;'</span><br>
-<br>
-<span class="comment"># Référencer dans un nœud :</span><br>
-<span class="key">const</span> token = <span class="str">"$&#123;&#123; secrets.API_TOKEN &#125;&#125;"</span>;
-        </div>
+    <div class="col">
+      <div class="code-block sm">
+        <span class="comment"># 1. Connexion → tokens</span><br>
+        <span class="kw">curl</span> -X POST <span class="url">.../api/v1/auth/login</span> \<br>
+        &nbsp;&nbsp;-H <span class="str">'Content-Type: application/json'</span> \<br>
+        &nbsp;&nbsp;-d <span class="str">'{"login":"admin","password":"admin"}'</span><br>
+        <span class="comment"># → { accessToken, refreshToken, user }</span>
       </div>
-
-      <div>
-        <div class="step-num">05 — Créer un trigger HTTP</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -X POST <span class="url">http://localhost:3939/api/v1/schedules/api-trigger</span> \<br>
-&nbsp;&nbsp;-H <span class="str">'Authorization: Bearer &lt;token&gt;'</span> \<br>
-&nbsp;&nbsp;-d <span class="str">'&#123;"flowId":"abc","label":"webhook CI"&#125;'</span><br>
-<br>
-<span class="comment">→ &#123; "triggerUrl": "https://host/api/v1/trigger/xyz" &#125;</span><br>
-<br>
-<span class="comment"># Déclencher (aucune auth nécessaire) :</span><br>
-<span class="kw">curl</span> <span class="url">https://host/api/v1/trigger/xyz</span>
-        </div>
+      <div class="code-block sm">
+        <span class="comment"># 2. Lancer une variante (worker + branche)</span><br>
+        <span class="kw">curl</span> -X POST <span class="url">.../flows/&lt;id&gt;/execute</span> \<br>
+        &nbsp;&nbsp;-H <span class="str">'Authorization: Bearer &lt;jwt&gt;'</span> \<br>
+        &nbsp;&nbsp;-d <span class="str">'{"workerId":"w1","branch":"dev"}'</span>
       </div>
-
-      <div>
-        <div class="step-num">06 — Clé API (intégrations)</div>
-        <div class="code-block" style="font-size:19px;">
-<span class="kw">curl</span> -X POST <span class="url">http://localhost:3939/api/v1/users/&lt;id&gt;/apikeys</span> \<br>
-&nbsp;&nbsp;-d <span class="str">'&#123;"label":"CI pipeline","expiresAt":"2027-01-01"&#125;'</span><br>
-<br>
-<span class="comment">→ &#123; "rawKey": "orc_..." &#125; &lt;— montrée une seule fois</span><br>
-<br>
-<span class="comment"># Utiliser :</span><br>
-<span class="kw">Authorization</span>: <span class="str">ApiKey orc_...</span>
-        </div>
+      <div class="code-block sm">
+        <span class="comment"># 3. Logs en direct (SSE, token en query)</span><br>
+        <span class="kw">curl</span> -N <span class="url">".../executions/&lt;id&gt;/stream?token=&lt;jwt&gt;"</span><br><br>
+        <span class="comment"># 4. Versionner via git</span><br>
+        <span class="kw">git</span> clone http://login:apikey@host:3939<span class="url">/git/&lt;id&gt;</span>
       </div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">12 / 25</div>
+  <div class="slide-num">17 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 11 — ARTEFACTS
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Artefacts">
-  <style>
-    #s11-layout {
-      position: absolute; inset: 90px 120px 50px;
-      display: flex; gap: 72px;
-    }
-    #s11-left  { flex: 1; display: flex; flex-direction: column; gap: 30px; }
-    #s11-right { flex: 0.85; display: flex; flex-direction: column; gap: 24px; }
-
-    .art-step {
-      display: flex; gap: 16px; align-items: flex-start;
-      padding: 14px 20px; border-radius: 12px;
-      background: var(--bg2); border: 1.5px solid var(--border);
-    }
-    .art-step-num {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: var(--blue-dim); border: 2px solid var(--blue);
-      color: var(--blue); font-family: var(--font-mono); font-size: 18px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
-    .art-step-body { flex: 1; }
-    .art-step-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
-    .art-step-desc  { font-size: 19px; color: var(--muted); line-height: 1.45; }
-    .art-step-desc code { font-family: var(--font-mono); color: var(--text); }
-    .art-connector { height: 10px; width: 2px; background: var(--border); margin-left: 35px; }
-
-    .ext-badge {
-      font-family: var(--font-mono); font-size: 18px;
-      padding: 4px 12px; border-radius: 6px;
-      background: var(--bg3); border: 1px solid var(--border); color: var(--amber);
-      display: inline-block; margin: 3px;
-    }
-  </style>
-  <div id="s11-layout">
-    <div id="s11-left">
-      <div>
-        <div class="section-label">Artefacts</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Fichiers attachés<br>aux flux</h1>
-        <div style="font-size:24px;color:var(--muted);margin-top:12px;text-wrap:pretty;">Jars, CSV de référence, binaires, archives — disponibles dans chaque nœud du flux.</div>
-      </div>
-
-      <div class="art-step">
-        <div class="art-step-num">1</div>
-        <div class="art-step-body">
-          <div class="art-step-title">Stockage adressé par contenu</div>
-          <div class="art-step-desc">Le corps est stocké <strong>une seule fois</strong> par <code>sha256</code> (<code>artifact_blobs</code>, chunké au-delà de 8 Mo). Le flux ne garde qu'une ref <code>&#123; name, sha &#125;</code> — committée dans git en pointeur. Upload binaire brut.</div>
-        </div>
-      </div>
-      <div class="art-connector"></div>
-      <div class="art-step">
-        <div class="art-step-num">2</div>
-        <div class="art-step-body">
-          <div class="art-step-title">Extraction au démarrage du run</div>
-          <div class="art-step-desc">Écrit dans <code>ORCHESTRATOR_EXECUTION_DIR</code>. Côté worker si un worker est assigné : il télécharge chaque corps par <code>sha</code> avant de lancer le nœud.</div>
-        </div>
-      </div>
-      <div class="art-connector"></div>
-      <div class="art-step">
-        <div class="art-step-num">3</div>
-        <div class="art-step-body">
-          <div class="art-step-title">Auto-décompression</div>
-          <div class="art-step-desc">Si le nom se termine par une extension d'archive → extraction via <code>tar</code> (repli sur <code>7z</code>). L'archive est supprimée après. Seule l'arborescence décompressée est visible.</div>
-        </div>
-      </div>
-      <div class="art-connector"></div>
-      <div class="art-step">
-        <div class="art-step-num">4</div>
-        <div class="art-step-body">
-          <div class="art-step-title">Nettoyage après run</div>
-          <div class="art-step-desc">Supprimés à la fin, sauf si <code>ORCHESTRATOR_KEEP_ARTIFACTS=true</code>.</div>
-        </div>
-      </div>
-    </div>
-
-    <div id="s11-right">
-      <div class="card" style="border-color:var(--amber)">
-        <div style="font-size:24px;font-weight:600;color:var(--amber);margin-bottom:14px;">Extensions auto-décompressées</div>
-        <div>
-          <span class="ext-badge">.zip</span>
-          <span class="ext-badge">.tar</span>
-          <span class="ext-badge">.tar.gz</span>
-          <span class="ext-badge">.tgz</span>
-          <span class="ext-badge">.gz</span>
-          <span class="ext-badge">.7z</span>
-        </div>
-      </div>
-
-      <div class="card" style="border-color:var(--green)">
-        <div style="font-size:24px;font-weight:600;color:var(--green);margin-bottom:14px;">Héritage par les sous-flux</div>
-        <div style="font-size:21px;color:var(--muted);line-height:1.6;">Un sous-flux reçoit les artefacts du <strong style="color:var(--text)">parent + les siens</strong>. En cas de collision de nom, <strong style="color:var(--amber)">le parent gagne</strong>.</div>
-      </div>
-
-      <div class="card" style="border-color:var(--red)">
-        <div style="font-size:24px;font-weight:600;color:var(--red);margin-bottom:14px;">⚿ Protection path traversal</div>
-        <div style="font-size:21px;color:var(--muted);line-height:1.6;"><code style="font-family:var(--font-mono)">safeArtifactPath</code> rejette : chemins absolus, segments <code style="font-family:var(--font-mono)">..</code>, noms vides. Un artefact dangereux est <strong style="color:var(--red)">ignoré silencieusement</strong> — jamais écrit.</div>
-      </div>
-
-      <div class="code-block" style="font-size:19px;">
-        <span class="comment">// Déduplication</span><br>
-        <span class="comment">// Si le fichier existe déjà à l'identique</span><br>
-        <span class="comment">// (comparaison octet à octet),</span><br>
-        <span class="comment">// on ne réécrit pas — gain de temps.</span>
-      </div>
-    </div>
-  </div>
-  <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">13 / 25</div>
-</section>
-
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 12 — BASE DE DONNÉES & MODÈLE DE DONNÉES
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SLIDE 18 — BASE DE DONNÉES ═══ -->
 <section data-label="Base de données">
-  <style>
-    #s12-layout {
-      position: absolute; inset: 90px 120px 55px;
-      display: flex; gap: 64px;
-    }
-    #s12-left  { flex: 1; display: flex; flex-direction: column; gap: 28px; }
-    #s12-right { flex: 1; display: flex; flex-direction: column; gap: 20px; }
-
-    .db-switch {
-      display: flex; gap: 20px; align-items: stretch;
-    }
-    .db-option {
-      flex: 1; border-radius: 14px; border: 2px solid var(--border);
-      padding: 28px 28px; background: var(--bg2);
-    }
-    .db-option.active { border-color: var(--green); }
-    .db-option .dbo-title { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
-    .db-option .dbo-desc  { font-size: 20px; color: var(--muted); line-height: 1.5; }
-    .db-option .dbo-env   { font-family: var(--font-mono); font-size: 18px; margin-top: 12px; }
-
-    .coll-row {
-      display: flex; align-items: center; gap: 16px;
-      padding: 12px 16px; border-radius: 10px; background: var(--bg2);
-    }
-    .coll-name {
-      font-family: var(--font-mono); font-size: 20px; font-weight: 600;
-      color: var(--blue); min-width: 200px;
-    }
-    .coll-desc { font-size: 20px; color: var(--muted); line-height: 1.4; }
-  </style>
-  <div id="s12-layout">
-    <div id="s12-left">
+  <div class="layout">
+    <div class="col" style="flex:0.82;">
       <div>
         <div class="section-label">Stockage</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Base de données<br>— NeDB ou MongoDB</h1>
+        <h1 class="s-title">NeDB ou MongoDB</h1>
+        <div class="s-sub">Masqué derrière <code>ICollection</code>. <code>MONGO_URI</code> défini → MongoDB ; sinon NeDB fichier sous <code>&lt;WORK_DIR&gt;/data/</code>. Même sémantique de requêtes.</div>
       </div>
-
-      <div class="db-switch">
-        <div class="db-option active">
-          <div class="dbo-title" style="color:var(--green)">NeDB</div>
-          <div class="dbo-desc">Embarqué, sans config. Idéal pour démarrage rapide et déploiement binaire unique.</div>
-          <div class="dbo-env" style="color:var(--muted)">MONGO_URI absent<br>→ fichiers <span style="color:var(--green)">&lt;WORK_DIR&gt;/data/*.db</span></div>
-        </div>
-        <div class="db-option">
-          <div class="dbo-title" style="color:var(--amber)">MongoDB</div>
-          <div class="dbo-desc">Pour la montée en charge. Même interface <code style="font-family:var(--font-mono)">ICollection</code>, zéro changement de code.</div>
-          <div class="dbo-env" style="color:var(--muted)">MONGO_URI=<span style="color:var(--amber)">mongodb://host/db</span><br>→ driver MongoDB natif</div>
-        </div>
+      <div class="card">
+        <div class="card-body" style="font-size:18px;">Index créés à la connexion : <code>apiKeys.keyHash</code>, <code>login</code> (unique), <code>workers.lastSeenAt</code>, <code>worker_jobs.status</code>, <code>executions.flowId+status+startTime</code>, objets/refs git par <code>flowId</code>…</div>
       </div>
-
-      <div class="code-block" style="font-size:19px;">
-        <span class="comment">// L'accès se fait toujours via :</span><br>
-        <span class="kw">const</span> col = <span class="met">getCollection</span>(<span class="str">'flows'</span>);<br>
-        <span class="kw">await</span> col.<span class="met">find</span>(&#123; ownerId: userId &#125;);<br>
-        <span class="kw">await</span> col.<span class="met">insert</span>(newFlow);<br>
-        <span class="kw">await</span> col.<span class="met">update</span>(&#123; _id &#125;, &#123; $set: patch &#125;);<br>
-        <span class="comment">// Fonctionne sur NeDB ET MongoDB.</span>
-      </div>
+      <div class="card accent-blue" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Bytes git & artefacts en <strong>BinData</strong> sur Mongo (pas d'inflation base64), base64 sur NeDB.</div></div>
     </div>
-
-    <div id="s12-right">
-      <h2 style="font-size:32px;font-weight:600;color:var(--muted);margin-bottom:8px;">Collections</h2>
-      <div class="coll-row"><span class="coll-name">users</span><span class="coll-desc">Comptes, bcrypt hash, rôle, apiKeys[] hashées SHA-256</span></div>
-      <div class="coll-row"><span class="coll-name">flows</span><span class="coll-desc">Graphe JSON (nodes+edges), owner, activeBranch, variants[], refs artefacts {name,sha}</span></div>
-      <div class="coll-row"><span class="coll-name">flow_versions</span><span class="coll-desc">Snapshots historiques — restauration</span></div>
-      <div class="coll-row"><span class="coll-name">git_objects / git_refs</span><span class="coll-desc">Dépôt git par flux : objets immuables + branches</span></div>
-      <div class="coll-row"><span class="coll-name">artifact_blobs / _chunks</span><span class="coll-desc">Artefacts adressés par contenu (sha256) + chunking</span></div>
-      <div class="coll-row"><span class="coll-name">executions</span><span class="coll-desc">Statut, début/fin, durée, branche, résultats par nœud</span></div>
-      <div class="coll-row"><span class="coll-name">schedules</span><span class="coll-desc">Lignes cron / event / api-trigger (+ variantes)</span></div>
-      <div class="coll-row"><span class="coll-name">workers</span><span class="coll-desc">Enregistrés, tokenHash, lastSeenAt, groupe, politique d'accès</span></div>
-      <div class="coll-row"><span class="coll-name">worker_jobs</span><span class="coll-desc">Unités de travail dispatchées + cycle de vie</span></div>
-      <div class="coll-row"><span class="coll-name">secrets</span><span class="coll-desc">Blobs AES-256-GCM chiffrés — valeurs jamais en clair</span></div>
-      <div class="coll-row"><span class="coll-name">trigger_tokens / sessions</span><span class="coll-desc">Tokens HTTP publics (TTL) · sessions utilisateur</span></div>
-
-      <div class="card" style="border-color:var(--blue);margin-top:4px;">
-        <div style="font-size:21px;color:var(--muted);line-height:1.6;">Index créés à la connexion : <code style="font-family:var(--font-mono)">apiKeys.keyHash</code>, <code style="font-family:var(--font-mono)">login</code> (unique), <code style="font-family:var(--font-mono)">workers.lastSeenAt</code>, <code style="font-family:var(--font-mono)">worker_jobs.status</code>, <code style="font-family:var(--font-mono)">executions.flowId+status+startTime</code>…</div>
-      </div>
+    <div class="col">
+      <div class="coll-row"><span class="coll-name">flows</span><span class="coll-desc">graphe, owner, activeBranch, variants[], refs artefacts</span></div>
+      <div class="coll-row"><span class="coll-name">flow_versions</span><span class="coll-desc">snapshots historiques (restauration)</span></div>
+      <div class="coll-row"><span class="coll-name">git_objects / git_refs</span><span class="coll-desc">dépôt git par flux : objets + branches</span></div>
+      <div class="coll-row"><span class="coll-name">artifact_blobs / _chunks</span><span class="coll-desc">artefacts CAS (sha256) + chunking</span></div>
+      <div class="coll-row"><span class="coll-name">executions</span><span class="coll-desc">statut, durée, branche, résultats par nœud</span></div>
+      <div class="coll-row"><span class="coll-name">schedules</span><span class="coll-desc">cron / event / api-trigger (+ variantes)</span></div>
+      <div class="coll-row"><span class="coll-name">workers / worker_jobs</span><span class="coll-desc">workers + politique d'accès · jobs répartis</span></div>
+      <div class="coll-row"><span class="coll-name">secrets</span><span class="coll-desc">blobs AES-256-GCM (valeurs jamais en clair)</span></div>
+      <div class="coll-row"><span class="coll-name">users / roles / sessions</span><span class="coll-desc">comptes, RBAC, sessions</span></div>
+      <div class="coll-row" style="border:none;"><span class="coll-name">trigger_tokens</span><span class="coll-desc">tokens HTTP publics (expiration auto)</span></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">14 / 25</div>
+  <div class="slide-num">18 / 30</div>
 </section>
 
+<!-- ═══ SLIDE 19 — JANITOR & GC ═══ -->
+<section data-label="Janitor & GC">
+  <div class="layout">
+    <div class="col" style="flex:0.95;">
+      <div>
+        <div class="section-label">Maintenance · nouveau</div>
+        <h1 class="s-title">Janitor & ramasse-miettes</h1>
+        <div class="s-sub">Un balayage périodique (<code>JANITOR_INTERVAL_MS</code>, 5 min) garde la base propre sans intervention.</div>
+      </div>
+      <div class="card accent-green">
+        <div class="card-title">🧹 Ce qu'il fait</div>
+        <div class="card-body">
+          1. Purge les <code>worker_jobs</code> terminés au-delà de <code>WORKER_JOB_RETENTION_MS</code> (1 h).<br>
+          2. Réclame les <strong>blobs d'artefacts</strong> qu'aucun job, flow, ni pointeur git ne référence.<br>
+          3. Balaye les chunks orphelins (manifeste disparu).
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card accent-amber">
+        <div class="card-title">⏳ Fenêtre de fraîcheur</div>
+        <div class="card-body">Les blobs/chunks plus jeunes que <code>ARTIFACT_GC_MIN_AGE_MS</code> (10 min) ne sont <strong>jamais</strong> réclamés — le GC ne peut pas courir contre un upload en cours (chunks écrits avant leur manifeste).</div>
+      </div>
+      <div class="card accent-blue">
+        <div class="card-title">↺ Démarrage idempotent</div>
+        <div class="card-body">Au boot : migration <code>flow.schedule</code> → <code>schedules</code>, artefacts inline → CAS, backfill <code>owner=admin</code>, et <strong>réconciliation</strong> des executions restées <code>RUNNING</code> → <code>FAILED</code>.</div>
+      </div>
+      <div class="card" style="padding:14px 22px;"><div class="card-body" style="font-size:18px;"><strong>Rétention des executions :</strong> pas de purge auto — <code>DELETE /executions</code> (admin) périodiquement.</div></div>
+    </div>
+  </div>
+  <div class="corner-logo">Orchestrator</div>
+  <div class="slide-num">19 / 30</div>
+</section>
 
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 13 — DÉPLOIEMENT
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SLIDE 20 — DÉPLOIEMENT ═══ -->
 <section data-label="Déploiement">
-  <style>
-    #s13-layout {
-      position: absolute; inset: 90px 120px 50px;
-      display: flex; gap: 64px;
-    }
-    #s13-left  { flex: 1; display: flex; flex-direction: column; gap: 28px; }
-    #s13-right { flex: 1; display: flex; flex-direction: column; gap: 24px; }
-
-    .deploy-step {
-      display: flex; gap: 16px; align-items: flex-start;
-      padding: 16px 22px; background: var(--bg2);
-      border: 1.5px solid var(--border); border-radius: 12px;
-    }
-    .deploy-step .ds-num {
-      font-family: var(--font-mono); font-size: 20px; font-weight: 700;
-      color: var(--blue); min-width: 32px;
-    }
-    .deploy-step .ds-text { font-size: 21px; line-height: 1.4; }
-    .deploy-step .ds-text code { font-family: var(--font-mono); color: var(--amber); font-size: 19px; }
-
-    .env-table { width: 100%; border-collapse: collapse; }
-    .env-table tr { border-bottom: 1px solid var(--border); }
-    .env-table td { padding: 11px 14px; font-size: 19px; vertical-align: top; }
-    .env-table td:first-child { font-family: var(--font-mono); color: var(--green); font-size: 17px; white-space: nowrap; }
-    .env-table td:last-child { color: var(--muted); }
-  </style>
-  <div id="s13-layout">
-    <div id="s13-left">
+  <div class="layout">
+    <div class="col">
       <div>
-        <div class="section-label">Ops</div>
-        <h1 style="font-size:60px;font-weight:700;letter-spacing:-1px;line-height:1.1">Déploiement<br>production</h1>
+        <div class="section-label">Exploitation</div>
+        <h1 class="s-title">Déploiement production</h1>
       </div>
-
-      <div class="code-block" style="font-size:19px;">
-        <span class="comment"># 1. Appliquer la version</span><br>
+      <div class="code-block sm">
+        <span class="comment"># 1. Appliquer la version partout</span><br>
         <span class="kw">set-version.bat</span> <span class="num">3.2.4</span><br><br>
-        <span class="comment"># 2. Builder les binaires</span><br>
-        <span class="kw">build-server.bat</span>  <span class="comment">→ release/orchestrator-server-*</span><br>
-        <span class="kw">build-worker.bat</span>  <span class="comment">→ release/orchestrator-worker-*</span><br><br>
-        <span class="comment"># 3. Déployer</span><br>
-        <span class="kw">deploy.bat</span>  <span class="comment">→ copie vers la cible</span><br><br>
-        <span class="comment"># 4. Lancer</span><br>
-        <span class="kw">./orchestrator-server-linux</span>
+        <span class="comment"># 2. Build + package (pkg)</span><br>
+        <span class="kw">build-server.bat</span>   <span class="comment"># → release/orchestrator-server-*</span><br>
+        <span class="kw">build-worker.bat</span>   <span class="comment"># → release/orchestrator-worker-*</span><br><br>
+        <span class="comment"># 3. Déployer (copie binaire + .env)</span><br>
+        <span class="kw">deploy.bat</span>
       </div>
-
-      <div>
-        <div class="deploy-step"><div class="ds-num">✓</div><div class="ds-text">Binaire unique — pose et lance. <code>groovyExec.jar</code> embarqué, extrait au premier démarrage.</div></div>
-        <div style="height:12px"></div>
-        <div class="deploy-step"><div class="ds-num">✓</div><div class="ds-text">Workers : copier le binaire + <code>.env</code>. Ils s'auto-enregistrent et apparaissent dans l'UI en quelques secondes.</div></div>
-        <div style="height:12px"></div>
-        <div class="deploy-step"><div class="ds-num">✓</div><div class="ds-text">Migrations automatiques et idempotentes à chaque démarrage. <strong>Sauvegarder la base avant mise à jour.</strong></div></div>
-      </div>
+      <div class="card" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Binaire unique, <code>groovyExec.jar</code> embarqué et extrait au 1er lancement. Migrations de boot idempotentes.</div></div>
     </div>
-
-    <div id="s13-right">
-      <h2 style="font-size:32px;font-weight:600;color:var(--muted);margin-bottom:8px;">Variables d'env clés</h2>
-
-      <div class="card" style="padding:0;overflow:hidden">
-        <table class="env-table">
-          <tr><td>PORT</td><td>Port HTTP/HTTPS (défaut : 3939)</td></tr>
-          <tr><td>NODE_ENV</td><td>production → garde-fou secrets + CORS whitelist</td></tr>
-          <tr><td>JWT_SECRET</td><td>Signe les tokens de session (obligatoire en prod)</td></tr>
-          <tr><td>ORCHESTRATOR_MASTER_KEY</td><td>Clé AES des secrets — ne jamais changer</td></tr>
-          <tr><td>WORKER_REGISTRATION_SECRET</td><td>Partagé serveur ↔ workers</td></tr>
-          <tr><td>MONGO_URI</td><td>Absent → NeDB ; défini → MongoDB</td></tr>
-          <tr><td>HTTPS</td><td>true → TLS (cert dans WORK_DIR/certs/)</td></tr>
-          <tr><td>ORCHESTRATOR_WORK_DIR</td><td>Base data/, inbox/, jar extrait</td></tr>
-          <tr><td>JSON_BODY_LIMIT</td><td>100mb par défaut (grossir pour artefacts)</td></tr>
-          <tr><td>WORKER_OFFLINE_TIMEOUT_MS</td><td>60 000 ms — seuil reaper</td></tr>
-        </table>
+    <div class="col" style="flex:0.95;">
+      <div class="card accent-red">
+        <div class="card-title">⚠ Garde-fou production</div>
+        <div class="card-body">Avec <code>NODE_ENV=production</code>, le serveur <strong>refuse de démarrer</strong> si l'un de ces secrets est resté sur sa valeur par défaut :</div>
       </div>
-
-      <div class="card" style="border-color:var(--green)">
-        <div style="font-size:22px;font-weight:600;color:var(--green);margin-bottom:10px;">Sauvegarde NeDB</div>
-        <div class="code-block" style="font-size:18px;padding:16px 20px;">
-          cp -r <span class="str">"$WORK_DIR/data"</span> <span class="str">"backup-$(date +%F)/"</span>
-        </div>
-        <div style="font-size:19px;color:var(--muted);margin-top:10px;">Fichiers JSON append-only. Arrêtez le serveur ou acceptez une copie légèrement périmée.</div>
-      </div>
+      <table class="gtable" style="font-size:18px;">
+        <tbody>
+          <tr><td class="k">JWT_SECRET</td><td class="m">signe tokens session + refresh</td></tr>
+          <tr><td class="k">ORCHESTRATOR_MASTER_KEY</td><td class="m">clé AES — <strong style="color:var(--red)">ne jamais changer</strong> après des secrets</td></tr>
+          <tr><td class="k">WORKER_REGISTRATION_SECRET</td><td class="m">même valeur sur chaque worker</td></tr>
+          <tr><td class="k">ADMIN_PASSWORD</td><td class="m">au 1er boot, création de l'admin</td></tr>
+        </tbody>
+      </table>
+      <div class="card accent-amber" style="padding:14px 22px;"><div class="card-body" style="font-size:18px;">HTTPS : <code>HTTPS=true</code> + cert/clé (défaut <code>&lt;WORK_DIR&gt;/certs/</code>). Sauvegarde : copier <code>data/</code> (NeDB) ou <code>mongodump</code>.</div></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">15 / 25</div>
+  <div class="slide-num">20 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 14 — INCIDENTS & DÉMARRAGE DEV
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Incidents & Dev">
-  <style>
-    #s14-layout {
-      position: absolute; inset: 90px 120px 50px;
-      display: flex; gap: 64px;
-    }
-    #s14-left  { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-    #s14-right { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-
-    .incident-row {
-      background: var(--bg2); border: 1.5px solid var(--border);
-      border-radius: 12px; padding: 14px 20px;
-    }
-    .incident-row .ir-symptom { font-size: 20px; font-weight: 600; color: var(--red); margin-bottom: 4px; }
-    .incident-row .ir-cause   { font-size: 18px; color: var(--muted); margin-bottom: 3px; }
-    .incident-row .ir-fix     { font-size: 18px; color: var(--green); }
-    .incident-row .ir-fix code { font-family: var(--font-mono); }
-
-    .dev-cmd {
-      display: flex; align-items: center; gap: 16px;
-      padding: 18px 24px; background: var(--bg2);
-      border: 1.5px solid var(--border); border-radius: 12px;
-    }
-    .dev-cmd .dc-file {
-      font-family: var(--font-mono); font-size: 20px; font-weight: 600;
-      color: var(--amber); min-width: 200px;
-    }
-    .dev-cmd .dc-url { font-family: var(--font-mono); font-size: 19px; color: var(--blue); }
-    .dev-cmd .dc-desc { font-size: 19px; color: var(--muted); }
-  </style>
-  <div id="s14-layout">
-    <div id="s14-left">
-      <div>
-        <div class="section-label">Guide d'incidents</div>
-        <h1 style="font-size:56px;font-weight:700;letter-spacing:-1px;line-height:1.1">Dépannage<br>production</h1>
+<!-- ═══ SLIDE 21 — VARIABLES D'ENV ═══ -->
+<section data-label="Variables d'env">
+  <div class="layout">
+    <div class="col">
+      <div style="margin-bottom:6px;">
+        <div class="section-label">Configuration</div>
+        <h1 style="font-size:46px;font-weight:700;letter-spacing:-1px;">Variables clés — serveur</h1>
       </div>
-      <div class="incident-row">
-        <div class="ir-symptom">Serveur refuse de démarrer</div>
-        <div class="ir-cause">NODE_ENV=production + secrets par défaut</div>
-        <div class="ir-fix">→ Posez JWT_SECRET, MASTER_KEY, WORKER_SECRET, ADMIN_PASSWORD</div>
-      </div>
-      <div class="incident-row">
-        <div class="ir-symptom">Worker absent de l'UI</div>
-        <div class="ir-cause">Mauvais ORCHESTRATOR_URL ou WORKER_REGISTRATION_SECRET</div>
-        <div class="ir-fix">→ Vérifiez les logs du worker ; confirmez la connectivité réseau</div>
-      </div>
-      <div class="incident-row">
-        <div class="ir-symptom">Exécution bloquée en "running"</div>
-        <div class="ir-cause">Serveur redémarré en plein run, ou worker mort</div>
-        <div class="ir-fix">→ Redémarrage → réconciliation auto. Ou : <code style="font-family:var(--font-mono)">POST /executions/:id/kill</code></div>
-      </div>
-      <div class="incident-row">
-        <div class="ir-symptom">request entity too large</div>
-        <div class="ir-cause">Artefact plus gros que JSON_BODY_LIMIT</div>
-        <div class="ir-fix">→ Augmentez JSON_BODY_LIMIT (serveur) et WORKER_MAX_HTTP_SIZE (worker)</div>
-      </div>
-      <div class="incident-row">
-        <div class="ir-symptom">Secrets illisibles / erreurs AES</div>
-        <div class="ir-cause">ORCHESTRATOR_MASTER_KEY a changé</div>
-        <div class="ir-fix">→ Restaurez la clé d'origine, ou ressaisissez tous les secrets</div>
-      </div>
-      <div class="incident-row">
-        <div class="ir-symptom">Nœuds Groovy échouent</div>
-        <div class="ir-cause">Java 11+ absent ou jar non extrait</div>
-        <div class="ir-fix">→ Installez Java ; vérifiez <code style="font-family:var(--font-mono)">GROOVY_JAR</code></div>
-      </div>
+      <table class="gtable" style="font-size:17px;">
+        <tbody>
+          <tr><td class="k">PORT</td><td class="m">3939 · port HTTP/HTTPS</td></tr>
+          <tr><td class="k">MONGO_URI</td><td class="m">défini → Mongo ; absent → NeDB</td></tr>
+          <tr><td class="k">JSON_BODY_LIMIT</td><td class="m">100mb · taille corps JSON</td></tr>
+          <tr><td class="k">ARTIFACT_UPLOAD_LIMIT</td><td class="m">1024mb · upload artefact brut</td></tr>
+          <tr><td class="k">DISPATCH_TIMEOUT_MIN</td><td class="m">5 · timeout nœud worker</td></tr>
+          <tr><td class="k">JANITOR_INTERVAL_MS</td><td class="m">300000 · balayage janitor</td></tr>
+          <tr><td class="k">ARTIFACT_GC_MIN_AGE_MS</td><td class="m">600000 · fraîcheur GC</td></tr>
+          <tr><td class="k">SERVER_EXECUTION_MODE</td><td class="m">parallel | sequential</td></tr>
+          <tr><td class="k">..._SERVER_EXECUTION_ENABLED</td><td class="m">false → tout sur workers</td></tr>
+          <tr><td class="k">..._FAIL_ON_LOG_ERROR</td><td class="m">ERROR/FAILED dans logs → FAILED</td></tr>
+        </tbody>
+      </table>
     </div>
-
-    <div id="s14-right">
-      <div>
-        <div class="section-label" style="margin-bottom:12px;">Démarrage rapide dev</div>
-        <div class="code-block" style="font-size:19px;margin-bottom:20px;">
-<span class="comment"># Installer les dépendances</span><br>
-<span class="kw">cd</span> orchestrator-webpanel/server &amp;&amp; <span class="kw">npm</span> install<br>
-<span class="kw">cd</span> ../client &amp;&amp; <span class="kw">npm</span> install<br>
-<span class="kw">cd</span> ../../orchestrator-worker &amp;&amp; <span class="kw">npm</span> install
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
-          <div class="dev-cmd">
-            <div class="dc-file">dev-server.bat</div>
-            <div style="flex:1">
-              <div class="dc-url">→ http://localhost:3939</div>
-              <div class="dc-desc">API + ts-node hot reload</div>
-            </div>
-          </div>
-          <div class="dev-cmd">
-            <div class="dc-file">dev-client.bat</div>
-            <div style="flex:1">
-              <div class="dc-url">→ http://localhost:5173</div>
-              <div class="dc-desc">Vite HMR · proxifie /api → :3939</div>
-            </div>
-          </div>
-          <div class="dev-cmd">
-            <div class="dc-file">dev-worker.bat</div>
-            <div style="flex:1">
-              <div class="dc-url">→ se connecte à :3939</div>
-              <div class="dc-desc">Agent ts-node · auto-register</div>
-            </div>
-          </div>
-        </div>
+    <div class="col">
+      <div style="margin-bottom:6px;">
+        <div class="section-label" style="color:var(--amber);">&nbsp;</div>
+        <h1 style="font-size:46px;font-weight:700;letter-spacing:-1px;">Worker & divers</h1>
       </div>
-
-      <div class="card" style="border-color:var(--blue)">
-        <div style="font-size:24px;font-weight:600;margin-bottom:12px;">Stack technique</div>
-        <div style="display:flex;flex-wrap:wrap;gap:10px;">
-          <span class="tag tag-blue">Express 4</span>
-          <span class="tag tag-blue">TypeScript</span>
-          <span class="tag tag-green">React 18</span>
-          <span class="tag tag-green">Vite</span>
-          <span class="tag tag-green">React Flow</span>
-          <span class="tag tag-amber">Monaco Editor</span>
-          <span class="tag tag-amber">Zustand</span>
-          <span class="tag tag-amber">Tailwind CSS</span>
-          <span class="tag tag-purple">NeDB / MongoDB</span>
-          <span class="tag tag-purple">node-cron</span>
-          <span class="tag tag-purple">AES-256-GCM</span>
-        </div>
-      </div>
-
-
+      <table class="gtable" style="font-size:17px;">
+        <tbody>
+          <tr><td class="k">ORCHESTRATOR_URL</td><td class="m">scheme://host:port (sans /api/v1)</td></tr>
+          <tr><td class="k">WORKER_NAME</td><td class="m">nom affiché dans l'UI</td></tr>
+          <tr><td class="k">WORKER_REGISTRATION_SECRET</td><td class="m">doit matcher le serveur</td></tr>
+          <tr><td class="k">WORKER_EXECUTION_MODE</td><td class="m">parallel | sequential</td></tr>
+          <tr><td class="k">WORKER_MAX_HTTP_SIZE</td><td class="m">100mb · ≥ JSON_BODY_LIMIT</td></tr>
+          <tr><td class="k">POLL_INTERVAL_MS</td><td class="m">2000 · cadence de poll</td></tr>
+          <tr><td class="k">ORCHESTRATOR_WORK_DIR</td><td class="m">data/, inbox/, groovyExec.jar</td></tr>
+          <tr><td class="k">ORCHESTRATOR_EXECUTION_DIR</td><td class="m">cwd des process + artefacts</td></tr>
+          <tr><td class="k">ORCHESTRATOR_KEEP_ARTIFACTS</td><td class="m">true → garde après run</td></tr>
+        </tbody>
+      </table>
+      <div class="card accent-blue" style="padding:14px 22px;"><div class="card-body" style="font-size:17px;">Référence complète : <code>release/server.env.example</code> · <code>release/worker.env.example</code>.</div></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">16 / 25</div>
+  <div class="slide-num">21 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 17 — ÉDITEUR VISUEL (capture héro)
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Éditeur visuel">
-  <style>
-    #s17-layout {
-      position: absolute; inset: 80px 120px 60px;
-      display: flex; gap: 56px;
-    }
-    #s17-left  { flex: 0.72; display: flex; flex-direction: column; gap: 26px; }
-    #s17-right { flex: 1.28; display: flex; flex-direction: column; gap: 22px; }
-    #s17-right .shot { flex: 1; width: 100%; }
-    .s17-callout {
-      display: flex; gap: 16px; align-items: flex-start;
-      padding: 18px 22px; background: var(--bg2);
-      border: 1.5px solid var(--border); border-radius: 12px;
-    }
-    .s17-callout .co-key {
-      font-family: var(--font-mono); font-size: 16px; font-weight: 700;
-      padding: 5px 11px; border-radius: 8px; flex-shrink: 0; margin-top: 2px;
-      background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue);
-    }
-    .s17-callout .co-text { font-size: 20px; line-height: 1.45; }
-    .s17-callout .co-text .t { font-weight: 600; }
-    .s17-callout .co-text .d { color: var(--muted); font-size: 18px; }
-  </style>
-  <div id="s17-layout">
-    <div id="s17-left">
-      <div>
-        <div class="section-label">Interface</div>
-        <h1 style="font-size:52px;font-weight:700;letter-spacing:-1px;line-height:1.1">Éditeur visuel<br>de flux</h1>
-        <div style="font-family:var(--font-mono);font-size:20px;color:var(--blue);margin-top:12px;">/flows/:id</div>
-      </div>
-      <div class="s17-callout">
-        <div class="co-key">▣</div>
-        <div class="co-text"><span class="t">Canvas React Flow</span><br><span class="d">Glisser-déposer des nœuds, tracer les arêtes du DAG.</span></div>
-      </div>
-      <div class="s17-callout">
-        <div class="co-key">{ }</div>
-        <div class="co-text"><span class="t">Éditeur Monaco par nœud</span><br><span class="d">Code JS/Python/Groovy/PS coloré, par nœud sélectionné.</span></div>
-      </div>
-      <div class="s17-callout">
-        <div class="co-key">▶</div>
-        <div class="co-text"><span class="t">Exécution + logs live</span><br><span class="d">Bouton Run, statut par nœud, flux SSE en temps réel.</span></div>
-      </div>
-      <div class="s17-callout">
-        <div class="co-key">⚙</div>
-        <div class="co-text"><span class="t">Worker · branche git · artefacts</span><br><span class="d">Choisir worker/branche, joindre des artefacts, planifier cron / event / trigger.</span></div>
-      </div>
+<!-- ═══ SLIDE 22 — DÉPANNAGE ═══ -->
+<section data-label="Dépannage">
+  <div class="layout" style="flex-direction:column; gap:24px;">
+    <div>
+      <div class="section-label">Runbook</div>
+      <h1 class="s-title">Dépannage production</h1>
     </div>
-    <div id="s17-right">
-      <div class="shot has-img">
-        <img src="screenshots/fluxedit1.png" alt="Éditeur de flux — panneau artefacts + arbre de fichiers git">
-        <div class="shot-badge">CAPTURE 1</div>
-      </div>
-      <div class="shot green has-img">
-        <img src="screenshots/fluxview.png" alt="Éditeur de flux — canvas DAG">
-        <div class="shot-badge">CAPTURE 1b</div>
-      </div>
-    </div>
+    <table class="gtable" style="font-size:18px;">
+      <thead><tr><th>Symptôme</th><th>Cause probable</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>Refus de démarrer · <code>default/placeholder secrets</code></td><td class="m">prod avec secret par défaut</td><td class="m">Poser JWT_SECRET, MASTER_KEY, etc.</td></tr>
+        <tr><td>Worker absent de l'UI</td><td class="m">URL / secret incohérent</td><td class="m">Vérifier ORCHESTRATOR_URL + REGISTRATION_SECRET</td></tr>
+        <tr><td>Exécution « running » à l'infini</td><td class="m">crash/redémarrage en plein run</td><td class="m">Réconcilié au boot → FAILED ; sinon /kill</td></tr>
+        <tr><td>Job se fige puis échoue ~5 min</td><td class="m">worker hors ligne en plein job</td><td class="m">Reaper annule après OFFLINE_TIMEOUT</td></tr>
+        <tr><td><code>request entity too large</code></td><td class="m">artefact &gt; limite</td><td class="m">↑ JSON_BODY_LIMIT + WORKER_MAX_HTTP_SIZE</td></tr>
+        <tr><td>Secrets illisibles</td><td class="m">MASTER_KEY a changé</td><td class="m">Restaurer la clé, ou ressaisir les secrets</td></tr>
+        <tr><td>Nœuds Groovy échouent</td><td class="m">Java absent / jar introuvable</td><td class="m">Java 11+ ; vérifier GROOVY_JAR</td></tr>
+      </tbody>
+    </table>
+    <div class="card" style="padding:14px 24px;"><div class="card-body" style="font-size:18px;"><strong>Logs :</strong> stdout/stderr. Préfixes — <code>[Startup]</code> <code>[DB]</code> <code>[Reaper]</code> <code>[Janitor]</code> <code>[EventBus]</code>.</div></div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">17 / 25</div>
+  <div class="slide-num">22 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 18 — TOUR DE L'INTERFACE (galerie de captures)
-═══════════════════════════════════════════════════════════ -->
-<section data-label="Connexion">
+<!-- ═══ SLIDE 23 — CAP CONNEXION ═══ -->
+<section data-label="Capture · Connexion">
   <div class="cap-layout">
     <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 1/7</div>
-        <h1 class="cap-title">Connexion</h1>
-        <div class="cap-url">/login</div>
-        <div class="cap-intro">Point d'entrée unique. Session JWT, ou redirection SSO transparente quand le proxy d'auth est configuré.</div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">🔐</div>
-        <div class="co-text"><span class="t">Login + mot de passe</span><br><span class="d">Hash bcrypt côté serveur. Session JWT 8 h, refresh 7 j.</span></div>
-      </div>
-      <div class="cap-callout purple">
-        <div class="co-key">🪪</div>
-        <div class="co-text"><span class="t">SSO / Proxy Auth (CAS)</span><br><span class="d">Si <code style="font-family:var(--font-mono)">ORCHESTRATOR_PROXYAUTH_URL</code> est posé, le front redirige seul vers le login d'entreprise.</span></div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">🛡️</div>
-        <div class="co-text"><span class="t">Comptes SSO-only</span><br><span class="d">Mot de passe désactivable par compte — l'accès passe alors uniquement par le SSO.</span></div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">↪</div>
-        <div class="co-text"><span class="t">Après connexion</span><br><span class="d">Redirection automatique vers <code style="font-family:var(--font-mono)">/flows</code>.</span></div>
-      </div>
+      <div class="section-label">Interface</div>
+      <h1 class="cap-title">Connexion</h1>
+      <div class="cap-url">/#/login</div>
+      <div class="cap-intro">Login + mot de passe, ou redirection SSO automatique si proxy-auth est activé. Le badge de version est visible en haut.</div>
+      <div class="cap-callout"><div class="co-key">JWT</div><div class="co-text"><span class="t">Token de session 8 h</span><br><span class="d">+ refresh 7 j. Persistés côté client.</span></div></div>
+      <div class="cap-callout amber"><div class="co-key">SSO</div><div class="co-text"><span class="t">Échappatoire #/login</span><br><span class="d">Formulaire toujours joignable, sans redirection auto.</span></div></div>
     </div>
     <div class="cap-right">
-      <div class="shot has-img">
-        <img src="screenshots/login.png" alt="Écran de connexion">
-        <div class="shot-badge">/login</div>
-      </div>
+      <div class="shot"><div class="shot-badge">CONNEXION</div><img src="screenshots/login.png" alt="Écran de connexion"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">18 / 25</div>
+  <div class="slide-num">23 / 30</div>
 </section>
 
-
-<!-- SLIDE 19 — LISTE DES FLUX -->
-<section data-label="Liste des flux">
+<!-- ═══ SLIDE 24 — CAP BIBLIOTHÈQUE ═══ -->
+<section data-label="Capture · Flux">
   <div class="cap-layout">
     <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 2/7</div>
-        <h1 class="cap-title">Bibliothèque<br>de flux</h1>
-        <div class="cap-url">/flows</div>
-        <div class="cap-intro">La page d'accueil après login. Tous vos workflows, leur état et un accès direct à l'éditeur.</div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">📋</div>
-        <div class="co-text"><span class="t">Tous les flux d'un coup d'œil</span><br><span class="d">Nom, propriétaire, worker assigné, dernière exécution et son statut.</span></div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">➕</div>
-        <div class="co-text"><span class="t">Créer / dupliquer</span><br><span class="d">Nouveau flux vierge ou copie d'un existant comme point de départ.</span></div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">▶</div>
-        <div class="co-text"><span class="t">Lancer en un clic</span><br><span class="d">Exécution directe depuis la liste, sans ouvrir l'éditeur.</span></div>
-      </div>
-      <div class="cap-callout purple">
-        <div class="co-key">🔍</div>
-        <div class="co-text"><span class="t">Recherche</span><br><span class="d">Filtrer par nom pour retrouver vite un flux dans un grand parc.</span></div>
-      </div>
+      <div class="section-label">Interface</div>
+      <h1 class="cap-title">Bibliothèque<br>de flux</h1>
+      <div class="cap-url">/#/flows</div>
+      <div class="cap-intro">Tous les flux, groupés par namespace, avec statistiques et recherche.</div>
+      <div class="cap-callout"><div class="co-key">⎇</div><div class="co-text"><span class="t">Colonne Branch</span><br><span class="d">La branche git active de chaque flux.</span></div></div>
+      <div class="cap-callout green"><div class="co-key">⇄</div><div class="co-text"><span class="t">Colonne Worker</span><br><span class="d">Local (server) ou worker assigné.</span></div></div>
+      <div class="cap-callout amber"><div class="co-key">▦</div><div class="co-text"><span class="t">Groupes de namespace</span><br><span class="d">En-têtes repliables <code>[Wot]</code>.</span></div></div>
     </div>
     <div class="cap-right">
-      <div class="shot green has-img">
-        <img src="screenshots/flux.png" alt="Liste des flux">
-        <div class="shot-badge">/flows</div>
-      </div>
+      <div class="shot green"><div class="shot-badge">FLUX</div><img src="screenshots/flux.png" alt="Liste des flux"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">19 / 25</div>
+  <div class="slide-num">24 / 30</div>
 </section>
 
-
-<!-- SLIDE 20 — ÉDITEUR : CODE PAR NŒUD -->
-<section data-label="Éditeur — code nœud">
+<!-- ═══ SLIDE 25 — CAP DÉTAIL FLUX ═══ -->
+<section data-label="Capture · Détail flux">
   <div class="cap-layout">
     <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 3/7</div>
-        <h1 class="cap-title">Code par nœud<br>— Monaco</h1>
-        <div class="cap-url">/flows/:id</div>
-        <div class="cap-intro">Cliquer un nœud ouvre son éditeur Monaco. Le même moteur que VS Code, dans le navigateur.</div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">{ }</div>
-        <div class="co-text"><span class="t">Éditeur Monaco complet</span><br><span class="d">Coloration JS / Python / Groovy / PowerShell / Bash, autocomplétion, multi-curseur.</span></div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">$</div>
-        <div class="co-text"><span class="t">Variables &amp; secrets en ligne</span><br><span class="d"><code style="font-family:var(--font-mono)">$VAR</code> de flux et <code style="font-family:var(--font-mono)">$&#123;&#123; secrets.X &#125;&#125;</code> résolus au runtime côté serveur.</span></div>
-      </div>
-      <div class="cap-callout purple">
-        <div class="co-key">⚙</div>
-        <div class="co-text"><span class="t">Type d'exécution par nœud</span><br><span class="d">JS in-process (rapide) ou langage dispatché à un worker distant.</span></div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">▶</div>
-        <div class="co-text"><span class="t">Tester isolément</span><br><span class="d">Exécuter un seul nœud pour itérer vite sans rejouer tout le flux.</span></div>
-      </div>
+      <div class="section-label">Interface · nouveau</div>
+      <h1 class="cap-title">Détail du flux<br>& variantes</h1>
+      <div class="cap-url">/#/flows/:id</div>
+      <div class="cap-intro">Choisir le worker et la branche d'exécution, lancer, et consulter l'historique — chaque run tagué de sa branche.</div>
+      <div class="cap-callout"><div class="co-key">⇄</div><div class="co-text"><span class="t">« Run this flow on »</span><br><span class="d">Worker / local pour ce run (variante).</span></div></div>
+      <div class="cap-callout purple"><div class="co-key">⎇</div><div class="co-text"><span class="t">Active git branch</span><br><span class="d">Sélecteur de branche, exécutée par le moteur.</span></div></div>
+      <div class="cap-callout red"><div class="co-key">✕</div><div class="co-text"><span class="t">Suppression par exécution</span><br><span class="d">Admin : toutes · operator : les siennes.</span></div></div>
     </div>
     <div class="cap-right">
-      <div class="shot has-img">
-        <img src="screenshots/fluxedit2.png" alt="Éditeur Monaco d'un nœud">
-        <div class="shot-badge">/flows/:id</div>
-      </div>
+      <div class="shot purple"><div class="shot-badge">DÉTAIL</div><img src="screenshots/fluxview_detail.png" alt="Détail flux — worker + branche"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">20 / 25</div>
+  <div class="slide-num">25 / 30</div>
 </section>
 
-
-<!-- SLIDE 21 — EXÉCUTIONS & LOGS -->
-<section data-label="Exécutions">
+<!-- ═══ SLIDE 26 — CAP ÉDITEUR / ARTEFACTS ═══ -->
+<section data-label="Capture · Éditeur">
   <div class="cap-layout">
     <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 4/7</div>
-        <h1 class="cap-title">Historique<br>d'exécutions</h1>
-        <div class="cap-url">/executions</div>
-        <div class="cap-intro">Toute trace de run, en direct comme en post-mortem. Le point de départ du dépannage.</div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">📜</div>
-        <div class="co-text"><span class="t">Tous les runs</span><br><span class="d">Flux, statut, durée, déclencheur (cron / event / trigger / manuel), horodatage.</span></div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">🔎</div>
-        <div class="co-text"><span class="t">Filtres &amp; pagination</span><br><span class="d">Par flux, statut ou période — confortable même sur un gros historique.</span></div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">📡</div>
-        <div class="co-text"><span class="t">Logs en temps réel</span><br><span class="d">Flux SSE par nœud : la sortie défile pendant l'exécution.</span></div>
-      </div>
-      <div class="cap-callout red">
-        <div class="co-key">⏹</div>
-        <div class="co-text"><span class="t">Kill</span><br><span class="d">Arrêter un run bloqué — <code style="font-family:var(--font-mono)">POST /executions/:id/kill</code>.</span></div>
-      </div>
+      <div class="section-label">Interface · nouveau</div>
+      <h1 class="cap-title">Éditeur :<br>artefacts & arbre git</h1>
+      <div class="cap-url">/#/flows/:id?tab=edit</div>
+      <div class="cap-intro">Canvas React Flow à gauche, panneau d'outils à droite. Les fichiers reflètent la matérialisation git.</div>
+      <div class="cap-callout green"><div class="co-key">📎</div><div class="co-text"><span class="t">Panneau Artefacts</span><br><span class="d">Ajouter / télécharger / retirer des fichiers joints.</span></div></div>
+      <div class="cap-callout"><div class="co-key">▤</div><div class="co-text"><span class="t">Arbre de fichiers</span><br><span class="d"><code>nodes/</code>, <code>batch.bat</code> — la vue git du flux.</span></div></div>
     </div>
     <div class="cap-right">
-      <div class="shot amber has-img">
-        <img src="screenshots/executions.png" alt="Historique d'exécutions">
-        <div class="shot-badge">/executions</div>
-      </div>
+      <div class="shot green"><div class="shot-badge">ARTEFACTS</div><img src="screenshots/fluxedit1.png" alt="Panneau artefacts + arbre git"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">21 / 25</div>
+  <div class="slide-num">26 / 30</div>
 </section>
 
-
-<!-- SLIDE 22 — WORKERS -->
-<section data-label="Workers">
-  <div class="cap-layout">
-    <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 5/7</div>
-        <h1 class="cap-title">Workers<br>distants</h1>
-        <div class="cap-url">/workers</div>
-        <div class="cap-intro">Les agents qui exécutent le code non-JS. Auto-enregistrés, supervisés depuis l'UI.</div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">🟢</div>
-        <div class="co-text"><span class="t">Statut live</span><br><span class="d">En ligne / hors-ligne via heartbeat (10 s). Le reaper marque l'absence > 60 s.</span></div>
-      </div>
-      <div class="cap-callout purple">
-        <div class="co-key">🏷</div>
-        <div class="co-text"><span class="t">Métadonnées &amp; groupes</span><br><span class="d">Host, capacités, groupe — un flux peut cibler un groupe précis.</span></div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">⇄</div>
-        <div class="co-text"><span class="t">Long-poll, zéro port entrant</span><br><span class="d">Le worker appelle le serveur : il tourne derrière n'importe quel NAT / firewall.</span></div>
-      </div>
-      <div class="cap-callout red">
-        <div class="co-key">🗑</div>
-        <div class="co-text"><span class="t">Retirer de l'UI</span><br><span class="d">Nettoyer les workers obsolètes sans toucher aux runs passés.</span></div>
-      </div>
+<!-- ═══ SLIDE 27 — CAP MONACO + VERSIONS ═══ -->
+<section data-label="Capture · Code & versions">
+  <style>#s27 { position:absolute; inset:80px 120px 60px; display:flex; flex-direction:column; gap:20px; }
+    #s27 .row { display:flex; gap:28px; flex:1; min-height:0; }
+    #s27 .shot { flex:1; min-height:0; }
+    #s27 h1 { font-size:44px; font-weight:700; letter-spacing:-1px; }</style>
+  <div id="s27">
+    <div>
+      <div class="section-label">Interface</div>
+      <h1>Code par nœud (Monaco) & historique de versions</h1>
     </div>
-    <div class="cap-right">
-      <div class="shot purple has-img">
-        <img src="screenshots/workers.png" alt="Panneau des workers">
-        <div class="shot-badge">/workers</div>
-      </div>
+    <div class="row">
+      <div class="shot"><div class="shot-badge">MONACO</div><img src="screenshots/fluxedit2.png" alt="Éditeur Monaco d'un nœud"></div>
+      <div class="shot purple"><div class="shot-badge">VERSIONS</div><img src="screenshots/versions.png" alt="Historique de versions"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">22 / 25</div>
+  <div class="slide-num">27 / 30</div>
 </section>
 
-
-<!-- SLIDE 23 — PLANIFICATION & TRIGGERS -->
-<section data-label="Planification & triggers">
-  <div class="cap-layout">
-    <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 6/7</div>
-        <h1 class="cap-title">Planification<br>&amp; déclencheurs</h1>
-        <div class="cap-url">/flows/:id · onglet planification</div>
-        <div class="cap-intro">Attacher à un flux le quand et le comment du déclenchement — depuis sa fiche.</div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">⏱</div>
-        <div class="co-text"><span class="t">Cron</span><br><span class="d"><code style="font-family:var(--font-mono)">node-cron</code>, rechargé à chaud. Ex. <code style="font-family:var(--font-mono)">0 9 * * 1-5</code>.</span></div>
-      </div>
-      <div class="cap-callout green">
-        <div class="co-key">📁</div>
-        <div class="co-text"><span class="t">Événement</span><br><span class="d">Dépôt fichier dans l'inbox → <code style="font-family:var(--font-mono)">file.arrived</code>, ou <code style="font-family:var(--font-mono)">flow.completed</code> / <code style="font-family:var(--font-mono)">flow.failed</code>.</span></div>
-      </div>
-      <div class="cap-callout purple">
-        <div class="co-key">🔗</div>
-        <div class="co-text"><span class="t">Trigger HTTP</span><br><span class="d">URL publique sans auth, à expiration, révocable à tout moment (capture du bas).</span></div>
-      </div>
+<!-- ═══ SLIDE 28 — CAP EXÉCUTIONS + CANVAS ═══ -->
+<section data-label="Capture · Exécutions">
+  <style>#s28 { position:absolute; inset:80px 120px 60px; display:flex; flex-direction:column; gap:20px; }
+    #s28 .row { display:flex; gap:28px; flex:1; min-height:0; }
+    #s28 .shot { flex:1; min-height:0; }
+    #s28 h1 { font-size:44px; font-weight:700; letter-spacing:-1px; }</style>
+  <div id="s28">
+    <div>
+      <div class="section-label">Interface</div>
+      <h1>Historique d'exécutions & canvas du flux</h1>
     </div>
-    <div class="cap-right">
-      <div class="shot amber has-img">
-        <img src="screenshots/triggers.png" alt="Planification cron / event">
-        <div class="shot-badge">Planification</div>
-      </div>
-      <div class="shot purple has-img">
-        <img src="screenshots/triggersapi.png" alt="Trigger HTTP / API">
-        <div class="shot-badge">Trigger HTTP</div>
-      </div>
+    <div class="row">
+      <div class="shot"><div class="shot-badge">EXÉCUTIONS</div><img src="screenshots/executions.png" alt="Historique d'exécutions (colonne branche)"></div>
+      <div class="shot green"><div class="shot-badge">CANVAS</div><img src="screenshots/fluxview.png" alt="Canvas DAG de l'éditeur"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">23 / 25</div>
+  <div class="slide-num">28 / 30</div>
 </section>
 
-
-<!-- SLIDE 24 — ADMINISTRATION -->
-<section data-label="Administration">
-  <div class="cap-layout">
-    <div class="cap-left">
-      <div>
-        <div class="section-label">Interface · 7/7</div>
-        <h1 class="cap-title">Administration</h1>
-        <div class="cap-url">/admin · onglets Secrets &amp; Users</div>
-        <div class="cap-intro">Réservé aux admins : la gestion des secrets chiffrés, des comptes et des clés API.</div>
-      </div>
-      <div class="cap-callout red">
-        <div class="co-key">⚿</div>
-        <div class="co-text"><span class="t">Secrets — AES-256-GCM</span><br><span class="d">Valeurs masquées, <em>reveal</em> réservé admin. Référencés par <code style="font-family:var(--font-mono)">$&#123;&#123; secrets.NOM &#125;&#125;</code>, jamais loggés (capture du haut).</span></div>
-      </div>
-      <div class="cap-callout">
-        <div class="co-key">👥</div>
-        <div class="co-text"><span class="t">Utilisateurs &amp; rôles</span><br><span class="d">RBAC à 3 rôles : admin · operator · viewer (capture du bas).</span></div>
-      </div>
-      <div class="cap-callout amber">
-        <div class="co-key">🔑</div>
-        <div class="co-text"><span class="t">Clés API</span><br><span class="d">Générées par utilisateur, montrées une seule fois, stockées hashées SHA-256.</span></div>
-      </div>
+<!-- ═══ SLIDE 29 — CAP WORKERS / TRIGGERS / ADMIN ═══ -->
+<section data-label="Capture · Workers & Admin">
+  <style>#s29 { position:absolute; inset:80px 90px 60px; display:flex; flex-direction:column; gap:18px; }
+    #s29 .row { display:flex; gap:22px; flex:1; min-height:0; }
+    #s29 .shot { flex:1; min-height:0; }
+    #s29 h1 { font-size:44px; font-weight:700; letter-spacing:-1px; }</style>
+  <div id="s29">
+    <div>
+      <div class="section-label">Interface</div>
+      <h1>Workers · Planification · Administration</h1>
     </div>
-    <div class="cap-right">
-      <div class="shot red has-img">
-        <img src="screenshots/secrets.png" alt="Panneau des secrets">
-        <div class="shot-badge">Secrets</div>
-      </div>
-      <div class="shot has-img">
-        <img src="screenshots/users.png" alt="Utilisateurs &amp; clés API">
-        <div class="shot-badge">Users</div>
-      </div>
+    <div class="row">
+      <div class="shot amber"><div class="shot-badge">WORKERS</div><img src="screenshots/workers.png" alt="Panneau des workers"></div>
+      <div class="shot purple"><div class="shot-badge">CRON</div><img src="screenshots/triggers.png" alt="Planification cron"></div>
+      <div class="shot"><div class="shot-badge">API TRIGGER</div><img src="screenshots/triggersapi.png" alt="Trigger HTTP / API"></div>
+    </div>
+    <div class="row">
+      <div class="shot red"><div class="shot-badge">SECRETS</div><img src="screenshots/secrets.png" alt="Panneau des secrets"></div>
+      <div class="shot green"><div class="shot-badge">UTILISATEURS</div><img src="screenshots/users.png" alt="Utilisateurs & clés API"></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
-  <div class="slide-num">24 / 25</div>
+  <div class="slide-num">29 / 30</div>
 </section>
 
-
-<!-- ═══════════════════════════════════════════════════════════
-  SLIDE 19 — CLÔTURE
-═══════════════════════════════════════════════════════════ -->
+<!-- ═══ SLIDE 30 — CLÔTURE ═══ -->
 <section data-label="Clôture">
   <style>
-    #s19-glow {
-      position: absolute; width: 1000px; height: 1000px; border-radius: 50%;
-      background: radial-gradient(circle, oklch(0.45 0.20 235 / 0.08) 0%, transparent 70%);
-      top: -250px; right: -150px; pointer-events: none;
-    }
-    #s19-content {
-      position: absolute; left: 160px; top: 50%; transform: translateY(-50%);
-      max-width: 1100px;
-    }
-    #s19-logo {
-      font-family: var(--font-mono); font-size: 84px; font-weight: 700; letter-spacing: -2px;
+    #s30-glow { position: absolute; width: 1000px; height: 1000px; border-radius: 50%;
+      background: radial-gradient(circle, oklch(0.45 0.20 235 / 0.09) 0%, transparent 70%); top: -250px; right: -150px; pointer-events: none; }
+    #s30-content { position: absolute; left: 160px; top: 50%; transform: translateY(-50%); max-width: 1200px; }
+    #s30-logo { font-family: var(--font-mono); font-size: 84px; font-weight: 700; letter-spacing: -2px;
       background: linear-gradient(135deg, var(--text) 30%, var(--blue) 80%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      line-height: 1;
-    }
-    #s19-sub { font-size: 30px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
-    #s19-recap { display: flex; gap: 18px; margin-top: 48px; flex-wrap: wrap; }
-    .s19-chip {
-      background: var(--bg2); border: 1.5px solid var(--border); border-radius: 14px;
-      padding: 18px 26px; font-size: 22px; display: flex; align-items: center; gap: 12px;
-    }
-    .s19-chip .ic { font-size: 26px; }
-    #s19-links {
-      margin-top: 52px; font-family: var(--font-mono); font-size: 22px; color: var(--muted);
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    #s19-links b { color: var(--blue); font-weight: 600; }
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; }
+    #s30-sub { font-size: 30px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
+    #s30-recap { display: flex; gap: 16px; margin-top: 44px; flex-wrap: wrap; }
+    .s30-chip { background: var(--bg2); border: 1.5px solid var(--border); border-radius: 14px; padding: 16px 24px; font-size: 21px; display: flex; align-items: center; gap: 12px; }
+    .s30-chip .ic { font-size: 24px; }
+    #s30-links { margin-top: 48px; font-family: var(--font-mono); font-size: 21px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+    #s30-links b { color: var(--blue); font-weight: 600; }
   </style>
-  <div id="s19-glow"></div>
-  <div id="s19-content">
+  <div id="s30-glow"></div>
+  <div id="s30-content">
     <div class="section-label">Merci</div>
-    <div id="s19-logo">Orchestrator</div>
-    <div id="s19-sub">Une plateforme, tous vos automatismes —<br>de l'éditeur visuel au worker distant, en passant par les secrets chiffrés.</div>
-    <div id="s19-recap">
-      <div class="s19-chip"><span class="ic">⬡</span> Éditeur visuel</div>
-      <div class="s19-chip"><span class="ic">⚙</span> Moteur DAG polyglotte</div>
-      <div class="s19-chip"><span class="ic">⇄</span> Workers distants</div>
-      <div class="s19-chip"><span class="ic">⚿</span> Secrets AES-256</div>
+    <div id="s30-logo">Orchestrator</div>
+    <div id="s30-sub">Une plateforme, tous vos automatismes — de l'éditeur visuel<br>au worker distant, versionnés en git, secrets chiffrés.</div>
+    <div id="s30-recap">
+      <div class="s30-chip"><span class="ic">⬡</span> Éditeur visuel</div>
+      <div class="s30-chip"><span class="ic">⚙</span> Moteur DAG polyglotte</div>
+      <div class="s30-chip"><span class="ic">⎇</span> Git par flux</div>
+      <div class="s30-chip"><span class="ic">⧉</span> Variantes</div>
+      <div class="s30-chip"><span class="ic">📎</span> Artefacts CAS</div>
+      <div class="s30-chip"><span class="ic">⇄</span> Workers distants</div>
     </div>
-    <div id="s19-links">
+    <div id="s30-links">
       <div>Démarrer&nbsp;&nbsp;→&nbsp;&nbsp;<b>http://localhost:3939</b></div>
       <div>Docs&nbsp;&nbsp;→&nbsp;&nbsp;<b>documentation/</b> — ARCHITECTURE · API · ONBOARDING · RUNBOOK</div>
     </div>
   </div>
   <div class="corner-logo">v3.2.4</div>
-  <div class="slide-num">25 / 25</div>
+  <div class="slide-num">30 / 30</div>
 </section>
 
 </deck-stage>

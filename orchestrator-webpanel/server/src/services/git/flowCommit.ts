@@ -9,8 +9,9 @@ import {
   listRefs,
   deleteObjectsExcept,
   deleteAllRefs,
+  getObjectType,
 } from './gitStore';
-import { putArtifacts, gcArtifacts } from '../executor/artifactStore';
+import { putArtifacts, resolveRefs, gcArtifacts } from '../executor/artifactStore';
 import type { ArtifactEntry } from './flowMaterialize';
 import type { BuiltObject } from './gitObjects';
 
@@ -116,10 +117,10 @@ export async function commitFlowState(
   // Carry any user-added top-level files (e.g. a pushed .gitignore / docs) from
   // the current HEAD tree forward so this regenerated save doesn't erase them.
   const preserved = await readPreservedRootEntries(flowId, prevTree);
-  // git stores only a pointer (sha256) per artifact, never the bytes — so we
-  // normalize to refs (storing any straggler inline body into artifact_blobs).
-  const artifactRefs = await ensureArtifactRefs(flow.artifacts);
-  const { rootSha, objects } = flowToTree({ ...flow, artifacts: artifactRefs }, preserved);
+  // git stores the real artifact bytes (so clone gets the files). flow.artifacts
+  // are content-addressed refs → resolve to {name,data} for the tree.
+  const resolvedArtifacts = await resolveRefs(flow.artifacts);
+  const { rootSha, objects } = flowToTree({ ...flow, artifacts: resolvedArtifacts }, preserved);
   if (rootSha === prevTree) return null; // nothing changed
 
   await persistObjects(flowId, objects);
@@ -453,8 +454,10 @@ export async function gcFlowObjects(flowId: string): Promise<number> {
   const walkTree = async (sha: string): Promise<void> => {
     if (reachable.has(sha)) return;
     reachable.add(sha);
-    const obj = await getObject(flowId, sha);
-    if (!obj || obj.objectType !== 'tree') return;
+    // Cheap type check first — never reassemble a large blob just to skip it.
+    if (await getObjectType(flowId, sha) !== 'tree') return;
+    const obj = await getObject(flowId, sha); // trees are small
+    if (!obj) return;
     for (const e of parseTree(obj.data)) await walkTree(e.sha);
   };
 

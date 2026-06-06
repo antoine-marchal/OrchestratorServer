@@ -308,14 +308,21 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       // the latest definition before acting (e.g. executeFlow) can await it.
       // Most callers fire-and-forget; the .catch keeps those from producing
       // unhandled rejections.
-      return apiClient.put(`/api/v1/flows/${id}`, {
+      // NOTE: artifacts are deliberately omitted unless the caller explicitly set
+      // them in `data`. Autosave (nodes/edges) must NOT send the store's artifact
+      // list — it can be stale (e.g. a git push or another tab just added one),
+      // and sending it would clobber the server's flow.artifacts back to the old
+      // set. Artifacts are managed via the dedicated upload/delete endpoints,
+      // restore/checkout, and push-sync. Import passes artifacts explicitly.
+      const body: any = {
         name: updated.name, namespace: updated.namespace,
         description: updated.description, nodes: updated.nodes, edges: updated.edges,
         workerId: updated.workerId || '',
-        artifacts: updated.artifacts || [],
         owner: updated.owner,
         variants: updated.variants || [],
-      }).then(() => undefined).catch(err => { console.error(err); });
+      };
+      if ('artifacts' in data) body.artifacts = (data as any).artifacts || [];
+      return apiClient.put(`/api/v1/flows/${id}`, body).then(() => undefined).catch(err => { console.error(err); });
     },
 
     updateFlowLocal: (id, data) => {
