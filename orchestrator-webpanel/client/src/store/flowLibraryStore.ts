@@ -23,6 +23,17 @@ function saveJSON(key: string, value: unknown) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
 }
 
+// Persist executions to localStorage WITHOUT their heavy detail fields (logs,
+// nodes, edges). A single chatty run can be multiple MB of logs; keeping 500 of
+// them in the ~5MB localStorage budget overflowed the quota, so setItem threw
+// and the whole executions cache silently failed to persist. Detail is fetched
+// lazily from the server (fetchExecutionDetail) when an execution is opened, so
+// it never needs to live in localStorage — only the metadata does.
+function stripExecForStorage(e: FlowExecution): FlowExecution {
+  const { logs: _logs, nodes: _nodes, edges: _edges, ...meta } = e as any;
+  return meta as FlowExecution;
+}
+
 const polls = new Map<string, ReturnType<typeof setTimeout>>();
 const renameTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -152,7 +163,9 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
     const sorted = Array.from(byId.values())
       .sort((a, b) => new Date(b.startTime || 0).getTime() - new Date(a.startTime || 0).getTime());
     const trimmed = sorted.slice(0, MAX_EXECUTIONS);
-    saveJSON(EXECS_KEY, trimmed);
+    // Store metadata only — logs/nodes/edges are re-fetched on demand and would
+    // otherwise blow the localStorage quota (see stripExecForStorage).
+    saveJSON(EXECS_KEY, trimmed.map(stripExecForStorage));
     // Same reference-stability trick as persistFlows: skip the set when the
     // payload is structurally identical, otherwise reuse existing exec
     // objects element-by-element to prevent the executions list from

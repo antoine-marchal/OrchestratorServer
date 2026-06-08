@@ -202,7 +202,19 @@ function Level({ nodes, edges, depth, parentFlow, handlers }: {
   const relations = useMemo(() => buildRelations(nodes, edges), [nodes, edges]);
   const ordered = useMemo(() => topologicalSort(nodes, edges), [nodes, edges]);
   const files = ordered.filter(isFile);
-  const flows = ordered.filter(isFlowSession);
+  // One folder per *session*, not per flow node. Several flow nodes (with
+  // different titles) can be bound to the same editor session via
+  // data.linkedSessionId — they're the same session and were showing up as
+  // duplicate folders. Collapse them by linkedSessionId, keeping the first node
+  // seen (topologically ordered). Flow nodes not yet linked to a session fall
+  // back to their own id so each still appears once.
+  const seenSessions = new Set<string>();
+  const flows = ordered.filter(isFlowSession).filter(f => {
+    const key = (f.data as any)?.linkedSessionId || f.id;
+    if (seenSessions.has(key)) return false;
+    seenSessions.add(key);
+    return true;
+  });
   const usedFiles = new Set<string>();
   const usedSessions = new Set<string>();
 

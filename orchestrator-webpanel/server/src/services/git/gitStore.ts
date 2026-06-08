@@ -22,6 +22,27 @@ const refs = () => getCollection('git_refs');
 // records `chunks:n` and readers reassemble. 8MB raw → ~8MB BinData, under 16MB.
 const GIT_CHUNK_BYTES = 8 * 1024 * 1024;
 
+// Two commits racing (e.g. an editor autosave overlapping a manual save) can
+// both pass an existence check and then both insert the same content-addressed
+// _id, and the loser throws a unique-constraint error ("it violates the unique
+// constraint" on NeDB, code 11000 / E11000 on Mongo). Git objects are immutable
+// and content-addressed, so a duplicate insert is a no-op — swallow it.
+function isDuplicateKeyError(err: any): boolean {
+  if (!err) return false;
+  if (err.code === 11000 || err.errorType === 'uniqueViolated') return true;
+  const msg = String(err.message || err);
+  return /unique constraint|E11000|duplicate key/i.test(msg);
+}
+
+async function insertIgnoreDuplicate(col: { insert: (doc: any) => Promise<any> }, doc: any): Promise<void> {
+  try {
+    await col.insert(doc);
+  } catch (err) {
+    if (!isDuplicateKeyError(err)) throw err;
+    // Same object already persisted by a concurrent writer — immutable, so fine.
+  }
+}
+
 // Normalise a stored `data` field back to a Buffer regardless of how it was
 // persisted: native Buffer (Mongo BinData), Mongo Binary ({buffer}), or base64
 // string (NeDB, or legacy Mongo rows written before BinData).
@@ -69,14 +90,14 @@ export async function putObject(
   const mongo = isMongoMode();
   const enc = (b: Buffer) => (mongo ? b : b.toString('base64'));
   if (data.length <= GIT_CHUNK_BYTES) {
-    await objects().insert({ _id, flowId, sha, objectType, data: enc(data), chunks: 0 });
+    await insertIgnoreDuplicate(objects(), { _id, flowId, sha, objectType, data: enc(data), chunks: 0 });
   } else {
     const n = Math.ceil(data.length / GIT_CHUNK_BYTES);
     for (let i = 0; i < n; i++) {
       const part = Buffer.from(data.subarray(i * GIT_CHUNK_BYTES, (i + 1) * GIT_CHUNK_BYTES));
-      await objectChunks().insert({ _id: `${_id}:${i}`, key: _id, idx: i, data: enc(part) });
+      await insertIgnoreDuplicate(objectChunks(), { _id: `${_id}:${i}`, key: _id, idx: i, data: enc(part) });
     }
-    await objects().insert({ _id, flowId, sha, objectType, chunks: n });
+    await insertIgnoreDuplicate(objects(), { _id, flowId, sha, objectType, chunks: n });
   }
 }
 
@@ -101,7 +122,14 @@ export async function setRef(flowId: string, ref: string, sha: string): Promise<
   if (existing) {
     await refs().update({ _id }, { $set: { sha } });
   } else {
-    await refs().insert({ _id, flowId, ref, sha });
+    // Race-safe: if a concurrent writer created the ref between our findOne and
+    // here, fall back to updating it instead of crashing on the duplicate _id.
+    try {
+      await refs().insert({ _id, flowId, ref, sha });
+    } catch (err) {
+      if (!isDuplicateKeyError(err)) throw err;
+      await refs().update({ _id }, { $set: { sha } });
+    }
   }
 }
 

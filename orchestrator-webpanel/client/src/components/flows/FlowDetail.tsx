@@ -67,6 +67,10 @@ function formatLogTimestamp(timestamp: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
+// Max log rows mounted at once before the panel windows to the tail (see
+// showAllLogs). Large enough to cover normal runs, small enough to stay smooth.
+const LOG_RENDER_CAP = 2000;
+
 const LOG_TYPE_DEFS = [
   { key: 'input',  label: 'INPUT',  color: '#60a5fa' },
   { key: 'log',    label: 'LOG',    color: '#6b7280' },
@@ -209,6 +213,12 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [collapsedFlowNodes, setCollapsedFlowNodes] = useState<Set<string>>(new Set());
   const [clearConfirm, setClearConfirm] = useState(false);
+  // Cap how many log rows we mount at once. A run with thousands of lines mounts
+  // thousands of (non-trivial) DOM rows, which janks the panel and on big runs
+  // made it look like the logs never loaded. By default we render the most
+  // recent LOG_RENDER_CAP lines (the tail is what users want live); the banner
+  // lets them mount the whole stream on demand.
+  const [showAllLogs, setShowAllLogs] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -221,6 +231,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     setSelectedNodeId(null);
     setSelectedRun(null);
     setCollapsedFlowNodes(new Set());
+    setShowAllLogs(false);
   }, [selectedId]);
 
   // Executions are listed metadata-only; pull the heavy detail (logs + graph)
@@ -566,6 +577,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                     return true;
                   })
                 : typedLogs;
+              // Window very large log streams: mount only the tail unless the
+              // user explicitly asks for the whole thing. Keeps the panel
+              // responsive on multi-thousand-line runs.
+              const renderedLogs = (!showAllLogs && visibleLogs.length > LOG_RENDER_CAP)
+                ? visibleLogs.slice(-LOG_RENDER_CAP)
+                : visibleLogs;
+              const logsTruncated = renderedLogs.length < visibleLogs.length;
               const toggleType = (k: string) => setHiddenTypes(prev => {
                 const next = new Set(prev);
                 if (next.has(k)) next.delete(k); else next.add(k);
@@ -684,8 +702,22 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                         </p>
                       ) : (
                         <div className="space-y-0.5">
-                          {visibleLogs.map((log, i) => {
-                            const prev = i > 0 ? visibleLogs[i - 1] : null;
+                          {logsTruncated && (
+                            <button
+                              onClick={() => setShowAllLogs(true)}
+                              style={{
+                                width: '100%', marginBottom: 6, padding: '4px 8px', borderRadius: 4,
+                                border: '1px solid var(--border)', background: 'var(--bg-3)',
+                                color: 'var(--accent)', fontSize: 10, fontFamily: 'var(--font-mono)',
+                                cursor: 'pointer', letterSpacing: '0.04em',
+                              }}
+                              title="Mount every log line (may be slow on very large runs)"
+                            >
+                              Showing last {renderedLogs.length.toLocaleString()} of {visibleLogs.length.toLocaleString()} lines — click to load all
+                            </button>
+                          )}
+                          {renderedLogs.map((log, i) => {
+                            const prev = i > 0 ? renderedLogs[i - 1] : null;
                             const repeatMeta = !!prev &&
                               formatLogTimestamp(prev.timestamp) === formatLogTimestamp(log.timestamp) &&
                               prev.nodeId === log.nodeId;

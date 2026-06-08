@@ -5,7 +5,7 @@ import { getCollection } from '../services/db/index';
 import { authMiddleware } from '../middleware/auth';
 import { emitJobLog, jobs } from '../services/executor/nodeExecutor';
 import { extractSecretNames, resolveSecretValues } from './secrets';
-import { putArtifacts, getArtifactBase64 } from '../services/executor/artifactStore';
+import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../services/executor/artifactStore';
 import type { WorkerAccess } from '../services/db/models/Worker';
 import { requireRole } from '../middleware/rbac';
 
@@ -269,6 +269,32 @@ router.get('/:id/jobs/:jobId/artifacts/:sha', workerAuth, async (req: Request, r
     res.json({ name: ref.name, sha: ref.sha, data });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Streamed raw download of one artifact body. Unlike the JSON endpoint above
+// (which reassembles the whole body into a single base64 string), this writes
+// the bytes chunk-by-chunk (artifactChunks) so neither side holds the full file
+// in memory — the worker pipes it straight to disk. Use for large artifacts.
+router.get('/:id/jobs/:jobId/artifacts/:sha/raw', workerAuth, async (req: Request, res: Response) => {
+  try {
+    const col = getCollection('worker_jobs');
+    const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
+    if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
+    const ref = (job.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
+    if (!ref) return res.status(404).json({ error: 'Artifact not referenced by this job' }) as any;
+    const size = await getArtifactSize(req.params.sha);
+    if (size == null) return res.status(404).json({ error: 'Artifact blob not found' }) as any;
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(size));
+    res.setHeader('X-Artifact-Name', encodeURIComponent(ref.name));
+    for await (const chunk of artifactChunks(req.params.sha)) {
+      if (!res.write(chunk)) await new Promise<void>(r => res.once('drain', r)); // honour backpressure
+    }
+    res.end();
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: err.message }); else res.destroy(err);
   }
 });
 

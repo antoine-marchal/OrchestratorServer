@@ -11,6 +11,7 @@ import {
   listBranches,
   checkoutBranchToDoc,
   createBranch,
+  deleteBranch,
   resetBranch,
   ensureArtifactRefs,
   purgeFlowGit,
@@ -268,6 +269,19 @@ router.post('/:id/branches', requireFlowEditAccess, async (req: Request, res: Re
     if (!name || typeof name !== 'string') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } }) as any;
     const branches = await createBranch(req.params.id, name, from);
     res.status(201).json({ branches, active: flow.activeBranch || 'main' });
+  } catch (err: any) {
+    res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
+  }
+});
+
+// Delete a git branch. Refuses the default ("main") and the flow's active branch
+// (deleteBranch enforces both). Unreachable objects + orphaned artifacts are GC'd.
+router.delete('/:id/branches/:name', requireFlowEditAccess, async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const branches = await deleteBranch(req.params.id, req.params.name);
+    res.json({ branches, active: flow.activeBranch || 'main' });
   } catch (err: any) {
     res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
   }

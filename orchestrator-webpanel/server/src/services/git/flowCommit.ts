@@ -7,6 +7,7 @@ import {
   setRef,
   getRef,
   listRefs,
+  deleteRef,
   deleteObjectsExcept,
   deleteAllRefs,
   getObjectType,
@@ -358,6 +359,26 @@ export async function createBranch(flowId: string, name: string, from?: string):
   }
   if (!sha) throw new Error(`Cannot resolve start point for branch ${clean}`);
   await setRef(flowId, target, sha);
+  return listBranches(flowId);
+}
+
+// Delete a branch. Refuses the default branch and the flow's currently active
+// branch (you'd be deleting the checkout out from under the executor). After
+// removing the ref, GC reclaims any objects only that branch kept alive.
+export async function deleteBranch(flowId: string, name: string): Promise<string[]> {
+  const clean = name.trim();
+  if (clean === DEFAULT_BRANCH) throw new Error(`Cannot delete the default branch "${DEFAULT_BRANCH}"`);
+
+  const flow = await getCollection('flows').findOne({ _id: flowId });
+  if (!flow) throw new Error(`Flow ${flowId} not found`);
+  if (clean === activeBranchName(flow)) throw new Error(`Cannot delete the active branch "${clean}" — check out another branch first`);
+
+  const ref = branchRef(clean);
+  if (!(await getRef(flowId, ref))) throw new Error(`Branch ${clean} not found`);
+
+  await deleteRef(flowId, ref);
+  await gcFlowObjects(flowId);
+  await gcArtifacts(0); // a branch-only artifact pointer may now be unreferenced
   return listBranches(flowId);
 }
 

@@ -3,6 +3,7 @@ import axios, { AxiosInstance } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import { pipeline } from 'stream/promises';
 import { executeNode } from './executor/nodeExecutor';
 
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:3939';
@@ -13,6 +14,13 @@ const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '100
 const WORK_DIR         = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
 const EXECUTION_DIR    = process.env.ORCHESTRATOR_EXECUTION_DIR || WORK_DIR;
 const KEEP_ARTIFACTS   = process.env.ORCHESTRATOR_KEEP_ARTIFACTS === 'true';
+// A flow runs node-by-node, each node arriving as a separate worker job that
+// carries the same artifact set. We extract (download + decompress) the
+// artifacts once per flow execution and keep them on disk for the whole run,
+// then sweep them shortly after the execution's last node finishes. This delay
+// is the grace window after the last in-flight node of an execution before its
+// artifacts are deleted (skipped entirely when ORCHESTRATOR_KEEP_ARTIFACTS=true).
+const ARTIFACT_CLEANUP_DELAY_MS = parseInt(process.env.ORCHESTRATOR_ARTIFACT_CLEANUP_DELAY_MS || '30000');
 
 // How the worker picks up jobs:
 //   'parallel'   (default) — take jobs as they arrive, even while a node from
@@ -206,33 +214,6 @@ function unpackArchive(archivePath: string, targetDir: string): boolean {
   }
 }
 
-function extractArtifacts(artifacts: Array<{name: string; data: string}>): void {
-  if (!artifacts || !artifacts.length) return;
-  if (!fs.existsSync(EXECUTION_DIR)) fs.mkdirSync(EXECUTION_DIR, { recursive: true });
-  for (const artifact of artifacts) {
-    const destPath = safeArtifactPath(artifact.name);
-    if (!destPath) { console.warn(`[worker] rejected unsafe artifact name: ${artifact.name}`); continue; }
-    const destDir = path.dirname(destPath);
-    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-    const newData = Buffer.from(artifact.data, 'base64');
-    let wrote = true;
-    if (fs.existsSync(destPath)) {
-      const existing = fs.readFileSync(destPath);
-      if (existing.equals(newData)) { wrote = false; }
-    }
-    if (wrote) {
-      fs.writeFileSync(destPath, newData);
-      console.log(`[worker] artifact extracted: ${artifact.name}`);
-    }
-    if (isArchiveName(artifact.name)) {
-      const ok = unpackArchive(destPath, EXECUTION_DIR);
-      if (ok && !KEEP_ARTIFACTS) {
-        try { fs.unlinkSync(destPath); } catch { /* non-fatal */ }
-      }
-    }
-  }
-}
-
 function cleanupArtifacts(artifacts: Array<{name: string}>): void {
   if (!artifacts || !artifacts.length) return;
   for (const artifact of artifacts) {
@@ -242,40 +223,126 @@ function cleanupArtifacts(artifacts: Array<{name: string}>): void {
   }
 }
 
-// Artifacts are no longer inlined in the job record — it carries `{ name, sha }`
-// refs and we pull each body (base64) on demand, mirroring secret resolution.
-// Falls back to an inline `data` field if present (older orchestrator builds).
-async function resolveArtifactBodies(
-  workerId: string,
-  jobId: string,
-  refs: Array<{ name: string; sha?: string; data?: string }>,
-): Promise<Array<{ name: string; data: string }>> {
-  const out: Array<{ name: string; data: string }> = [];
-  for (const ref of refs) {
-    if (typeof ref.data === 'string') { out.push({ name: ref.name, data: ref.data }); continue; }
-    if (!ref.sha) continue;
-    const res = await http.get(`/api/v1/workers/${workerId}/jobs/${jobId}/artifacts/${ref.sha}`);
-    const data = res.data && res.data.data;
-    if (typeof data === 'string') out.push({ name: ref.name, data });
-  }
-  return out;
+// Per-flow-execution artifact state. Keyed by the parent flow's executionId so
+// that the many per-node jobs of one flow share a single extraction. `active`
+// is the count of that execution's nodes currently running on this worker; when
+// it hits 0 we arm `cleanupTimer` to sweep the artifacts after a grace window
+// (covers the inter-node gap so we don't delete files the next node needs).
+interface ExecArtifactState {
+  sig: string;
+  names: Array<{ name: string }>; // for cleanup; bodies live on disk, never in memory
+  active: number;
+  cleanupTimer: NodeJS.Timeout | null;
+}
+const execArtifacts = new Map<string, ExecArtifactState>();
+
+// Stable signature of an artifact set so we can tell when a job's artifacts
+// match what we already extracted for its execution (by content sha, or by
+// name + inline length when the body is inlined on older builds).
+function artifactSignature(refs: Array<{ name: string; sha?: string; data?: string }>): string {
+  return refs
+    .map(r => `${r.name}:${r.sha ?? `inline${r.data ? r.data.length : 0}`}`)
+    .sort()
+    .join('|');
 }
 
-// Only clean up shared artifacts when no sibling job is still running in the
-// same EXECUTION_DIR — otherwise (parallel mode) the first job to finish would
-// delete files a concurrent job is still using. `runningJobs` includes the
-// caller itself, so <= 1 means "I'm the last one out".
-function maybeCleanupArtifacts(artifacts: Array<{name: string; data: string}>): void {
-  if (!artifacts.length || KEEP_ARTIFACTS) return;
-  if (runningJobs > 1) return;
-  cleanupArtifacts(artifacts);
+// Download one artifact body straight to disk, streaming it chunk-by-chunk so a
+// large body never sits in memory (no giant base64 JSON). Falls back to a legacy
+// inline `data` body if the server still provides one. Unpacks archives in place.
+async function streamArtifactToDisk(
+  workerId: string,
+  jobId: string,
+  ref: { name: string; sha?: string; data?: string },
+): Promise<void> {
+  const destPath = safeArtifactPath(ref.name);
+  if (!destPath) { console.warn(`[worker] rejected unsafe artifact name: ${ref.name}`); return; }
+  const destDir = path.dirname(destPath);
+  if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+  if (typeof ref.data === 'string') {
+    // Legacy inline body (older orchestrator) — small enough to write directly.
+    fs.writeFileSync(destPath, Buffer.from(ref.data, 'base64'));
+  } else if (ref.sha) {
+    // Stream the raw bytes from the server to the file. responseType:'stream'
+    // means axios never buffers the whole body; pipeline applies backpressure.
+    const res = await http.get(
+      `/api/v1/workers/${workerId}/jobs/${jobId}/artifacts/${ref.sha}/raw`,
+      { responseType: 'stream', maxContentLength: Infinity, maxBodyLength: Infinity, timeout: 0 },
+    );
+    await pipeline(res.data as NodeJS.ReadableStream, fs.createWriteStream(destPath));
+  } else {
+    return; // nothing to fetch
+  }
+
+  if (isArchiveName(ref.name)) {
+    const ok = unpackArchive(destPath, EXECUTION_DIR);
+    if (ok && !KEEP_ARTIFACTS) {
+      try { fs.unlinkSync(destPath); } catch { /* non-fatal */ }
+    }
+  }
+}
+
+// Ensure this execution's artifacts are on disk. Downloads + extracts them only
+// on the first node of the execution (or if the artifact set changed); later
+// nodes reuse the already-extracted files instead of re-downloading and
+// re-decompressing them on every node.
+async function ensureArtifactsExtracted(
+  workerId: string,
+  jobId: string,
+  execKey: string,
+  artifactRefs: Array<{ name: string; sha?: string; data?: string }>,
+  onLog: (type: 'log' | 'error', message: string) => void,
+): Promise<void> {
+  const sig = artifactSignature(artifactRefs);
+  const existing = execArtifacts.get(execKey);
+  if (existing && existing.sig === sig) {
+    onLog('log', `[worker] reusing ${existing.names.length} artifact(s) already extracted for this execution`);
+    return; // already extracted for this flow run — nothing to do
+  }
+  for (const ref of artifactRefs) {
+    await streamArtifactToDisk(workerId, jobId, ref);
+  }
+  const names = artifactRefs.map(r => ({ name: r.name }));
+  execArtifacts.set(execKey, { sig, names, active: 0, cleanupTimer: existing?.cleanupTimer ?? null });
+  onLog('log', `[worker] ${names.length} artifact(s) streamed to ${EXECUTION_DIR}`);
+}
+
+// Mark a node of `execKey` as started — cancels any pending cleanup so a late
+// node doesn't run against half-deleted artifacts.
+function markExecNodeStart(execKey: string): void {
+  const st = execArtifacts.get(execKey);
+  if (!st) return;
+  if (st.cleanupTimer) { clearTimeout(st.cleanupTimer); st.cleanupTimer = null; }
+  st.active++;
+}
+
+// Mark a node finished. When the execution has no more in-flight nodes, arm a
+// delayed sweep of its artifacts (skipped when ORCHESTRATOR_KEEP_ARTIFACTS=true).
+function markExecNodeEnd(execKey: string): void {
+  const st = execArtifacts.get(execKey);
+  if (!st) return;
+  st.active = Math.max(0, st.active - 1);
+  if (st.active > 0) return;
+  if (KEEP_ARTIFACTS) { execArtifacts.delete(execKey); return; }
+  if (st.cleanupTimer) clearTimeout(st.cleanupTimer);
+  st.cleanupTimer = setTimeout(() => {
+    const cur = execArtifacts.get(execKey);
+    if (!cur || cur.active > 0) return; // a new node arrived during the window
+    cleanupArtifacts(cur.names);
+    execArtifacts.delete(execKey);
+  }, ARTIFACT_CLEANUP_DELAY_MS);
+  // Don't keep the process alive just for the cleanup timer.
+  if (typeof st.cleanupTimer.unref === 'function') st.cleanupTimer.unref();
 }
 
 async function executeJob(workerId: string, job: any): Promise<void> {
   const jobId = job._id;
   const artifactRefs: Array<{name: string; sha?: string; data?: string}> = job.artifacts || [];
-  // Resolved bodies are filled in once fetched; cleanup only needs the names.
-  let artifacts: Array<{name: string; data: string}> = [];
+  // Artifacts are extracted once per flow execution and shared across its nodes
+  // (see execArtifacts). Fall back to the jobId when a job has no executionId so
+  // a stray node still gets its own cleanup bucket.
+  const execKey: string = job.executionId || jobId;
+  const hasArtifacts = artifactRefs.length > 0;
   const onLog = (type: 'log' | 'error', message: string) => {
     http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/log`, { type, message }).catch(() => {});
   };
@@ -283,10 +350,9 @@ async function executeJob(workerId: string, job: any): Promise<void> {
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/status`, { status: 'running' });
     onLog('log', `[worker] running ${job.node?.type ?? 'node'} on "${WORKER_NAME}" (${process.platform}, cwd=${EXECUTION_DIR})`);
 
-    if (artifactRefs.length) {
-      artifacts = await resolveArtifactBodies(workerId, jobId, artifactRefs);
-      extractArtifacts(artifacts);
-      onLog('log', `[worker] ${artifacts.length} artifact(s) extracted to ${EXECUTION_DIR}`);
+    if (hasArtifacts) {
+      await ensureArtifactsExtracted(workerId, jobId, execKey, artifactRefs, onLog);
+      markExecNodeStart(execKey);
     }
 
     if (job.node?.data) {
@@ -297,16 +363,14 @@ async function executeJob(workerId: string, job: any): Promise<void> {
       output: result.output, variables: result.variables, status: 'success',
     });
     console.log(`[worker] Job ${jobId} completed`);
-
-    maybeCleanupArtifacts(artifacts);
   } catch (err: any) {
     onLog('error', `[worker] ${err.message}`);
     await http.post(`/api/v1/workers/${workerId}/jobs/${jobId}/complete`, {
       status: 'failed', error: err.message,
     }).catch(() => {});
     console.error(`[worker] Job ${jobId} failed:`, err.message);
-
-    maybeCleanupArtifacts(artifacts);
+  } finally {
+    if (hasArtifacts) markExecNodeEnd(execKey);
   }
 }
 

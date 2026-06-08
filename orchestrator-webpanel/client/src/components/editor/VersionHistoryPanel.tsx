@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check, Plus, Scissors, ArrowDownToLine } from 'lucide-react';
+import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check, Plus, Trash2, Scissors, ArrowDownToLine } from 'lucide-react';
 import { apiClient } from '../../utils/apiClient';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -162,6 +162,22 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     }
   }, [flowId]);
 
+  // Delete a branch (never main, never the active one). Asks for confirmation
+  // and, if the deleted branch was selected, falls back to the active branch.
+  const deleteBranch = useCallback(async (branch: string) => {
+    if (!flowId) return;
+    if (branch === 'main') { setError('The main branch cannot be deleted'); return; }
+    if (branch === activeBranch) { setError('Check out another branch before deleting this one'); return; }
+    if (!confirm(`Delete branch "${branch}"? This permanently removes it and any commits only it kept. This cannot be undone.`)) return;
+    try {
+      const data: any = await apiClient.delete(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}`);
+      if (Array.isArray(data?.branches)) setBranches(data.branches);
+      else await loadBranches();
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to delete branch');
+    }
+  }, [flowId, activeBranch, loadBranches]);
+
   // Rework the active branch around a commit.
   //   mode 'root' — make this commit the new root (drop older history).
   //   mode 'head' — reset the branch tip here (drop newer commits).
@@ -281,6 +297,32 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
           <button onClick={createBranch} className="tc-btn ghost" style={{ height: 24, padding: '0 6px' }} title="Create branch from current HEAD">
             <Plus size={12} />
           </button>
+          {(() => {
+            // Deletable = everything except main and the checked-out branch.
+            const deletable = (branches.length ? branches : [activeBranch]).filter(b => b !== 'main' && b !== activeBranch);
+            const onDelete = () => {
+              if (deletable.length === 0) { setError('No deletable branch — "main" and the active branch are protected'); return; }
+              let target = deletable[0];
+              if (deletable.length > 1) {
+                const ans = window.prompt(`Branch to delete (one of: ${deletable.join(', ')}):`, '')?.trim();
+                if (!ans) return;
+                if (!deletable.includes(ans)) { setError(`"${ans}" is not a deletable branch`); return; }
+                target = ans;
+              }
+              deleteBranch(target);
+            };
+            return (
+              <button
+                onClick={onDelete}
+                disabled={deletable.length === 0}
+                className="tc-btn ghost"
+                style={{ height: 24, padding: '0 6px', opacity: deletable.length === 0 ? 0.4 : 1 }}
+                title={deletable.length === 0 ? 'No deletable branch (main and the active branch are protected)' : 'Delete a branch (not main / not the active one)'}
+              >
+                <Trash2 size={12} />
+              </button>
+            );
+          })()}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input

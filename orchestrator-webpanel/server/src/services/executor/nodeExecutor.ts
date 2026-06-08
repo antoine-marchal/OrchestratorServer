@@ -178,6 +178,22 @@ export function detectLogErrorTrigger(text: string | null | undefined): string |
   return m ? `Log error trigger: matched '${m[0]}' in output (ORCHESTRATOR_FAIL_ON_LOG_ERROR=true)` : null;
 }
 
+// Decide a process-node's terminal error the same way the worker does
+// (see worker runProcess): a node fails on a non-zero exit code only. stdout/
+// stderr *content* is never promoted to a failure unless the operator opts in
+// via ORCHESTRATOR_FAIL_ON_LOG_ERROR. Previously each runner scanned stdout for
+// /error/i and treated any stderr output as a failure, so a node that printed a
+// warning to stderr (pip, progress bars, …) but exited 0 was wrongly marked
+// FAILED regardless of the flag. stderr is still surfaced to the user via the
+// streamed 'error' log entries, so nothing is lost by not folding it into error.
+export function computeProcessError(stdout: string, stderr: string, exitCode: number | null): string | null {
+  if (exitCode !== 0) {
+    const head = (stderr || '').trim();
+    return (head ? head + '\n' : '') + `Exit code: ${exitCode}`;
+  }
+  return detectLogErrorTrigger((stdout || '') + '\n' + (stderr || ''));
+}
+
 [INBOX, OUTBOX].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
 export const runningProcesses = new Map<string, ChildProcess>();
@@ -676,8 +692,7 @@ new File('${outputPathGroovy}').text = asJson(output)`.trim();
     try { if (fs.existsSync(tempVariablesPath)) { modifiedVariables = JSON.parse(fs.readFileSync(tempVariablesPath, 'utf8')); safeUnlinkSync(tempVariablesPath); } } catch { }
     if (typeof outputValue === 'string') outputValue = outputValue.trim();
     outputValue = normalizeOutput(outputValue);
-    const errorInStdout = /Exception|Error|Caused by|groovy\.lang|java\.lang/i.test(stdout) ? stdout : '';
-    finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: modifiedVariables });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: modifiedVariables });
   });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempGroovyPath); safeUnlinkSync(tempInputPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
   registerProcess(id, child);
@@ -707,8 +722,7 @@ function processBatchNode(id: string, code: string, input: any, finish: FinishFn
     if (!outputValue && stdout) outputValue = stdout.trim();
     try { if (typeof outputValue === 'string' && (outputValue.startsWith('{') || outputValue.startsWith('['))) outputValue = JSON.parse(outputValue); } catch { }
     outputValue = normalizeOutput(outputValue);
-    const errorInStdout = /error|not recognized|failed|exception|not found/i.test(stdout) ? stdout : '';
-    finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: {} });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: {} });
   });
   registerProcess(id, child);
   const si = setInterval(() => { if (shouldStopJob(id, jobId)) { clearInterval(si); terminateProcess(id); cleanupStopSignal(id); finish({ output: null, log: 'Process terminated', error: 'Process terminated by user', variables: {} }); } }, STOP_CHECK_INTERVAL_MS);
@@ -765,8 +779,7 @@ function processJsBackendNode(id: string, code: string, input: any, finish: Fini
     try { if (fs.existsSync(tempVariablesPath)) { modifiedVariables = JSON.parse(fs.readFileSync(tempVariablesPath, 'utf8')); safeUnlinkSync(tempVariablesPath); } } catch { }
     if (typeof outputValue === 'string') outputValue = outputValue.trim();
     outputValue = normalizeOutput(outputValue);
-    const errorInStdout = /error|not found|failed|exception/i.test(stdout) ? stdout : '';
-    finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: modifiedVariables });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: modifiedVariables });
   });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempScriptPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
   registerProcess(id, child);
@@ -808,8 +821,7 @@ function processPowershellNode(id: string, code: string, input: any, finish: Fin
     if (!outputValue && stdout) outputValue = stdout.trim();
     if (typeof outputValue === 'string') { try { outputValue = JSON.parse(outputValue.trim()); } catch { } }
     outputValue = normalizeOutput(outputValue);
-    const errorInStdout = /error|not recognized|failed|exception|not found/i.test(stdout) ? stdout : '';
-    finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: modifiedVariables });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: modifiedVariables });
   });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempPs1Path); finish({ output: null, log: null, error: err.message, variables: {} }); });
   registerProcess(id, child);
@@ -845,8 +857,7 @@ function processPythonNode(id: string, code: string, input: any, finish: FinishF
     try { if (fs.existsSync(tempVariablesPath)) { modifiedVariables = JSON.parse(fs.readFileSync(tempVariablesPath, 'utf8')); safeUnlinkSync(tempVariablesPath); } } catch { }
     if (typeof outputValue === 'string') outputValue = outputValue.trim();
     outputValue = normalizeOutput(outputValue);
-    const errorInStdout = /Traceback|Error|Exception/i.test(stdout) ? stdout : '';
-    finish({ log: errorInStdout === '' ? stdout.trim() : null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '') + errorInStdout).trim() || null, output: outputValue, variables: modifiedVariables });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: modifiedVariables });
   });
   child.on('error', (err: Error) => { runningProcesses.delete(id); safeUnlinkSync(tempPyPath); safeUnlinkSync(tempInputPath); finish({ output: null, log: null, error: err.message, variables: {} }); });
   registerProcess(id, child);
@@ -887,7 +898,7 @@ function processShellNode(id: string, code: string, input: any, finish: FinishFn
     if (!outputValue && stdout) outputValue = stdout.trim();
     if (typeof outputValue === 'string') { try { outputValue = JSON.parse(outputValue); } catch { } }
     outputValue = normalizeOutput(outputValue);
-    finish({ log: stdout.trim() || null, error: ((stderr || '') + (exitCode !== 0 ? `Exit code: ${exitCode}` : '')).trim() || null, output: outputValue, variables: {} });
+    finish({ log: stdout.trim() || null, error: computeProcessError(stdout, stderr, exitCode), output: outputValue, variables: {} });
   });
   registerProcess(id, child);
   const si = setInterval(() => { if (shouldStopJob(id, jobId)) { clearInterval(si); terminateProcess(id); cleanupStopSignal(id); finish({ output: null, log: 'Process terminated', error: 'Process terminated by user', variables: {} }); } }, STOP_CHECK_INTERVAL_MS);
