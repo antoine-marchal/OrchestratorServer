@@ -32,6 +32,7 @@ import { useSessionStore } from '../../store/sessionStore';
 import { apiClient } from '../../utils/apiClient';
 import StatusBadge from './StatusBadge';
 import ScheduleModal from './ScheduleModal';
+import { TransferModal } from './TransferModal';
 import FlowEditor from '../FlowEditor';
 import SessionTabs from '../SessionTabs';
 import { EditorLayout } from '../editor/EditorLayout';
@@ -70,6 +71,23 @@ function formatLogTimestamp(timestamp: number): string {
 // Max log rows mounted at once before the panel windows to the tail (see
 // showAllLogs). Large enough to cover normal runs, small enough to stay smooth.
 const LOG_RENDER_CAP = 2000;
+
+// Persist the executions-tab layout (panel visibility + sizes) across reloads.
+// One localStorage key per setting under this prefix.
+const LAYOUT_PREFIX = 'orchestrator-exec-layout:';
+function usePersistedState<T>(key: string, fallback: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const storageKey = LAYOUT_PREFIX + key;
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw != null ? (JSON.parse(raw) as T) : fallback;
+    } catch { return fallback; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch { /* quota / private mode */ }
+  }, [storageKey, value]);
+  return [value, setValue];
+}
 
 const LOG_TYPE_DEFS = [
   { key: 'input',  label: 'INPUT',  color: '#60a5fa' },
@@ -188,12 +206,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
       alert(err instanceof Error ? err.message : 'Delete failed');
     }
   };
-  const [showGraph, setShowGraph] = useState(true);
-  const [showTimeline, setShowTimeline] = useState(false);
-  const [graphHeight, setGraphHeight] = useState(280);
-  const [timelineHeight, setTimelineHeight] = useState(240);
-  const [nodeTreeWidth, setNodeTreeWidth] = useState(220);
-  const [execListWidth, setExecListWidth] = useState(320);
+  // Panel visibility + sizes persist across reloads (per-user, localStorage).
+  const [showGraph, setShowGraph] = usePersistedState('showGraph', true);
+  const [showTimeline, setShowTimeline] = usePersistedState('showTimeline', false);
+  const [graphHeight, setGraphHeight] = usePersistedState('graphHeight', 280);
+  const [timelineHeight, setTimelineHeight] = usePersistedState('timelineHeight', 240);
+  const [nodeTreeWidth, setNodeTreeWidth] = usePersistedState('nodeTreeWidth', 220);
+  const [execListWidth, setExecListWidth] = usePersistedState('execListWidth', 320);
   const [selectedId, setSelectedId] = useState<string | null>(highlightId || flowExecs[0]?.id || null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Selected node id from the structure tree — when set, log pane filters
@@ -219,6 +238,10 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // recent LOG_RENDER_CAP lines (the tail is what users want live); the banner
   // lets them mount the whole stream on demand.
   const [showAllLogs, setShowAllLogs] = useState(false);
+  // True while the detail fetch (logs + graph) for the selected exec is in
+  // flight — drives a small loading state in the log pane so a slow fetch shows
+  // a spinner instead of a premature "No logs yet…".
+  const [logsLoading, setLogsLoading] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -237,7 +260,13 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // Executions are listed metadata-only; pull the heavy detail (logs + graph)
   // when one is opened. RUNNING ones keep refreshing via the per-exec poller.
   useEffect(() => {
-    if (selectedId) fetchExecutionDetail(selectedId).catch(() => {});
+    if (!selectedId) return;
+    let cancelled = false;
+    setLogsLoading(true);
+    fetchExecutionDetail(selectedId)
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLogsLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedId, fetchExecutionDetail]);
 
   // Live-tail executions while the user is on this tab. This catches executions
@@ -267,9 +296,18 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     if (!selectedId && flowExecs.length > 0) setSelectedId(flowExecs[0].id);
   }, [flowExecs.length, selectedId]);
 
+  // Auto-scroll the log pane to the bottom as new lines arrive — but only when
+  // the user is already near the bottom (within 80px). Otherwise, scrolling up
+  // to read earlier output of a live run would keep yanking them back down.
+  // Switching to a different execution always jumps to the bottom.
+  const lastScrolledExecId = useRef<string | null>(null);
   useEffect(() => {
-    if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
+    const el = logRef.current;
+    if (!el) return;
+    const execChanged = lastScrolledExecId.current !== (selectedExec?.id ?? null);
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (execChanged || nearBottom) el.scrollTop = el.scrollHeight;
+    lastScrolledExecId.current = selectedExec?.id ?? null;
   }, [selectedExec?.logs.length, selectedExec?.id]);
 
   // Hoist exec nodes/edges so memos below can depend on them.
@@ -369,11 +407,22 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     }
   };
 
-  const exportSelectedLogs = () => {
-    if (!selectedExec) return;
+  const [isExporting, setIsExporting] = useState(false);
+  const exportSelectedLogs = async () => {
+    if (!selectedExec || isExporting) return;
+    setIsExporting(true);
+    // Pull the freshest logs before building the file — the in-store copy may be
+    // a stale/windowed snapshot, and a still-running exec keeps appending. Fall
+    // back to whatever's already in the store if the refetch fails.
+    let logs = selectedExec.logs || [];
+    try {
+      const d: any = await apiClient.get(`/api/v1/executions/${selectedExec.id}`);
+      if (Array.isArray(d?.logs)) logs = d.logs;
+    } catch { /* offline / transient — export the cached logs */ }
+    finally { setIsExporting(false); }
     // eslint-disable-next-line no-control-regex
     const stripAnsi = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '');
-    const lines = selectedExec.logs.map(log => {
+    const lines = logs.map(log => {
       const ts   = formatLogTimestamp(log.timestamp);
       const name = log.nodeId ? (nodeNameMap.get(log.nodeId) ?? log.nodeId) : '';
       const type = log.type === 'input' ? 'INPUT' : log.type === 'output' ? 'OUTPUT' : log.type === 'error' ? 'ERROR' : log.type === 'flow' ? 'FLOW' : 'LOG';
@@ -536,10 +585,11 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               </button>
               <button
                 onClick={exportSelectedLogs}
+                disabled={isExporting}
                 className="tc-icon-btn"
-                title="Export logs"
+                title="Export logs (fetches the complete log first)"
               >
-                <Download size={14} />
+                {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               </button>
               {selectedExec.status === 'RUNNING' && (
                 <span className="ml-auto flex items-center gap-1 text-xs" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
@@ -697,9 +747,16 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                       </div>
                       {/* Log rows */}
                       {visibleLogs.length === 0 ? (
-                        <p style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
-                          {selectedExec.logs.length === 0 ? 'No logs yet...' : 'No logs match the current filters'}
-                        </p>
+                        (logsLoading && (selectedExec.logs?.length ?? 0) === 0) ? (
+                          <div className="flex items-center gap-2" style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
+                            <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                            Loading logs…
+                          </div>
+                        ) : (
+                          <p style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
+                            {(selectedExec.logs?.length ?? 0) === 0 ? 'No logs yet...' : 'No logs match the current filters'}
+                          </p>
+                        )
                       ) : (
                         <div className="space-y-0.5">
                           {logsTruncated && (
@@ -1059,51 +1116,8 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
         </div>
       )}
 
-      {transfer && (() => {
-        const allDone = transfer.items.every(u => u.done);
-        const verb = transfer.mode === 'upload' ? 'Upload' : 'Download';
-        const gerund = transfer.mode === 'upload' ? 'Uploading' : 'Downloading';
-        const n = transfer.items.length;
-        return (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => { if (allDone) setTransfer(null); }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, width: 440, maxWidth: '90vw', padding: 16, fontFamily: 'var(--font-mono)' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              {allDone
-                ? <CheckCircle2 size={14} style={{ color: 'var(--ok)' }} />
-                : <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent)' }} />}
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                {allDone ? `${verb} complete` : `${gerund} ${n} file${n > 1 ? 's' : ''}…`}
-              </span>
-              <button onClick={() => setTransfer(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }} title="Close">
-                <X size={14} />
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: '50vh', overflow: 'auto' }}>
-              {transfer.items.map((u, i) => (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'var(--text-2)', marginBottom: 4 }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</span>
-                    <span style={{ flexShrink: 0, color: u.error ? 'var(--err)' : u.done ? 'var(--ok)' : 'var(--text-3)' }}>
-                      {u.error ? 'failed' : u.done ? 'done' : `${u.pct}%`}
-                    </span>
-                  </div>
-                  <div style={{ height: 6, background: 'var(--bg-3)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${u.error ? 100 : u.pct}%`, background: u.error ? 'var(--err)' : 'var(--accent)', transition: 'width 0.15s' }} />
-                  </div>
-                  {u.error && <div style={{ fontSize: 10, color: 'var(--err)', marginTop: 2 }}>{u.error}</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        );
-      })()}
+      <TransferModal transfer={transfer} onClose={() => setTransfer(null)} />
+
 
       <div className="flex-1 min-h-0">
         <EditorLayout

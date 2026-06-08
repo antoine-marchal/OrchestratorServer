@@ -16,9 +16,33 @@ import {
   ensureArtifactRefs,
   purgeFlowGit,
   activeRef,
+  activeBranchName,
   type ResetMode,
 } from '../services/git/flowCommit';
+import { listExtraEntries, resolveExtraPath } from '../services/git/flowMaterialize';
+import { getRef, getObject } from '../services/git/gitStore';
+import { parseCommit } from '../services/git/gitObjects';
 import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../services/executor/artifactStore';
+
+// Resolve a flow's active-branch HEAD tree sha (null when the repo has no commit).
+async function activeHeadTreeSha(flowId: string, flow: any): Promise<string | null> {
+  const sha = await getRef(flowId, activeRef(flow));
+  if (!sha) return null;
+  const obj = await getObject(flowId, sha);
+  if (!obj || obj.objectType !== 'commit') return null;
+  return parseCommit(obj.data).tree;
+}
+
+// A file is treated as binary (download-only, no in-editor view) if it carries a
+// NUL byte in its first 8KB — the same cheap heuristic git uses.
+function looksBinary(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8192);
+  for (let i = 0; i < n; i++) if (buf[i] === 0) return true;
+  return false;
+}
+
+// Cap the in-editor text view; larger files are download-only.
+const EXTRA_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 const router = Router();
 
@@ -301,6 +325,63 @@ router.post('/:id/branches/:name/reset', requireFlowEditAccess, async (req: Requ
     res.json({ tip, flow: await getCollection('flows').findOne({ _id: req.params.id }) });
   } catch (err: any) {
     res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
+  }
+});
+
+// List the non-managed (user-pushed) files/folders of the active branch HEAD
+// tree — anything not owned by the materializer (nodes/, sessions/, artifacts/,
+// relations.json). Read-only; surfaced in the editor file tree.
+router.get('/:id/tree/extra', async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const treeSha = await activeHeadTreeSha(req.params.id, flow);
+    const entries = await listExtraEntries(req.params.id, treeSha);
+    res.json({ entries, branch: activeBranchName(flow) });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Read one non-managed file's bytes for the read-only viewer. Returns text
+// inline (utf8) when small and not binary, otherwise a download-only marker.
+router.get('/:id/tree/file', async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const path = (req.query.path as string) || '';
+    if (!path) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'path is required' } }) as any;
+    const treeSha = await activeHeadTreeSha(req.params.id, flow);
+    const blob = await resolveExtraPath(req.params.id, treeSha, path);
+    if (!blob) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'File not found' } }) as any;
+    const size = blob.data.length;
+    if (size > EXTRA_VIEW_MAX_BYTES || looksBinary(blob.data)) {
+      return res.json({ name: blob.name, path, size, viewable: false }) as any;
+    }
+    res.json({ name: blob.name, path, size, viewable: true, content: blob.data.toString('utf8') });
+  } catch (err: any) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
+});
+
+// Download one non-managed file as raw bytes. Auth via the standard
+// Authorization header (apiClient.downloadBinary sets it on the XHR).
+router.get('/:id/tree/raw', async (req: Request, res: Response) => {
+  try {
+    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
+    const path = (req.query.path as string) || '';
+    if (!path) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'path is required' } }) as any;
+    const treeSha = await activeHeadTreeSha(req.params.id, flow);
+    const blob = await resolveExtraPath(req.params.id, treeSha, path);
+    if (!blob) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'File not found' } }) as any;
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(blob.data.length));
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(blob.name)}`);
+    res.end(blob.data);
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+    else res.destroy();
   }
 });
 

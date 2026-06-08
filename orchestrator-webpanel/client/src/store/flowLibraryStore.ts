@@ -258,7 +258,11 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       // from JSON.parse and flashing the table.
       if (get().flows.length === 0 && get().executions.length === 0) {
         const flows = loadJSON<OrchestratorFlow[]>(FLOWS_KEY, []);
-        const executions = loadJSON<FlowExecution[]>(EXECS_KEY, []);
+        // Stored execs are metadata-only (logs/nodes/edges stripped, see
+        // stripExecForStorage). Re-seed logs to [] so consumers can read
+        // .logs.length before fetchExecutionDetail hydrates the real stream.
+        const executions = loadJSON<FlowExecution[]>(EXECS_KEY, [])
+          .map(e => ({ ...e, logs: Array.isArray(e.logs) ? e.logs : [] }));
         if (flows.length || executions.length) set({ flows, executions });
       }
 
@@ -507,7 +511,13 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         // dedupe inside persistExecs reused most refs, the cascade of N
         // store updates re-rendered the list N times and made it flash.
         const newExecs: FlowExecution[] = [];
-        const patchedExecs = new Map<string, FlowExecution>();
+        // Store only the metadata patch per id — NOT a copy merged onto the
+        // snapshot taken at the top of this function. The detail fetch
+        // (fetchExecutionDetail) can land logs/nodes/edges onto an exec WHILE
+        // this network request is in flight; composing from the stale snapshot
+        // would clobber those back to empty (the "logs flash then vanish" bug).
+        // We re-read the live store at compose time and apply just this patch.
+        const patchById = new Map<string, Partial<FlowExecution>>();
         const stoppedRunningIds: string[] = [];
 
         for (const bExec of backendExecs) {
@@ -533,19 +543,21 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
             if (Array.isArray(bExec.nodes) && bExec.nodes.length) patch.nodes = bExec.nodes;
             if (Array.isArray(bExec.edges) && bExec.edges.length) patch.edges = bExec.edges;
             if (Array.isArray(bExec.logs) && bExec.logs.length > 0) patch.logs = bExec.logs;
-            patchedExecs.set(id, { ...prev, ...patch });
+            patchById.set(id, patch);
             if (bExec.status !== 'RUNNING') stoppedRunningIds.push(id);
           } else {
             newExecs.push(mapServerExec(bExec));
           }
         }
 
-        // Compose the merged list: newly discovered execs prepended, then
-        // every existing exec (patched in place when the server returned
-        // an update, otherwise left as-is).
+        // Compose from the LIVE store (not the stale snapshot) so a concurrent
+        // detail fetch that already wrote logs/nodes/edges survives this poll.
         const merged = [
           ...newExecs,
-          ...localExecs.map(e => patchedExecs.get(e.id) ?? e),
+          ...getExecs().map(e => {
+            const patch = patchById.get(e.id);
+            return patch ? { ...e, ...patch } : e;
+          }),
         ];
         persistExecs(merged);
 

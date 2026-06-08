@@ -5,7 +5,7 @@ import {
   type BuiltObject,
   type TreeEntry,
 } from './gitObjects';
-import { getObject } from './gitStore';
+import { getObject, type StoredObject } from './gitStore';
 
 // Bridges a flow document and a git working tree. Layout (recursive):
 //   nodes/<camelTitle>.<ext>   one file per leaf node, contents = node.data.code
@@ -141,6 +141,74 @@ export async function readPreservedRootEntries(flowId: string, treeSha: string |
   const root = await getObject(flowId, treeSha);
   if (!root || root.objectType !== 'tree') return [];
   return parseTree(root.data).filter((e) => !MANAGED_ROOT_NAMES.has(e.name));
+}
+
+// A user-pushed (non-managed) entry in the flow's committed git tree, surfaced
+// read-only in the editor file tree. `path` is the full slash path from the tree
+// root; dirs carry their (recursively listed) children, files carry a byte size.
+export interface ExtraEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  size?: number;
+  children?: ExtraEntry[];
+}
+
+async function buildExtraEntry(flowId: string, entry: TreeEntry, path: string): Promise<ExtraEntry> {
+  if (entry.mode === '40000') {
+    const tree = await getObject(flowId, entry.sha);
+    const children: ExtraEntry[] = [];
+    if (tree && tree.objectType === 'tree') {
+      for (const child of parseTree(tree.data)) {
+        children.push(await buildExtraEntry(flowId, child, `${path}/${child.name}`));
+      }
+    }
+    children.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
+    return { name: entry.name, path, type: 'dir', children };
+  }
+  const blob = await getObject(flowId, entry.sha);
+  return { name: entry.name, path, type: 'file', size: blob?.data.length ?? 0 };
+}
+
+// List the non-managed top-level entries of a tree (recursively), i.e. the files
+// and folders a user pushed that the materializer doesn't own (a .gitignore,
+// README, docs/, …). Returns [] when the tree is empty/missing.
+export async function listExtraEntries(flowId: string, treeSha: string | null): Promise<ExtraEntry[]> {
+  if (!treeSha) return [];
+  const root = await getObject(flowId, treeSha);
+  if (!root || root.objectType !== 'tree') return [];
+  const top = parseTree(root.data).filter((e) => !MANAGED_ROOT_NAMES.has(e.name));
+  const out: ExtraEntry[] = [];
+  for (const e of top) out.push(await buildExtraEntry(flowId, e, e.name));
+  out.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
+  return out;
+}
+
+// Resolve a non-managed file path within a tree to its blob. Returns null if the
+// path escapes into a managed root, doesn't exist, or isn't a regular file.
+export async function resolveExtraPath(
+  flowId: string,
+  treeSha: string | null,
+  path: string,
+): Promise<(StoredObject & { name: string }) | null> {
+  if (!treeSha) return null;
+  const parts = String(path).split('/').filter(Boolean);
+  if (!parts.length || MANAGED_ROOT_NAMES.has(parts[0])) return null;
+  let curSha = treeSha;
+  for (let i = 0; i < parts.length; i++) {
+    const obj = await getObject(flowId, curSha);
+    if (!obj || obj.objectType !== 'tree') return null;
+    const entry = parseTree(obj.data).find((e) => e.name === parts[i]);
+    if (!entry) return null;
+    if (i === parts.length - 1) {
+      const blob = await getObject(flowId, entry.sha);
+      if (!blob || blob.objectType !== 'blob') return null;
+      return { ...blob, name: entry.name };
+    }
+    if (entry.mode !== '40000') return null;
+    curSha = entry.sha;
+  }
+  return null;
 }
 
 interface Graph {

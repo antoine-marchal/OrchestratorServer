@@ -1,13 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal,
   TerminalSquare, MessageSquare, CornerRightDown, ChevronRight,
   ChevronDown, Circle, ArrowDownLeft, ArrowUpRight,
   Loader2, CheckCircle2, AlertCircle, RefreshCw, Folder as FolderIcon, FolderOpen,
+  FileText, Download,
 } from 'lucide-react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useFlowStore } from '../../store/sessionFlowStore';
+import { useFlowLibraryStore } from '../../store/flowLibraryStore';
+import { apiClient } from '../../utils/apiClient';
+import { TransferModal, type TransferState } from '../flows/TransferModal';
+import { RepoFileViewer, type RepoFile } from './RepoFileViewer';
 import { Node, Edge } from 'reactflow';
+
+// A user-pushed (non-managed) file/folder in the flow's committed git tree,
+// mirroring ExtraEntry in the server materializer.
+interface ExtraEntry { name: string; path: string; type: 'file' | 'dir'; size?: number; children?: ExtraEntry[] }
 
 const CODE_NODE_TYPES = new Set(['javascript', 'jsbackend', 'groovy', 'batch', 'powershell', 'python', 'playwright']);
 
@@ -247,12 +256,113 @@ function Level({ nodes, edges, depth, parentFlow, handlers }: {
   );
 }
 
+function ExtraFileRow({ entry, depth, onOpen, onDownload }: {
+  entry: ExtraEntry; depth: number; onOpen: (e: ExtraEntry) => void; onDownload: (e: ExtraEntry) => void;
+}) {
+  return (
+    <div
+      className="group flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none hover:bg-white/5 text-gray-300"
+      style={{ paddingLeft: `${8 + depth * 14}px` }}
+      onClick={() => onOpen(entry)}
+    >
+      <span className="w-3 h-3 flex-shrink-0" />
+      <FileText className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-3)' }} />
+      <span className="truncate flex-1 ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{entry.name}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDownload(entry); }}
+        title="Download"
+        className="opacity-0 group-hover:opacity-100 flex-shrink-0"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0 }}
+      >
+        <Download className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
+// Render non-managed (user-pushed) repo entries recursively. Folders reuse the
+// Folder row; files open a read-only viewer / download.
+function ExtraTree({ entries, depth, onOpen, onDownload }: {
+  entries: ExtraEntry[]; depth: number; onOpen: (e: ExtraEntry) => void; onDownload: (e: ExtraEntry) => void;
+}) {
+  return (
+    <>
+      {entries.map(e => e.type === 'dir' ? (
+        <Folder key={e.path} name={`${e.name}/`} depth={depth} defaultOpen={false}>
+          <ExtraTree entries={e.children || []} depth={depth + 1} onOpen={onOpen} onDownload={onDownload} />
+        </Folder>
+      ) : (
+        <ExtraFileRow key={e.path} entry={e} depth={depth} onOpen={onOpen} onDownload={onDownload} />
+      ))}
+    </>
+  );
+}
+
 export const NodeFileTree: React.FC = () => {
   const sessionStore = useSessionStore();
   const { nodes, edges } = useFlowStore();
   const flowState = sessionStore.getActiveFlowState();
   const editingNodeId = flowState?.editingNodeId ?? null;
   const modifiedNodeIds = useMemo(() => new Set<string>(), []);
+
+  // Non-managed (user-pushed) repo files: surfaced read-only below the derived
+  // node/session tree. Re-fetched when the flow or its active branch changes.
+  const flowId = sessionStore.getActiveSession()?.linkedFlowId || null;
+  const activeBranch = useFlowLibraryStore(s => s.flows.find(f => f.id === flowId)?.activeBranch);
+  const [extra, setExtra] = useState<ExtraEntry[]>([]);
+  const [viewer, setViewer] = useState<RepoFile | null>(null);
+  const [transfer, setTransfer] = useState<TransferState | null>(null);
+
+  useEffect(() => {
+    if (!flowId) { setExtra([]); return; }
+    let cancelled = false;
+    apiClient.get<{ entries: ExtraEntry[] }>(`/api/v1/flows/${flowId}/tree/extra`)
+      .then(r => { if (!cancelled) setExtra(Array.isArray(r?.entries) ? r.entries : []); })
+      .catch(() => { if (!cancelled) setExtra([]); });
+    return () => { cancelled = true; };
+  }, [flowId, activeBranch]);
+
+  const openExtraFile = async (e: ExtraEntry) => {
+    if (!flowId) return;
+    try {
+      const r = await apiClient.get<{ name: string; viewable: boolean; content?: string }>(
+        `/api/v1/flows/${flowId}/tree/file?path=${encodeURIComponent(e.path)}`,
+      );
+      if (r?.viewable && typeof r.content === 'string') {
+        setViewer({ name: r.name, path: e.path, content: r.content });
+      } else {
+        downloadExtraFile(e); // binary / too large → fall back to download
+      }
+    } catch (err) {
+      console.error('open repo file failed', err);
+    }
+  };
+
+  const downloadExtraFile = async (e: ExtraEntry) => {
+    if (!flowId) return;
+    const patch = (p: Partial<{ pct: number; done: boolean; error?: string }>) =>
+      setTransfer(prev => prev ? { ...prev, items: prev.items.map((u, i) => i === 0 ? { ...u, ...p } : u) } : prev);
+    setTransfer({ mode: 'download', items: [{ name: e.name, pct: 0, done: false }] });
+    try {
+      const blob = await apiClient.downloadBinary(
+        `/api/v1/flows/${flowId}/tree/raw?path=${encodeURIComponent(e.path)}`,
+        (pct) => patch({ pct }),
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = e.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      patch({ pct: 100, done: true });
+    } catch (err: any) {
+      console.error('repo file download failed', err);
+      patch({ done: true, error: err?.message || 'failed' });
+    }
+    setTimeout(() => setTransfer(prev => (prev && prev.items.some(u => u.error)) ? prev : null), 1200);
+  };
 
   // Click handler. If `parentFlow` is provided, the clicked node lives inside the
   // parent flow node's serialized sub-graph; hop into its linked session first.
@@ -312,6 +422,20 @@ export const NodeFileTree: React.FC = () => {
       ) : (
         <Level nodes={nodes} edges={edges} depth={0} parentFlow={null} handlers={handlers} />
       )}
+
+      {extra.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 mt-2 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)', borderTop: '1px solid var(--border)' }}>
+            Repository files
+          </div>
+          <ExtraTree entries={extra} depth={0} onOpen={openExtraFile} onDownload={downloadExtraFile} />
+        </>
+      )}
+
+      {viewer && (
+        <RepoFileViewer file={viewer} onClose={() => setViewer(null)} onDownload={() => downloadExtraFile({ name: viewer.name, path: viewer.path, type: 'file' })} />
+      )}
+      <TransferModal transfer={transfer} onClose={() => setTransfer(null)} />
     </div>
   );
 };

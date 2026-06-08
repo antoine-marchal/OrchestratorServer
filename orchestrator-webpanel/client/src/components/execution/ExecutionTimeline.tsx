@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, GitBranch } from 'lucide-react';
 import type { FlowExecution, ExecutionStatus } from '../../types/flows';
 import { computeNodeRuns, formatDurationShort, type NodeRun } from '../../utils/execTiming';
@@ -100,6 +100,18 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
   void parentMap; // depth derived from the node tree walk below
   const libraryFlows = useFlowLibraryStore(s => s.flows);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Live clock: while the execution is running, tick every second so the open
+  // (running) node's bar and the flow bar visibly grow toward "now" instead of
+  // freezing at the last log timestamp until the next success/error lands.
+  const isLive = exec.status === 'RUNNING' || exec.status === 'QUEUED';
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isLive) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isLive]);
   const toggleCollapse = (id: string) => setCollapsed(prev => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -113,7 +125,7 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
     const flowStart = new Date(exec.startTime).getTime();
     let flowEnd = exec.endTime ? new Date(exec.endTime).getTime() : 0;
     for (const list of runsByNode.values()) for (const r of list) flowEnd = Math.max(flowEnd, r.end);
-    if (!exec.endTime) flowEnd = Math.max(flowEnd, Date.now());
+    if (!exec.endTime) flowEnd = Math.max(flowEnd, now);
     flowEnd = Math.max(flowEnd, flowStart + 1);
     const totalSpan = flowEnd - flowStart;
 
@@ -125,7 +137,10 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
         if (r.hasError) status = 'failed';
         else if (isLast) status = statuses[id] ?? (execDone ? 'success' : 'running');
         else status = 'success';
-        return { ...r, status };
+        // A still-running last run grows to "now" so its bar extends in real
+        // time until the next success/error log shifts its end.
+        const end = status === 'running' ? Math.max(r.end, now) : r.end;
+        return { ...r, end, status };
       });
     };
     const rowStatusFor = (id: string, segs: RunSeg[]): string => {
@@ -159,7 +174,10 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
       if (segs.length === 0 && isFlow) {
         let s = Infinity, e = -Infinity, err = false;
         for (const c of inner.nodes) for (const r of (runsByNode.get(scopeKey(id, c.id)) ?? [])) { s = Math.min(s, r.start); e = Math.max(e, r.end); err = err || r.hasError; }
-        if (e >= s) segs = [{ start: s, end: e, hasError: err, status: err ? 'failed' : (execDone ? 'success' : 'running') }];
+        if (e >= s) {
+          const aggStatus = err ? 'failed' : (execDone ? 'success' : 'running');
+          segs = [{ start: s, end: aggStatus === 'running' ? Math.max(e, now) : e, hasError: err, status: aggStatus }];
+        }
       }
 
       const visibleInner = inner.nodes.filter(isVisibleInTree as any);
@@ -195,7 +213,7 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
     }
 
     return { rows, flowStart, totalSpan };
-  }, [exec, nodes, edges, nodeNameMap, statuses, libraryFlows]);
+  }, [exec, nodes, edges, nodeNameMap, statuses, libraryFlows, now]);
 
   const ticks = useMemo(() => {
     const out: { pct: number; label: string }[] = [];
