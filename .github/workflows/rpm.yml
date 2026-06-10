@@ -16,8 +16,12 @@ jobs:
     steps:
       - name: Install build toolchain
         run: |
-          dnf -y install rpm-build rpmdevtools git tar gzip \
-            nodejs npm java-17-openjdk-headless
+          # Rocky 9 default nodejs stream is 16; the project needs 18.
+          dnf -y module reset nodejs
+          dnf -y --nogpgcheck module enable nodejs:18
+          dnf -y --nogpgcheck install rpm-build rpmdevtools systemd-rpm-macros \
+            git tar gzip nodejs npm java-17-openjdk-headless
+          node --version
 
       - name: Checkout
         uses: actions/checkout@v4

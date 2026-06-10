@@ -12,9 +12,18 @@ cd "$REPO_ROOT"
 NAME=orchestrator-webpanel
 VERSION="$(tr -d ' \t\r\n' < .version)"
 PREFIX="${NAME}-${VERSION}"
-REF="${1:-HEAD}"   # build from this git ref (default HEAD; tarball ignores uncommitted files)
+REF="${1:-HEAD}"   # build from this git ref/tag; default HEAD
 
-echo ">> Building ${PREFIX} from ref '${REF}'"
+# When building from HEAD, capture uncommitted *tracked* changes too (so you
+# don't need a commit per iteration). git stash create builds a throwaway commit
+# of the dirty worktree without touching it; falls back to HEAD if clean.
+ARCHIVE_REF="$REF"
+if [ "$REF" = "HEAD" ]; then
+  DIRTY="$(git stash create 2>/dev/null || true)"
+  [ -n "$DIRTY" ] && ARCHIVE_REF="$DIRTY"
+fi
+
+echo ">> Building ${PREFIX} from ref '${REF}' (archiving ${ARCHIVE_REF})"
 
 # Spec Version: must match .version (tarball prefix + %prep dir depend on it).
 SPEC_VER="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/${NAME}.spec")"
@@ -27,7 +36,7 @@ mkdir -p "$HOME/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
 # Source tarball: whole repo (webpanel + worker/groovyExec.jar) under the prefix.
 git archive --format=tar.gz --prefix="${PREFIX}/" \
-  -o "$HOME/rpmbuild/SOURCES/${PREFIX}.tar.gz" "${REF}"
+  -o "$HOME/rpmbuild/SOURCES/${PREFIX}.tar.gz" "${ARCHIVE_REF}"
 
 cp "$SCRIPT_DIR/${NAME}.service" "$HOME/rpmbuild/SOURCES/"
 cp "$SCRIPT_DIR/${NAME}.env"     "$HOME/rpmbuild/SOURCES/"

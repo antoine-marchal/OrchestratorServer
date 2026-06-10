@@ -26,9 +26,26 @@ Runs as the unprivileged `orchestrator` user/group (created in `%pre`).
 - `orchestrator-webpanel.spec` — RPM spec (build + install + scriptlets).
 - `orchestrator-webpanel.service` — systemd unit.
 - `orchestrator-webpanel.env` — env template installed to `/etc`.
-- `build-rpm.sh` — one-shot builder (tarball → rpmbuild).
+- `gen-secrets.sh` — fills the required secrets in the installed env file.
+- `build-rpm.sh` — one-shot builder (tarball → rpmbuild) on an RPM host.
+- `build-in-docker.sh` — builds in a `rockylinux:9` container (for non-RPM hosts).
 
-## Build (Linux host)
+## Build
+
+The RPM **must** be built on an RPM-based distro: it needs `systemd-rpm-macros`
+(absent on Debian/Ubuntu), and the `BuildRequires` use RPM package names.
+
+### Option A — Docker (works on Ubuntu/WSL/macOS) — recommended
+
+```bash
+./orchestrator-webpanel/packaging/rpm/build-in-docker.sh        # from HEAD
+./orchestrator-webpanel/packaging/rpm/build-in-docker.sh v3.2.7 # from a tag
+```
+
+Builds inside `rockylinux:9` (same toolchain as CI). Output RPM(s) land in
+`orchestrator-webpanel/packaging/rpm/dist/`.
+
+### Option B — native RPM host (Rocky/Alma/Fedora/RHEL)
 
 Needs `rpm-build`, `nodejs >= 18`, `npm`, and a JDK if you use Groovy nodes.
 

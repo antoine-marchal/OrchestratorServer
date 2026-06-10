@@ -111,5 +111,5 @@ exit 0
 %doc %{_docdir}/%{name}/server.env.example
 
 %changelog
-* Tue Jun 10 2026 Antoine Marchal <santoreto@gmail.com> - 3.2.7-1
+* Wed Jun 10 2026 Antoine Marchal <antoine.marchal@pm.me> - 3.2.7-1
 - Initial RPM package for orchestrator-webpanel (pkg binary + systemd service)
