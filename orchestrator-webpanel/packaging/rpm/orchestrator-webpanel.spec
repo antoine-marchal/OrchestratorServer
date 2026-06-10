@@ -1,3 +1,7 @@
+# The payload is a prebuilt `pkg` Node binary — no debug sources to extract.
+# Disable the auto debuginfo/debugsource subpackage (else: "Empty %files").
+%global debug_package %{nil}
+
 Name:           orchestrator-webpanel
 Version:        3.2.7
 Release:        1%{?dist}
