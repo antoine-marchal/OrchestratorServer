@@ -17,6 +17,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const sessionName = name || `Session ${get().sessions.length + 1}`;
     const sessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+    // The first session of a workspace (scope = linkedFlowId, or the un-scoped
+    // pool) becomes its main session automatically — and a main session can't be
+    // closed (see SessionTabs). No sibling in scope ⇒ this is the first.
+    const scopeKey = linkedFlowId ?? null;
+    const isFirstInScope = !get().sessions.some(s => (s.linkedFlowId ?? null) === scopeKey);
+
     const newSession: Session = {
       id: sessionId,
       name: sessionName,
@@ -25,6 +31,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       lastActivity: Date.now(),
       ...(linkedFlowId ? { linkedFlowId } : {}),
       ...(opts?.isFlowRoot ? { isFlowRoot: true } : {}),
+      ...(isFirstInScope ? { isMain: true } : {}),
     };
 
     set((state) => ({
@@ -48,6 +55,35 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       }));
       get().saveSessions();
     }
+  },
+
+  renameSession: (sessionId: string, name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    set((state) => ({
+      sessions: state.sessions.map(s => {
+        if (s.id === sessionId) return { ...s, name: clean };
+        // Stamp the new name onto any flow node in this session that points at
+        // the renamed session, so it survives into the saved flow doc and drives
+        // the session folder name (file tree + git clone).
+        const hasLinked = s.flowState.nodes.some(
+          n => n.data?.type === 'flow' && n.data?.linkedSessionId === sessionId,
+        );
+        if (!hasLinked) return s;
+        return {
+          ...s,
+          flowState: {
+            ...s.flowState,
+            nodes: s.flowState.nodes.map(n =>
+              n.data?.type === 'flow' && n.data?.linkedSessionId === sessionId
+                ? { ...n, data: { ...n.data, sessionName: clean } }
+                : n,
+            ),
+          },
+        };
+      }),
+    }));
+    get().saveSessions();
   },
 
   setMainSession: (sessionId: string) => {
@@ -80,6 +116,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const session = state.sessions.find(s => s.id === sessionId);
 
     if (!session) return;
+    // Main session is undeletable — the UI hides its close button; guard here too.
+    if (session.isMain) return;
 
     // Stop all running jobs in this session before closing
     const runningJobIds = session.flowState.nodes

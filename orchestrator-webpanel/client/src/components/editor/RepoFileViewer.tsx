@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Download, X, FileText } from 'lucide-react';
+import { Download, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
 // Read-only Monaco viewer for a user-pushed (non-managed) repo file surfaced in
@@ -32,6 +32,7 @@ export function RepoFileViewer({ file, onClose, onDownload }: {
   onDownload: () => void;
 }) {
   const { theme } = useTheme();
+  const [maximized, setMaximized] = useState(false);
   return (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -39,7 +40,12 @@ export function RepoFileViewer({ file, onClose, onDownload }: {
     >
       <div
         onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 8, width: 860, maxWidth: '92vw', height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+        style={{
+          background: 'var(--bg-2)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          ...(maximized
+            ? { borderRadius: 0, width: '100vw', height: '100vh', maxWidth: '100vw' }
+            : { borderRadius: 8, width: 860, maxWidth: '92vw', height: '80vh' }),
+        }}
       >
         <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-3)' }}>
           <FileText size={13} style={{ color: 'var(--accent)' }} />
@@ -47,6 +53,9 @@ export function RepoFileViewer({ file, onClose, onDownload }: {
           <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>read-only</span>
           <button onClick={onDownload} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', gap: 4, fontSize: 11 }} title="Download">
             <Download size={12} /> Download
+          </button>
+          <button onClick={() => setMaximized(m => !m)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }} title={maximized ? 'Restore' : 'Maximize'}>
+            {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }} title="Close">
             <X size={14} />

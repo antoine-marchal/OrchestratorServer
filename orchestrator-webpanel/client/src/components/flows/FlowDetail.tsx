@@ -931,11 +931,15 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
     // survive a refresh. Also normalise the single-root invariant: mark the
     // canonical session as the flow root and clear the flag on any others (covers
     // sessions migrated from before isFlowRoot existed).
+    // If no session in this workspace is main yet (e.g. a flow created before
+    // auto-main existed), promote the canonical one — main sessions can't be
+    // closed, guaranteeing every workspace keeps an undeletable root tab.
+    const scopeHasMain = flowSessions.some(s => s.isMain);
     useSessionStore.setState(state => ({
       sessions: state.sessions.map(s => {
         if (s.linkedFlowId !== flow.id) return s;
         if (s.id === canonical.id) {
-          return { ...s, isFlowRoot: true, flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } };
+          return { ...s, isFlowRoot: true, ...(scopeHasMain ? {} : { isMain: true }), flowState: { ...s.flowState, nodes: flow.nodes || [], edges: flow.edges || [], history: [], historyIndex: -1 } };
         }
         return s.isFlowRoot ? { ...s, isFlowRoot: false } : s;
       }),

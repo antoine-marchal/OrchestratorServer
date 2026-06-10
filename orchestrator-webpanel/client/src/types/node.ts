@@ -24,6 +24,11 @@ export interface NodeData {
   
   // Linked session for editing flow nodes
   linkedSessionId?: string;
+  // Display name of the linked editor session (the tab name). Stamped onto every
+  // flow node that points at the session when it's renamed; drives the session
+  // folder name in the file tree and a `git clone` (falls back to the session id
+  // when unset). See sessionStore.renameSession.
+  sessionName?: string;
 
   // Error-handling policy when the node fails during a flow run.
   //   'stop'     — (default) abort the whole flow

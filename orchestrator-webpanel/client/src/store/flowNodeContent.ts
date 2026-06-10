@@ -24,6 +24,7 @@ export interface FlowNodeData {
   code: string;
   flowRef?: string;
   linkedSessionId?: string;
+  sessionName?: string;
   isRelativePath: boolean;
 }
 
@@ -116,7 +117,9 @@ export async function openFlowNodeEditor(
     return {};
   }
 
-  const sessionName = data.label || 'Flow Session';
+  // Prefer a previously-set session name (the renamed tab) so reopening a closed
+  // session restores its name rather than reverting to the flow node's title.
+  const sessionName = data.sessionName || data.label || 'Flow Session';
   const parentFlowId = store.getActiveSession()?.linkedFlowId;
 
   let parsed: { nodes: Node[]; edges: Edge[] } | null = null;

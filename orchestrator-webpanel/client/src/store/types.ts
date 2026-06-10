@@ -149,6 +149,10 @@ export interface SessionStore {
   // Session management
   createSession: (name?: string, linkedFlowId?: string, opts?: { isFlowRoot?: boolean }) => Promise<string>;
   switchSession: (sessionId: string) => void;
+  // Rename a session (its tab name). Also stamps `data.sessionName` onto every
+  // flow node bound to it (in any session) so the file tree + git clone name the
+  // session folder by this name instead of the session id.
+  renameSession: (sessionId: string, name: string) => void;
   closeSession: (sessionId: string) => Promise<void>;
   reorderSessions: (sourceIndex: number, destinationIndex: number) => void;
   setMainSession: (sessionId: string) => void;

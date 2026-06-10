@@ -249,7 +249,13 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
       const sessionKey = String(node?.data?.linkedSessionId || id);
       let path = sessionPathByKey.get(sessionKey);
       if (!path) {
-        const candidate = node?.data?.linkedSessionId ? sanitize(String(node.data.linkedSessionId)) : baseName(node);
+        // Folder name: the session's display name when renamed, else the session
+        // id, else the node title. Mirrors NodeFileTree.tsx.
+        const candidate = node?.data?.sessionName
+          ? sanitize(String(node.data.sessionName))
+          : node?.data?.linkedSessionId
+            ? sanitize(String(node.data.linkedSessionId))
+            : baseName(node);
         const name = uniqueName(candidate, usedSessions);
         const subEntries = buildLevel({ name: node?.data?.label, nodes: sub.nodes, edges: sub.edges }, add);
         const subTree = buildTree(subEntries);

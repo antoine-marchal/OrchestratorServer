@@ -244,11 +244,14 @@ function Level({ nodes, edges, depth, parentFlow, handlers }: {
         <Folder name="sessions/" depth={depth}>
           {flows.map(f => {
             const sub = parseSub(f)!;
-            // Name the folder by the session id (sanitized), matching the server
-            // materializer's sessions/<sid>/. Falls back to the node title when the
-            // flow node isn't linked to a session yet.
+            // Name the folder by the session name when the session was renamed,
+            // else by the session id (sanitized), matching the server
+            // materializer's sessions/<name|sid>/. Falls back to the node title
+            // when the flow node isn't linked to a session yet.
+            const sname = (f.data as any)?.sessionName;
             const sid = (f.data as any)?.linkedSessionId;
-            const folderName = uniqueName(sid ? sanitize(String(sid)) : baseName(f), usedSessions);
+            const candidate = sname ? sanitize(String(sname)) : sid ? sanitize(String(sid)) : baseName(f);
+            const folderName = uniqueName(candidate, usedSessions);
             return (
               <Folder key={f.id} name={`${folderName}/`} depth={depth + 1}>
                 <Level nodes={sub.nodes} edges={sub.edges} depth={depth + 2} parentFlow={f} handlers={handlers} />
@@ -311,9 +314,12 @@ export const NodeFileTree: React.FC = () => {
   const modifiedNodeIds = useMemo(() => new Set<string>(), []);
 
   // Non-managed (user-pushed) repo files: surfaced read-only below the derived
-  // node/session tree. Re-fetched when the flow or its active branch changes.
+  // node/session tree. Re-fetched when the flow or its active branch changes, and
+  // whenever a new commit lands (updatedAt bumps on every save/commit and on the
+  // poll that picks up an external git push) so the panel reflects fresh content.
   const flowId = sessionStore.getActiveSession()?.linkedFlowId || null;
   const activeBranch = useFlowLibraryStore(s => s.flows.find(f => f.id === flowId)?.activeBranch);
+  const flowUpdatedAt = useFlowLibraryStore(s => s.flows.find(f => f.id === flowId)?.updatedAt);
   const [extra, setExtra] = useState<ExtraEntry[]>([]);
   const [viewer, setViewer] = useState<RepoFile | null>(null);
   const [transfer, setTransfer] = useState<TransferState | null>(null);
@@ -325,7 +331,7 @@ export const NodeFileTree: React.FC = () => {
       .then(r => { if (!cancelled) setExtra(Array.isArray(r?.entries) ? r.entries : []); })
       .catch(() => { if (!cancelled) setExtra([]); });
     return () => { cancelled = true; };
-  }, [flowId, activeBranch]);
+  }, [flowId, activeBranch, flowUpdatedAt]);
 
   const openExtraFile = async (e: ExtraEntry) => {
     if (!flowId) return;

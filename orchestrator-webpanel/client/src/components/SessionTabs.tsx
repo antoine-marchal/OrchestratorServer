@@ -171,6 +171,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
     closeSession,
     reorderSessions,
     setMainSession,
+    renameSession,
     isLoading
   } = useSessionStore();
 
@@ -307,15 +308,9 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
 
   const handleSaveEdit = () => {
     if (editingSessionId && editingName.trim()) {
-      // Update session name in store
-      useSessionStore.setState((state) => ({
-        sessions: state.sessions.map(session =>
-          session.id === editingSessionId
-            ? { ...session, name: editingName.trim() }
-            : session
-        ),
-      }));
-      useSessionStore.getState().saveSessions();
+      // Renames the tab AND stamps the name onto linked flow nodes so the file
+      // tree + git clone fold the session under this name (not the session id).
+      renameSession(editingSessionId, editingName.trim());
     }
     setEditingSessionId(null);
     setEditingName('');
@@ -426,7 +421,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
               onNameChange={setEditingName}
               onSaveEdit={handleSaveEdit}
               onCancelEdit={handleCancelEdit}
-              canClose={sessions.length > 1}
+              canClose={sessions.length > 1 && !(session as any).isMain}
               isLoading={isLoading}
             />
           ))}
