@@ -232,6 +232,12 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
   const sessions: Record<string, string> = {};
   const usedFiles = new Set<string>();
   const usedSessions = new Set<string>();
+  // Several flow nodes can bind to the SAME editor session via data.linkedSessionId
+  // (same sub-graph). They must collapse into ONE sessions/<sid>/ folder, named by
+  // the session id, with every referencing node id mapped to that one path — not a
+  // folder per flow node. Falls back to the node id when a flow node isn't linked
+  // to a session yet, so each still appears once. Mirrors NodeFileTree.tsx.
+  const sessionPathByKey = new Map<string, string>();
 
   for (const node of nodes) {
     const id = String(node?.id ?? '');
@@ -239,13 +245,20 @@ function buildLevel(graph: Graph, add: (o: BuiltObject) => void): TreeEntry[] {
     const sub = isFlow ? parseGraph(node?.data?.code) : null;
 
     if (sub) {
-      // Flow node with an embedded sub-graph -> expand into sessions/<name>/.
-      const name = uniqueName(baseName(node), usedSessions);
-      const subEntries = buildLevel({ name: node?.data?.label, nodes: sub.nodes, edges: sub.edges }, add);
-      const subTree = buildTree(subEntries);
-      add(subTree);
-      sessionEntries.push({ mode: '40000', name, sha: subTree.sha });
-      sessions[id] = `sessions/${name}`;
+      // Flow node with an embedded sub-graph -> expand into sessions/<sid>/.
+      const sessionKey = String(node?.data?.linkedSessionId || id);
+      let path = sessionPathByKey.get(sessionKey);
+      if (!path) {
+        const candidate = node?.data?.linkedSessionId ? sanitize(String(node.data.linkedSessionId)) : baseName(node);
+        const name = uniqueName(candidate, usedSessions);
+        const subEntries = buildLevel({ name: node?.data?.label, nodes: sub.nodes, edges: sub.edges }, add);
+        const subTree = buildTree(subEntries);
+        add(subTree);
+        sessionEntries.push({ mode: '40000', name, sha: subTree.sha });
+        path = `sessions/${name}`;
+        sessionPathByKey.set(sessionKey, path);
+      }
+      sessions[id] = path;
       const meta = { ...node, data: { ...node.data } };
       delete meta.data.code;
       relNodes.push(meta);

@@ -244,8 +244,13 @@ function Level({ nodes, edges, depth, parentFlow, handlers }: {
         <Folder name="sessions/" depth={depth}>
           {flows.map(f => {
             const sub = parseSub(f)!;
+            // Name the folder by the session id (sanitized), matching the server
+            // materializer's sessions/<sid>/. Falls back to the node title when the
+            // flow node isn't linked to a session yet.
+            const sid = (f.data as any)?.linkedSessionId;
+            const folderName = uniqueName(sid ? sanitize(String(sid)) : baseName(f), usedSessions);
             return (
-              <Folder key={f.id} name={`${uniqueName(baseName(f), usedSessions)}/`} depth={depth + 1}>
+              <Folder key={f.id} name={`${folderName}/`} depth={depth + 1}>
                 <Level nodes={sub.nodes} edges={sub.edges} depth={depth + 2} parentFlow={f} handlers={handlers} />
               </Folder>
             );
