@@ -310,14 +310,27 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     lastScrolledExecId.current = selectedExec?.id ?? null;
   }, [selectedExec?.logs.length, selectedExec?.id]);
 
+  // An execution is pinned to an immutable snapshot (reconstructed server-side
+  // from its git commit) and may have run on a DIFFERENT branch than the one
+  // currently checked out. Falling back to the live flow.nodes/edges (active
+  // branch) for such a run renders a graph/timeline that doesn't match what
+  // actually executed — its nodes show "not run" and branch-only nodes vanish,
+  // while the logs/SSE statuses are from the real (other-branch) run. So only
+  // fall back to the live doc when the run is on the active branch (or carries
+  // no branch info — legacy inline executions); otherwise wait for the pinned
+  // snapshot to hydrate (fetchExecutionDetail) and render nothing meanwhile.
+  const execOnActiveBranch = useMemo(
+    () => !selectedExec?.branch || selectedExec.branch === (flow.activeBranch || 'main'),
+    [selectedExec?.branch, flow.activeBranch],
+  );
   // Hoist exec nodes/edges so memos below can depend on them.
   const execNodes = useMemo(
-    () => (selectedExec?.nodes?.length ? selectedExec.nodes : flow.nodes) ?? [],
-    [selectedExec, flow.nodes],
+    () => (selectedExec?.nodes?.length ? selectedExec.nodes : (execOnActiveBranch ? flow.nodes : [])) ?? [],
+    [selectedExec, flow.nodes, execOnActiveBranch],
   );
   const execEdges = useMemo(
-    () => (selectedExec?.edges?.length ? selectedExec.edges : flow.edges) ?? [],
-    [selectedExec, flow.edges],
+    () => (selectedExec?.edges?.length ? selectedExec.edges : (execOnActiveBranch ? flow.edges : [])) ?? [],
+    [selectedExec, flow.edges, execOnActiveBranch],
   );
 
   // Stable identity for the graph's flow definition. Without this the inline
