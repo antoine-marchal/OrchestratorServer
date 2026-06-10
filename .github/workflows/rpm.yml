@@ -1,0 +1,48 @@
+name: Build RPM
+
+# Builds the orchestrator-webpanel RPM on every vX.Y.Z tag and attaches it to
+# the GitHub Release. Manual runs (workflow_dispatch) upload it as an artifact.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux:9
+    steps:
+      - name: Install build toolchain
+        run: |
+          dnf -y install rpm-build rpmdevtools git tar gzip \
+            nodejs npm java-17-openjdk-headless
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build RPM
+        run: bash orchestrator-webpanel/packaging/rpm/build-rpm.sh
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp ~/rpmbuild/RPMS/x86_64/*.rpm out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-webpanel-rpm
+          path: out/*.rpm
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.rpm

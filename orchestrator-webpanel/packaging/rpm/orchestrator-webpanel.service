@@ -1,0 +1,29 @@
+[Unit]
+Description=Orchestrator Webpanel Server
+Documentation=https://github.com/antoine-marchal/OrchestratorServer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orchestrator
+Group=orchestrator
+
+EnvironmentFile=/etc/orchestrator-webpanel/orchestrator-webpanel.env
+WorkingDirectory=/var/lib/orchestrator-webpanel
+
+ExecStart=/opt/orchestrator-webpanel/orchestrator-server
+
+Restart=on-failure
+RestartSec=5
+
+# Hardening. ReadWritePaths must list every dir the service writes to
+# (WORK_DIR for groovyExec.jar / inbox / certs, plus the env dir if it self-writes).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/orchestrator-webpanel /var/log/orchestrator-webpanel
+
+[Install]
+WantedBy=multi-user.target
