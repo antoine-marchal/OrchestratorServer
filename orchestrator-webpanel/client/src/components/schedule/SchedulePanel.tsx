@@ -12,7 +12,7 @@ import {
   ToggleRight,
   AlertCircle,
 } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { schedulesApi } from '../../api';
 
 interface Schedule {
   _id: string;
@@ -76,7 +76,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get(`/api/v1/schedules?flowId=${flowId}`);
+      const data = await schedulesApi.listByFlow(flowId);
       setSchedules(Array.isArray(data) ? data : data.schedules ?? []);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load schedules');
@@ -94,7 +94,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
       if (creating === 'cron') body.cronExpr = cronExpr;
       if (creating === 'event') body.eventName = eventName;
 
-      const result = await apiClient.post(`/api/v1/schedules/${creating}`, body);
+      const result = await schedulesApi.create(creating, body);
       setCreating(null);
       setCronExpr('0 * * * *');
       setEventName('');
@@ -110,7 +110,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
 
   const handleToggle = async (s: Schedule) => {
     try {
-      await apiClient.patch(`/api/v1/schedules/${s._id}`, { enabled: !s.enabled });
+      await schedulesApi.setEnabled(s._id, !s.enabled);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to update schedule');
@@ -119,7 +119,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiClient.delete(`/api/v1/schedules/${id}`);
+      await schedulesApi.remove(id);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to delete schedule');

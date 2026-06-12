@@ -6,7 +6,7 @@ import { useTheme } from "../context/ThemeContext";
 import { NODE_SCOPE_SEP, scopeKeyOf } from '../utils/execScope';
 
 const Console: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme: _theme } = useTheme();
   const activeSession = useSessionStore(s => s.getActiveSession());
   const {
     consoleMessages,

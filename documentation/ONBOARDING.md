@@ -87,20 +87,22 @@ Où regarder quand vous devez changer quelque chose :
 
 | Vous voulez… | Allez voir |
 |---|---|
-| Ajouter/modifier un endpoint REST | `orchestrator-webpanel/server/src/routes/*.ts` (montés dans `server.ts`) |
-| Toucher à l'auth / aux tokens | `server/src/middleware/auth.ts`, `rbac.ts` |
-| Changer comment un flux s'exécute (parcours DAG, retry, dispatch) | `server/src/services/executor/flowExecutor.ts` |
-| Ajouter/modifier un runner de type de nœud | `server/src/services/executor/nodeExecutor.ts` (serveur) et `orchestrator-worker/src/executor/nodeExecutor.ts` (worker) — gardez-les synchronisés |
-| Toucher au versionnage git / branches / smart-HTTP | `server/src/services/git/*` (`flowMaterialize`, `flowCommit`, `gitStore`, `receivePack`) |
-| Toucher au stockage/GC des artefacts | `server/src/services/executor/artifactStore.ts` |
-| Toucher à la planification | `server/src/services/scheduler/cronScheduler.ts`, `eventBus.ts` |
-| Changer le stockage / ajouter une collection | `server/src/services/db/index.ts` + `db/models/*` |
+| Ajouter/modifier un endpoint REST | `orchestrator-webpanel/server/src/http/routes/*.ts` (montés dans `server.ts`) — gardez-les fins : déléguez au service métier |
+| Valider un corps de requête | `server/src/http/validators/*` (schémas zod + `validateBody`) ; erreurs centralisées dans `http/middleware/errorHandler.ts` |
+| Toucher à l'auth / aux tokens | `server/src/http/middleware/auth.ts`, `rbac.ts` ; primitives JWT/clé API dans `infra/auth/tokens.ts` |
+| Changer comment un flux s'exécute (parcours DAG, retry, dispatch) | `server/src/domain/execution/flowExecutor.ts` |
+| Ajouter/modifier un runner de type de nœud | Serveur : `server/src/domain/execution/nodeExecutor.ts`. Worker : `orchestrator-worker/src/runtimes/` (un fichier par langage + registre `index.ts`) — gardez-les synchronisés |
+| Toucher au dispatch worker / résolution des secrets | `server/src/domain/workers/workerService.ts`, `server/src/domain/secrets/secretService.ts` |
+| Toucher au versionnage git / branches / smart-HTTP | `server/src/infra/git/*` (`flowMaterialize`, `flowCommit`, `gitStore`, `receivePack`) |
+| Toucher au stockage/GC des artefacts | `server/src/domain/execution/artifactStore.ts` |
+| Toucher à la planification | `server/src/infra/scheduler/cronScheduler.ts`, `eventBus.ts` |
+| Changer le stockage / ajouter une collection | `server/src/data/db/index.ts` + `data/models/*` ; accès via un repository dans `data/repositories/*` |
 | Modifier le canvas de l'éditeur de flux | `client/src/components/FlowEditor.tsx`, `components/node/*`, `components/editor/*` |
 | Modifier les vues liste de flux / exécutions | `client/src/components/flows/*`, `components/execution/*` |
-| Changer les appels API côté client | `client/src/utils/apiClient.ts` |
+| Changer les appels API côté client | `client/src/api/*` (transport `http.ts` + clients par domaine ; `utils/apiClient.ts` n'est qu'un ré-export) |
 | Changer l'état côté client | `client/src/store/*` (Zustand) |
 
-> À noter : il existe un `store/executors/` côté **client** et un `services/executor/` côté **serveur**. Celui du serveur exécute réellement les jobs ; celui du client modélise le graphe pour l'éditeur. Ne les confondez pas.
+> À noter : il existe un `store/executors/` côté **client** et `domain/execution/` côté **serveur**. Celui du serveur exécute réellement les jobs ; celui du client modélise le graphe pour l'éditeur. Ne les confondez pas.
 
 ---
 

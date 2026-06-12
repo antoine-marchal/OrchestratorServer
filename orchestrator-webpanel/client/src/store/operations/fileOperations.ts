@@ -31,9 +31,7 @@ export async function saveFlow(sessionStore: SessionStoreGetter): Promise<void> 
   // If we have a flow path, convert all flow node paths to relative paths
   // and save code to separate files
   if (activeFlowState.flowPath) {
-    // Create a folder with the same name as the .or file (without extension)
-    const flowFileName = activeFlowState.flowPath.split(/[\\/]/).pop() || 'flow';
-    const flowFolderName = flowFileName.replace(/\.or$/, '');
+
 
     // Process each node
     nodesToSave = await Promise.all(nodesToSave.map(async (node: Node) => {
@@ -100,7 +98,7 @@ export async function saveFlow(sessionStore: SessionStoreGetter): Promise<void> 
  * Load flow from file
  */
 export async function loadFlow(sessionStore: SessionStoreGetter): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<void>((resolve, _reject) => {
     // Create a file input element
     const input = document.createElement('input');
     input.type = 'file';

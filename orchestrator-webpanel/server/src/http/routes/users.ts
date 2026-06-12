@@ -4,10 +4,12 @@ import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 import { v4 as uuidv4 } from 'uuid';
-import { getCollection } from '../services/db/index';
-import { hashApiKey, generateJWT, generateRefreshToken, verifyRefreshToken } from '../middleware/auth';
+import { userRepository } from '../../data/repositories';
+import { hashApiKey, generateJWT, generateRefreshToken, verifyRefreshToken } from '../../infra/auth/tokens';
 import { requireRole } from '../middleware/rbac';
 import { authMiddleware } from '../middleware/auth';
+import { validateBody } from '../validators/validate';
+import { loginSchema, refreshSchema, createUserSchema, changePasswordSchema, createApiKeySchema } from '../validators/schemas';
 
 const router = Router();
 
@@ -29,12 +31,10 @@ function buildServiceUrl(): string {
 }
 
 // Auth endpoints (no auth required)
-router.post('/auth/login', async (req: Request, res: Response) => {
+router.post('/auth/login', validateBody(loginSchema), async (req: Request, res: Response) => {
   const { login, password } = req.body;
-  if (!login || !password) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'login and password required' } }) as any;
-
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ login: login.toLowerCase() });
     if (!user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } }) as any;
 
@@ -53,16 +53,14 @@ router.post('/auth/login', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/auth/refresh', async (req: Request, res: Response) => {
+router.post('/auth/refresh', validateBody(refreshSchema), async (req: Request, res: Response) => {
   const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'refreshToken required' } }) as any;
-
   try {
     const payload: any = verifyRefreshToken(refreshToken);
     // Re-load the user so a deleted account can't keep refreshing, and so the
     // new access token carries the CURRENT role (a demoted user shouldn't keep
     // elevated access for the remaining 7-day refresh window).
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ _id: payload._id });
     if (!user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'User no longer exists' } }) as any;
     const accessToken = generateJWT({ _id: user._id, login: user.login, role: user.role });
@@ -75,7 +73,7 @@ router.post('/auth/refresh', async (req: Request, res: Response) => {
 // User CRUD — mounted at /api/v1 so paths include /users prefix
 router.get('/users', authMiddleware, requireRole('admin', 'operator'), async (_req: Request, res: Response) => {
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const all = await users.find({});
     res.json(all.map((u: any) => ({ _id: u._id, login: u.login, role: u.role, createdAt: u.createdAt, apiKeys: (u.apiKeys || []).map((k: any) => ({ id: k.id, label: k.label, createdAt: k.createdAt, expiresAt: k.expiresAt, lastUsedAt: k.lastUsedAt })) })));
   } catch (err: any) {
@@ -83,15 +81,13 @@ router.get('/users', authMiddleware, requireRole('admin', 'operator'), async (_r
   }
 });
 
-router.post('/users', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
-  const { login, password, role = 'operator' } = req.body;
+router.post('/users', authMiddleware, requireRole('admin'), validateBody(createUserSchema), async (req: Request, res: Response) => {
   // Password is optional: a user without one is SSO-only (proxy-auth ticket
   // login). The /auth/login route already rejects them with "Password login
   // disabled for this account".
-  if (!login) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'login required' } }) as any;
-
+  const { login, password, role } = req.body;
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const existing = await users.findOne({ login: login.toLowerCase() });
     if (existing) return res.status(409).json({ error: { code: 'CONFLICT', message: 'User already exists' } }) as any;
 
@@ -105,10 +101,8 @@ router.post('/users', authMiddleware, requireRole('admin'), async (req: Request,
   }
 });
 
-router.patch('/users/:id/password', authMiddleware, async (req: Request, res: Response) => {
+router.patch('/users/:id/password', authMiddleware, validateBody(changePasswordSchema), async (req: Request, res: Response) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'password required' } }) as any;
-
   const caller = (req as any).user;
   // Admin can change any password; non-admin can only change their own
   if (caller.role !== 'admin' && caller._id !== req.params.id) {
@@ -116,7 +110,7 @@ router.patch('/users/:id/password', authMiddleware, async (req: Request, res: Re
   }
 
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ _id: req.params.id });
     if (!user) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
     const passwordHash = await bcrypt.hash(password, 12);
@@ -129,7 +123,7 @@ router.patch('/users/:id/password', authMiddleware, async (req: Request, res: Re
 
 router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const target = await users.findOne({ _id: req.params.id });
     if (!target) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
     // Never allow removing the last admin — that would permanently lock out
@@ -149,12 +143,10 @@ router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Re
 });
 
 // API Key management
-router.post('/users/:id/apikeys', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
+router.post('/users/:id/apikeys', authMiddleware, requireRole('admin'), validateBody(createApiKeySchema), async (req: Request, res: Response) => {
   const { label, expiresAt } = req.body;
-  if (!label) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'label required' } }) as any;
-
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ _id: req.params.id });
     if (!user) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
 
@@ -175,7 +167,7 @@ router.post('/users/:id/apikeys', authMiddleware, requireRole('admin'), async (r
 
 router.delete('/users/:id/apikeys/:keyId', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ _id: req.params.id });
     if (!user) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'User not found' } }) as any;
 
@@ -244,7 +236,7 @@ router.get('/authProxy', async (req: Request, res: Response) => {
     }
 
     const login = match[1].trim().toLowerCase();
-    const users = getCollection('users');
+    const users = userRepository;
     const user = await users.findOne({ login });
     if (!user) {
       return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'User not found' } }) as any;

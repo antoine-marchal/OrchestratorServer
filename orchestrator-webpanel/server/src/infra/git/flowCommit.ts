@@ -1,4 +1,4 @@
-import { getCollection } from '../db/index';
+import { flowRepository } from '../../data/repositories';
 import { buildCommit, parseCommit, parseTree } from './gitObjects';
 import { flowToTree, treeToFlowFields, nodeContentSignature, readPreservedRootEntries, type NodeSignature, type FlowFields } from './flowMaterialize';
 import {
@@ -12,7 +12,7 @@ import {
   deleteAllRefs,
   getObjectType,
 } from './gitStore';
-import { putArtifacts, resolveRefs, gcArtifacts } from '../executor/artifactStore';
+import { putArtifacts, resolveRefs, gcArtifacts } from '../../domain/execution/artifactStore';
 import type { ArtifactEntry } from './flowMaterialize';
 import type { BuiltObject } from './gitObjects';
 
@@ -106,7 +106,7 @@ export async function commitFlowState(
   message: string,
   options: CommitOptions = {},
 ): Promise<string | null> {
-  const flows = getCollection('flows');
+  const flows = flowRepository;
   const flow = await flows.findOne({ _id: flowId });
   if (!flow) throw new Error(`Flow ${flowId} not found`);
 
@@ -172,7 +172,7 @@ export async function snapshotFlowForExecution(flowId: string, author: CommitAut
     const sha = await commitFlowState(flowId, author, 'Snapshot for execution');
     if (sha) return sha;
     // Tree unchanged since last commit — pin to the current branch HEAD.
-    const flow = await getCollection('flows').findOne({ _id: flowId });
+    const flow = await flowRepository.findOne({ _id: flowId });
     if (!flow) return null;
     return await getRef(flowId, activeRef(flow));
   } catch (e: any) {
@@ -186,7 +186,7 @@ export async function snapshotFlowForExecution(flowId: string, author: CommitAut
 export async function ensureInitialized(flowId: string): Promise<void> {
   const refs = await listRefs(flowId);
   if (refs.length > 0) return;
-  const flow = await getCollection('flows').findOne({ _id: flowId });
+  const flow = await flowRepository.findOne({ _id: flowId });
   if (!flow) return;
   await commitFlowState(flowId, { login: flow.owner }, 'Initial import from Orchestrator');
 }
@@ -309,7 +309,7 @@ export async function fieldsToDoc(fields: FlowFields): Promise<any> {
 
 // Materialize a branch's HEAD into the flow document (executor reads the doc).
 export async function checkoutBranchToDoc(flowId: string, branch: string): Promise<any> {
-  const flows = getCollection('flows');
+  const flows = flowRepository;
   const ref = branchRef(branch);
   const sha = await getRef(flowId, ref);
   if (!sha) throw new Error(`Branch ${branch} not found`);
@@ -324,7 +324,7 @@ export async function checkoutBranchToDoc(flowId: string, branch: string): Promi
 
 // After a push updates a branch ref, sync the doc if that branch is active.
 export async function syncDocFromRefIfActive(flowId: string, ref: string): Promise<void> {
-  const flows = getCollection('flows');
+  const flows = flowRepository;
   const flow = await flows.findOne({ _id: flowId });
   if (!flow) return;
   if (branchRef(activeBranchName(flow)) !== ref) return;
@@ -344,7 +344,7 @@ export async function createBranch(flowId: string, name: string, from?: string):
   const target = branchRef(clean);
   if (await getRef(flowId, target)) throw new Error(`Branch ${clean} already exists`);
 
-  const flow = await getCollection('flows').findOne({ _id: flowId });
+  const flow = await flowRepository.findOne({ _id: flowId });
   if (!flow) throw new Error(`Flow ${flowId} not found`);
   await ensureInitialized(flowId);
 
@@ -369,7 +369,7 @@ export async function deleteBranch(flowId: string, name: string): Promise<string
   const clean = name.trim();
   if (clean === DEFAULT_BRANCH) throw new Error(`Cannot delete the default branch "${DEFAULT_BRANCH}"`);
 
-  const flow = await getCollection('flows').findOne({ _id: flowId });
+  const flow = await flowRepository.findOne({ _id: flowId });
   if (!flow) throw new Error(`Flow ${flowId} not found`);
   if (clean === activeBranchName(flow)) throw new Error(`Cannot delete the active branch "${clean}" — check out another branch first`);
 

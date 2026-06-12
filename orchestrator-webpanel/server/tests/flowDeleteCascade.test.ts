@@ -7,9 +7,9 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-del-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP;
 delete process.env.MONGO_URI;
 
-import { connectDB, getCollection } from '../src/services/db/index';
-import { commitFlowState, purgeFlowGit } from '../src/services/git/flowCommit';
-import { putArtifacts, getArtifactBase64 } from '../src/services/executor/artifactStore';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { commitFlowState, purgeFlowGit } from '../src/infra/git/flowCommit';
+import { putArtifacts, getArtifactBase64 } from '../src/domain/execution/artifactStore';
 
 beforeAll(async () => { await connectDB(); });
 

@@ -1,30 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { getCollection } from '../services/db/index';
+import { workerJobRepository, workerRepository } from '../../data/repositories';
 import { authMiddleware } from '../middleware/auth';
-import { emitJobLog, jobs } from '../services/executor/nodeExecutor';
-import { extractSecretNames, resolveSecretValues } from './secrets';
-import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../services/executor/artifactStore';
-import type { WorkerAccess } from '../services/db/models/Worker';
+import { emitJobLog } from '../../domain/execution/nodeExecutor';
+import { extractSecretNames, resolveSecretValues } from '../../domain/secrets/secretService';
+import { getArtifactBase64, getArtifactSize, artifactChunks } from '../../domain/execution/artifactStore';
+import type { WorkerAccess } from '../../data/models/Worker';
+import {
+  hashWorkerToken,
+  isWorkerOnline,
+  jobWaiters,
+  pendingWorkerJobs,
+} from '../../domain/workers/workerService';
 import { requireRole } from '../middleware/rbac';
 
 const router = Router();
-
-// Whether `user` may select & execute on `worker` given its accessibility
-// policy. No policy → open to everyone. Admins always retain access. Single
-// source of truth shared by the flow execute gate and the worker list.
-export function canUserUseWorker(user: { role?: string; login?: string } | null | undefined, worker: any): boolean {
-  const access: WorkerAccess | null | undefined = worker?.access;
-  if (!access || (access.mode !== 'allow' && access.mode !== 'deny')) return true;
-  const role = user?.role || '';
-  if (role === 'admin') return true;
-  const login = (user?.login || '').toLowerCase();
-  const roles = Array.isArray(access.roles) ? access.roles : [];
-  const users = Array.isArray(access.users) ? access.users.map(u => String(u).toLowerCase()) : [];
-  const matched = roles.includes(role) || users.includes(login);
-  return access.mode === 'allow' ? matched : !matched;
-}
 
 // Coerce a raw access payload into a stored policy, or null to clear it.
 function normalizeAccess(raw: any): WorkerAccess | null {
@@ -38,32 +29,9 @@ function normalizeAccess(raw: any): WorkerAccess | null {
   return { mode, roles, users };
 }
 
-// Worker counts as online if its last heartbeat/poll is within this window.
-// Single source of truth — flowExecutor imports this for its pre-dispatch
-// liveness check so the UI's "online" badge and dispatch eligibility agree.
-// Override via WORKER_ONLINE_THRESHOLD_MS.
-export const ONLINE_THRESHOLD_MS = parseInt(process.env.WORKER_ONLINE_THRESHOLD_MS || '30000');
-
-// Hard timeout for a single worker job dispatch (rejects the awaiter if the
-// worker never reports a result). Expressed in minutes; override via
-// DISPATCH_TIMEOUT_MIN.
-export const DISPATCH_TIMEOUT_MS = parseInt(process.env.DISPATCH_TIMEOUT_MIN || '5', 10) * 60 * 1000;
-
-export function isWorkerOnline(lastSeenAt: string | undefined): boolean {
-  return !!lastSeenAt && Date.now() - new Date(lastSeenAt).getTime() < ONLINE_THRESHOLD_MS;
-}
-
-function isOnline(lastSeenAt: string): boolean {
-  return isWorkerOnline(lastSeenAt);
-}
-
 // Per-worker bearer token middleware. /register is the only worker endpoint
-// without it. We hash the token at rest so a DB leak doesn't expose live
-// worker credentials; constant-time compare to avoid trivial timing oracles.
-function hashWorkerToken(raw: string): string {
-  return crypto.createHash('sha256').update(raw).digest('hex');
-}
-
+// without it. The token is hashed at rest (see workerService.hashWorkerToken);
+// constant-time compare avoids trivial timing oracles.
 async function workerAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const workerId = req.params.id;
   const auth = req.headers['authorization'];
@@ -74,7 +42,7 @@ async function workerAuth(req: Request, res: Response, next: NextFunction): Prom
   const raw = auth.slice(7).trim();
   if (!raw) { res.status(401).json({ error: 'Empty worker token' }); return; }
   try {
-    const col = getCollection('workers');
+    const col = workerRepository;
     const w = await col.findOne({ _id: workerId });
     if (!w) { res.status(404).json({ error: 'Worker not found' }); return; }
     // Legacy workers registered before per-worker tokens existed have no
@@ -97,20 +65,6 @@ async function workerAuth(req: Request, res: Response, next: NextFunction): Prom
   }
 }
 
-// In-memory long-poll waiters per worker. When a new job is dispatched, we
-// resolve any parked GET /jobs requests so the worker picks it up immediately
-// instead of waiting for the next short-poll tick.
-const jobWaiters = new Map<string, Set<() => void>>();
-export function notifyWorkerJob(workerId: string): void {
-  const set = jobWaiters.get(workerId);
-  if (!set) return;
-  for (const resolve of [...set]) {
-    set.delete(resolve);
-    try { resolve(); } catch { /* ignore */ }
-  }
-  if (!set.size) jobWaiters.delete(workerId);
-}
-
 // Workers call this on startup to register. Open endpoint guarded only by
 // WORKER_REGISTRATION_SECRET. Returns a fresh per-worker bearer token that
 // the worker must send on every subsequent call — this is what /heartbeat,
@@ -124,7 +78,7 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Invalid registration secret' }) as any;
   }
 
-  const col = getCollection('workers');
+  const col = workerRepository;
   const now = new Date().toISOString();
 
   // Mint a fresh token on every register call — re-registering a worker
@@ -151,7 +105,7 @@ router.post('/register', async (req: Request, res: Response) => {
 
 // Workers heartbeat — keeps status online
 router.post('/:id/heartbeat', workerAuth, async (req: Request, res: Response) => {
-  const col = getCollection('workers');
+  const col = workerRepository;
   await col.update({ _id: req.params.id }, { $set: { status: 'online', lastSeenAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
@@ -162,8 +116,8 @@ router.post('/:id/heartbeat', workerAuth, async (req: Request, res: Response) =>
 // without burning request count.
 const LONG_POLL_WAIT_MS = parseInt(process.env.WORKER_LONG_POLL_MS || '25000');
 router.get('/:id/jobs', workerAuth, async (req: Request, res: Response) => {
-  const workersCol = getCollection('workers');
-  const jobsCol = getCollection('worker_jobs');
+  const workersCol = workerRepository;
+  const jobsCol = workerJobRepository;
   const workerId = req.params.id;
   const worker = await workersCol.findOne({ _id: workerId });
   if (!worker) return res.status(404).json({ error: 'Worker not found' }) as any;
@@ -203,13 +157,13 @@ router.get('/:id/jobs', workerAuth, async (req: Request, res: Response) => {
 });
 
 router.post('/:id/jobs/:jobId/ack', workerAuth, async (req: Request, res: Response) => {
-  const col = getCollection('worker_jobs');
+  const col = workerJobRepository;
   await col.update({ _id: req.params.jobId, workerId: req.params.id }, { $set: { status: 'acked', ackedAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
 
 router.post('/:id/jobs/:jobId/status', workerAuth, async (req: Request, res: Response) => {
-  const col = getCollection('worker_jobs');
+  const col = workerJobRepository;
   await col.update({ _id: req.params.jobId, workerId: req.params.id }, { $set: { status: 'running', startedAt: new Date().toISOString() } });
   res.json({ ok: true });
 });
@@ -219,7 +173,7 @@ router.post('/:id/jobs/:jobId/log', workerAuth, async (req: Request, res: Respon
   if (!message) return res.json({ ok: true }) as any;
 
   try {
-    const col = getCollection('worker_jobs');
+    const col = workerJobRepository;
     const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
     if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
 
@@ -239,7 +193,7 @@ router.post('/:id/jobs/:jobId/log', workerAuth, async (req: Request, res: Respon
 // the already-trusted worker channel), not at rest in the job queue.
 router.post('/:id/jobs/:jobId/secrets', workerAuth, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('worker_jobs');
+    const col = workerJobRepository;
     const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
     if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
     // Only resolve names that actually appear in this job's code — defence in depth.
@@ -259,7 +213,7 @@ router.post('/:id/jobs/:jobId/secrets', workerAuth, async (req: Request, res: Re
 // referenced by THIS job are served — defence in depth.
 router.get('/:id/jobs/:jobId/artifacts/:sha', workerAuth, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('worker_jobs');
+    const col = workerJobRepository;
     const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
     if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
     const ref = (job.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
@@ -278,7 +232,7 @@ router.get('/:id/jobs/:jobId/artifacts/:sha', workerAuth, async (req: Request, r
 // in memory — the worker pipes it straight to disk. Use for large artifacts.
 router.get('/:id/jobs/:jobId/artifacts/:sha/raw', workerAuth, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('worker_jobs');
+    const col = workerJobRepository;
     const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
     if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
     const ref = (job.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
@@ -304,7 +258,7 @@ router.get('/:id/jobs/:jobId/artifacts/:sha/raw', workerAuth, async (req: Reques
 // persist the outcome on the worker_job record, then best-effort notify.
 router.post('/:id/jobs/:jobId/complete', workerAuth, async (req: Request, res: Response) => {
   const { status, output, error, variables } = req.body;
-  const col = getCollection('worker_jobs');
+  const col = workerJobRepository;
   const job = await col.findOne({ _id: req.params.jobId, workerId: req.params.id });
   if (!job) return res.status(404).json({ error: 'Job not found' }) as any;
 
@@ -334,18 +288,18 @@ router.post('/:id/jobs/:jobId/complete', workerAuth, async (req: Request, res: R
 
 // Worker deregisters on shutdown
 router.delete('/:id', workerAuth, async (req: Request, res: Response) => {
-  const col = getCollection('workers');
+  const col = workerRepository;
   await col.update({ _id: req.params.id }, { $set: { status: 'offline' } });
   res.json({ ok: true });
 });
 
 // UI — list all workers (JWT auth required)
 router.get('/', authMiddleware, async (_req: Request, res: Response) => {
-  const col = getCollection('workers');
+  const col = workerRepository;
   const workers = await col.find({});
   const result = workers.map((w: any) => ({
     ...w,
-    status: isOnline(w.lastSeenAt) ? 'online' : 'offline',
+    status: isWorkerOnline(w.lastSeenAt) ? 'online' : 'offline',
   }));
   res.json(result);
 });
@@ -355,7 +309,7 @@ router.get('/', authMiddleware, async (_req: Request, res: Response) => {
 // targets workers with no group. Body: { access: WorkerAccess | null }.
 router.patch('/groups/:group/access', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
-    const col = getCollection('workers');
+    const col = workerRepository;
     const access = normalizeAccess(req.body.access);
     const targetGroup = req.params.group === '__ungrouped__' ? '' : req.params.group;
     const all = await col.find({});
@@ -371,7 +325,7 @@ router.patch('/groups/:group/access', authMiddleware, requireRole('admin'), asyn
 // are admin-only).
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('workers');
+    const col = workerRepository;
     const updates: any = {};
     if (req.body.group !== undefined) updates.group = req.body.group;
     if (req.body.access !== undefined) {
@@ -384,7 +338,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     await col.update({ _id: req.params.id }, { $set: updates });
     const w = await col.findOne({ _id: req.params.id });
     if (!w) return res.status(404).json({ error: 'Worker not found' }) as any;
-    res.json({ ...w, status: isOnline(w.lastSeenAt) ? 'online' : 'offline' });
+    res.json({ ...w, status: isWorkerOnline(w.lastSeenAt) ? 'online' : 'offline' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -392,69 +346,17 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
 // UI — get single worker (JWT auth required)
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
-  const col = getCollection('workers');
+  const col = workerRepository;
   const w = await col.findOne({ _id: req.params.id });
   if (!w) return res.status(404).json({ error: 'Worker not found' }) as any;
-  res.json({ ...w, status: isOnline(w.lastSeenAt) ? 'online' : 'offline' });
+  res.json({ ...w, status: isWorkerOnline(w.lastSeenAt) ? 'online' : 'offline' });
 });
 
 // UI — delete worker record (JWT auth required)
 router.delete('/:id/record', authMiddleware, async (req: Request, res: Response) => {
-  const col = getCollection('workers');
+  const col = workerRepository;
   await col.remove({ _id: req.params.id });
   res.json({ ok: true });
 });
-
-// In-memory map: jobId -> { resolve, reject } for local awaiting of worker job completion
-export interface WorkerJobResult { output: any; variables: Record<string, any>; }
-export const pendingWorkerJobs = new Map<string, { resolve: (v: WorkerJobResult) => void; reject: (e: Error) => void }>();
-
-// Called by flowExecutor to dispatch a node to a specific worker.
-// `executionId` is the parent flow's job/execution id (used for log routing).
-// `nodeId` is the original node id in the flow graph (attached to log entries).
-// `artifacts` optionally carries flow-level file attachments to extract on the worker.
-export async function dispatchToWorker(workerId: string, node: any, executionId: string, nodeId: string, artifacts?: Array<{name: string; data: string}>): Promise<WorkerJobResult> {
-  const col = getCollection('worker_jobs');
-  const jobId = uuidv4();
-  // Artifacts are content-addressed once (see artifactStore) and referenced by
-  // sha here — NOT inlined per job. The worker fetches each body on demand from
-  // GET /jobs/:jobId/artifacts/:sha, mirroring how it already pulls secrets.
-  const artifactRefs = await putArtifacts(artifacts);
-  await col.insert({
-    _id: jobId, workerId, executionId, nodeId, node,
-    artifacts: artifactRefs.length ? artifactRefs : undefined,
-    status: 'pending', createdAt: new Date().toISOString(),
-  });
-
-  // Wake any worker currently long-polling /jobs so dispatch latency is ~0.
-  notifyWorkerJob(workerId);
-
-  return new Promise((resolve, reject) => {
-    const startedAt = Date.now();
-    // Poll for: parent execution killed, or the hard dispatch timeout.
-    const watch = setInterval(() => {
-      const parent = jobs.get(executionId);
-      const isKilled = !!(parent && parent.stopRequested);
-      const isTimedOut = Date.now() - startedAt > DISPATCH_TIMEOUT_MS;
-      if (!isKilled && !isTimedOut) return;
-      clearInterval(watch);
-      const pending = pendingWorkerJobs.get(jobId);
-      if (!pending) return;
-      pendingWorkerJobs.delete(jobId);
-      if (isKilled) {
-        // Best-effort: flag the worker_job so the worker can skip it if it hasn't started.
-        col.update({ _id: jobId }, { $set: { status: 'cancelled' } }).catch(() => {});
-        pending.reject(new Error('Execution killed'));
-      } else {
-        pending.reject(new Error('Worker job timed out'));
-      }
-    }, 1000);
-    const stopWatch = () => clearInterval(watch);
-    pendingWorkerJobs.set(jobId, {
-      resolve: (v) => { stopWatch(); resolve(v); },
-      reject: (e) => { stopWatch(); reject(e); },
-    });
-  });
-}
 
 export default router;

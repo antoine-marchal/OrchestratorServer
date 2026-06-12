@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Clock, AlertCircle, Globe, Copy, Check, Trash2 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
-import { apiClient } from '../../utils/apiClient';
+import { schedulesApi } from '../../api';
 import type { OrchestratorFlow } from '../../types/flows';
 
 interface Props {
@@ -72,7 +72,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
     if (tab !== 'cron') return;
     (async () => {
       try {
-        const data: any = await apiClient.get(`/api/v1/schedules?flowId=${encodeURIComponent(flow.id)}`);
+        const data: any = await schedulesApi.listByFlow(flow.id);
         const cronRows = (data.schedules || []).filter((s: any) =>
           s.type === 'cron' && (variant ? s.variantId === variant.id : !s.variantId));
         if (cronRows.length > 0) {
@@ -95,7 +95,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
     if (tab !== 'api') return;
     (async () => {
       try {
-        const data: any = await apiClient.get(`/api/v1/schedules?flowId=${encodeURIComponent(flow.id)}`);
+        const data: any = await schedulesApi.listByFlow(flow.id);
         const apiSchedules = (data.schedules || []).filter((s: any) =>
           s.type === 'api' && (variant ? s.variantId === variant.id : !s.variantId));
         // Surface schedule placeholders even when we don't have the raw token URL anymore.
@@ -122,9 +122,9 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
       if (cronScheduleId) {
         // Update existing row — the server's PATCH handler re-registers the
         // node-cron task with the new expression / enabled flag.
-        await apiClient.patch(`/api/v1/schedules/${cronScheduleId}`, payload);
+        await schedulesApi.update(cronScheduleId, payload);
       } else {
-        const created: any = await apiClient.post('/api/v1/schedules/cron', {
+        const created: any = await schedulesApi.create('cron', {
           flowId: flow.id, ...payload,
           // Variant schedules carry the subrow's worker/branch override.
           ...(variant ? { variantId: variant.id, workerId: variant.workerId, branch: variant.branch } : {}),
@@ -147,7 +147,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
     setLoading(true);
     try {
       if (cronScheduleId) {
-        await apiClient.delete(`/api/v1/schedules/${cronScheduleId}`);
+        await schedulesApi.remove(cronScheduleId);
         setCronScheduleId(null);
       }
       if (!variant) await onSave(null);
@@ -163,7 +163,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
     setCreating(true);
     setError('');
     try {
-      const res: any = await apiClient.post('/api/v1/schedules/api-trigger', {
+      const res: any = await schedulesApi.create('api-trigger', {
         flowId: flow.id, label: apiLabel || 'API Trigger',
         ...(variant ? { variantId: variant.id, workerId: variant.workerId, branch: variant.branch } : {}),
       });
@@ -181,7 +181,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
 
   const handleDeleteTrigger = async (scheduleId: string) => {
     try {
-      await apiClient.delete(`/api/v1/schedules/${scheduleId}`);
+      await schedulesApi.remove(scheduleId);
       setApiTriggers(prev => prev.filter(t => t.scheduleId !== scheduleId));
     } catch (err: any) {
       setError(err?.message || 'Failed to delete trigger');

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { getCollection, isMongoMode } from '../db/index';
+import { getCollection, isMongoMode } from '../../data/db/index';
+import { flowRepository, workerJobRepository } from '../../data/repositories';
 
 // Content-addressed artifact store. A flow's file attachments used to be inlined
 // (base64) into every worker_job — one full copy per dispatched node, never
@@ -136,7 +137,7 @@ export const ARTIFACT_GC_MIN_AGE_MS = parseInt(process.env.ARTIFACT_GC_MIN_AGE_M
 // blobs so we never reclaim one mid-write.
 export async function gcArtifacts(minAgeMs = ARTIFACT_GC_MIN_AGE_MS): Promise<number> {
   const blobsCol = getCollection('artifact_blobs');
-  const jobsCol = getCollection('worker_jobs');
+  const jobsCol = workerJobRepository;
   const blobs: any[] = await blobsCol.find({}, { projection: { _id: 1, createdAt: 1 } });
   const jobs: any[] = await jobsCol.find({}, { projection: { artifacts: 1 } });
   const referenced = new Set<string>();
@@ -147,7 +148,7 @@ export async function gcArtifacts(minAgeMs = ARTIFACT_GC_MIN_AGE_MS): Promise<nu
   }
   // Flows now reference artifact blobs by sha too (flow.artifacts = [{name,sha}]).
   // Without this scan the janitor would reclaim every flow's artifacts.
-  const flows: any[] = await getCollection('flows').find({}, { projection: { artifacts: 1 } });
+  const flows: any[] = await flowRepository.find({}, { projection: { artifacts: 1 } });
   for (const f of flows) {
     for (const ref of f.artifacts || []) {
       if (ref && typeof ref.sha === 'string') referenced.add(ref.sha);
@@ -156,7 +157,7 @@ export async function gcArtifacts(minAgeMs = ARTIFACT_GC_MIN_AGE_MS): Promise<nu
   // Git stores artifacts as pointers (sha256) rather than duplicating the bytes,
   // so any commit's pointer — including historical commits whose flow doc no
   // longer lists the artifact — keeps its blob alive.
-  const { collectArtifactPointerShas } = await import('../git/gitStore');
+  const { collectArtifactPointerShas } = await import('../../infra/git/gitStore');
   for (const sha of await collectArtifactPointerShas()) referenced.add(sha);
   const cutoff = Date.now() - minAgeMs;
   const chunkCol = getCollection('artifact_chunks');

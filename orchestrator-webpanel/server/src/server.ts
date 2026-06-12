@@ -5,24 +5,26 @@ import https from 'https';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import { connectDB, getCollection } from './services/db/index';
-import { authMiddleware } from './middleware/auth';
-import { DEFAULT_ROLES } from './services/db/models/Role';
-import { setExecuteFlowFn, loadAll as loadCronSchedules } from './services/scheduler/cronScheduler';
-import { eventBus } from './services/scheduler/eventBus';
-import { executeOrchestratorFlow } from './services/executor/flowExecutor';
-import { gcArtifacts, putArtifacts } from './services/executor/artifactStore';
+import { connectDB, getCollection } from './data/db/index';
+import { userRepository, flowRepository, scheduleRepository, executionRepository, workerJobRepository, triggerTokenRepository, workerRepository } from './data/repositories';
+import { authMiddleware } from './http/middleware/auth';
+import { errorHandler } from './http/middleware/errorHandler';
+import { DEFAULT_ROLES } from './data/models/Role';
+import { setExecuteFlowFn, loadAll as loadCronSchedules } from './infra/scheduler/cronScheduler';
+import { eventBus } from './infra/scheduler/eventBus';
+import { executeOrchestratorFlow } from './domain/execution/flowExecutor';
+import { gcArtifacts, putArtifacts } from './domain/execution/artifactStore';
 
-import jobsRouter from './routes/jobs';
-import flowsRouter from './routes/flows';
-import executionsRouter from './routes/executions';
-import usersRouter from './routes/users';
-import secretsRouter from './routes/secrets';
-import schedulesRouter from './routes/schedules';
-import triggersRouter from './routes/triggers';
-import workersRouter from './routes/workers';
-import { flowGitRepository } from './services/git/FlowGitRepository';
-import { handleReceivePack, handleInfoRefs, handleUploadPack } from './services/git/receivePack';
+import jobsRouter from './http/routes/jobs';
+import flowsRouter from './http/routes/flows';
+import executionsRouter from './http/routes/executions';
+import usersRouter from './http/routes/users';
+import secretsRouter from './http/routes/secrets';
+import schedulesRouter from './http/routes/schedules';
+import triggersRouter from './http/routes/triggers';
+import workersRouter from './http/routes/workers';
+import { flowGitRepository } from './infra/git/FlowGitRepository';
+import { handleReceivePack, handleInfoRefs, handleUploadPack } from './infra/git/receivePack';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -183,12 +185,16 @@ app.get('*', (req, res) => {
   }
 });
 
+// Central error handler — registered last so thrown ApiError / async rejections
+// (e.g. from validateBody) become a consistent { error: { code, message } } response.
+app.use(errorHandler);
+
 /* ============================
    Startup
    ============================ */
 
 async function seedDefaultData(): Promise<void> {
-  const usersCol = getCollection('users');
+  const usersCol = userRepository;
   const rolesCol = getCollection('roles');
 
   // Seed roles
@@ -221,7 +227,7 @@ async function seedDefaultData(): Promise<void> {
 // startup so they start firing without requiring the user to re-save.
 async function backfillFlowOwners(): Promise<void> {
   try {
-    const flowsCol = getCollection('flows');
+    const flowsCol = flowRepository;
     const flows: any[] = await flowsCol.find({});
     let n = 0;
     for (const f of flows) {
@@ -242,7 +248,7 @@ async function backfillFlowOwners(): Promise<void> {
 // artifact_blobs store and replace the doc field with {name,sha} refs.
 async function migrateInlineArtifacts(): Promise<void> {
   try {
-    const flowsCol = getCollection('flows');
+    const flowsCol = flowRepository;
     const flows: any[] = await flowsCol.find({});
     let migrated = 0;
     for (const f of flows) {
@@ -260,8 +266,8 @@ async function migrateInlineArtifacts(): Promise<void> {
 
 async function migrateLegacyFlowSchedules(): Promise<void> {
   try {
-    const flowsCol = getCollection('flows');
-    const schedulesCol = getCollection('schedules');
+    const flowsCol = flowRepository;
+    const schedulesCol = scheduleRepository;
     const flows: any[] = await flowsCol.find({});
     let migrated = 0;
     for (const flow of flows) {
@@ -292,9 +298,9 @@ async function migrateLegacyFlowSchedules(): Promise<void> {
 // stay "running" forever.
 async function reconcileStrandedExecutions(): Promise<void> {
   try {
-    const execsCol = getCollection('executions');
-    const flowsCol = getCollection('flows');
-    const workerJobsCol = getCollection('worker_jobs');
+    const execsCol = executionRepository;
+    const flowsCol = flowRepository;
+    const workerJobsCol = workerJobRepository;
     const stranded: any[] = await execsCol.find({ status: 'RUNNING' });
     const now = new Date().toISOString();
     const reason = 'Server restarted while execution was running';
@@ -335,7 +341,7 @@ async function start(): Promise<void> {
   // Wire event bus to event-based schedules
   const scheduleEventHandler = async (eventName: string, data: any) => {
     try {
-      const col = getCollection('schedules');
+      const col = scheduleRepository;
       const schedules = await col.find({ type: 'event', eventName, enabled: true });
       for (const s of schedules) {
         console.log(`[EventBus] Triggering flow ${s.flowId} for event ${eventName}`);
@@ -354,7 +360,7 @@ async function start(): Promise<void> {
   // Auto-expire trigger tokens every minute
   const tokenExpiryTimer = setInterval(async () => {
     try {
-      const col = getCollection('trigger_tokens');
+      const col = triggerTokenRepository;
       const now = new Date().toISOString();
       await col.update(
         { expiresAt: { $lt: now }, revokedAt: { $exists: false } },
@@ -373,8 +379,8 @@ async function start(): Promise<void> {
   const WORKER_OFFLINE_TIMEOUT_MS = parseInt(process.env.WORKER_OFFLINE_TIMEOUT_MS || '60000');
   const reaperTimer = setInterval(async () => {
     try {
-      const workersCol = getCollection('workers');
-      const jobsCol = getCollection('worker_jobs');
+      const workersCol = workerRepository;
+      const jobsCol = workerJobRepository;
       const cutoff = new Date(Date.now() - WORKER_OFFLINE_TIMEOUT_MS).toISOString();
       const offlineWorkers: any[] = await workersCol.find({ lastSeenAt: { $lt: cutoff } });
       if (!offlineWorkers.length) return;
@@ -392,7 +398,7 @@ async function start(): Promise<void> {
           // Notify in-memory awaiter so dispatchToWorker resolves immediately
           // rather than waiting for its 5-minute hard timeout.
           try {
-            const { pendingWorkerJobs } = await import('./routes/workers');
+            const { pendingWorkerJobs } = await import('./domain/workers/workerService');
             const pending = pendingWorkerJobs.get(j._id);
             if (pending) {
               pendingWorkerJobs.delete(j._id);
@@ -419,7 +425,7 @@ async function start(): Promise<void> {
   const JANITOR_INTERVAL_MS = parseInt(process.env.JANITOR_INTERVAL_MS || '300000');
   const janitorTimer = setInterval(async () => {
     try {
-      const jobsCol = getCollection('worker_jobs');
+      const jobsCol = workerJobRepository;
       const cutoff = new Date(Date.now() - WORKER_JOB_RETENTION_MS).toISOString();
       const removed = await jobsCol.remove(
         { status: { $in: ['success', 'failed', 'cancelled'] }, completedAt: { $lt: cutoff } },

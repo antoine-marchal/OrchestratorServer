@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { getCollection } from '../services/db/index';
-import { nowUid } from '../services/executor/nodeExecutor';
-import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
+import { scheduleRepository, triggerTokenRepository } from '../../data/repositories';
+import { nowUid } from '../../domain/execution/nodeExecutor';
+import { register as registerCron, unregister as unregisterCron } from '../../infra/scheduler/cronScheduler';
 import { requireRole } from '../middleware/rbac';
 
 const router = Router();
@@ -19,7 +19,7 @@ function hashToken(raw: string): string {
 // List schedules for a flow
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('schedules');
+    const col = scheduleRepository;
     const query: any = {};
     if (req.query.flowId) query.flowId = req.query.flowId;
     const schedules = await col.find(query);
@@ -34,7 +34,7 @@ router.post('/cron', async (req: Request, res: Response) => {
   const { flowId, cronExpr, label, enabled = true, timezone, variantId, workerId, branch } = req.body;
   if (!flowId || !cronExpr) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId and cronExpr required' } }) as any;
   try {
-    const col = getCollection('schedules');
+    const col = scheduleRepository;
     const now = new Date().toISOString();
     const schedule: any = {
       _id: uuidv4(), flowId, type: 'cron', cronExpr, label: label || cronExpr,
@@ -57,7 +57,7 @@ router.post('/event', async (req: Request, res: Response) => {
   const { flowId, eventName, label, enabled = true } = req.body;
   if (!flowId || !eventName) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId and eventName required' } }) as any;
   try {
-    const col = getCollection('schedules');
+    const col = scheduleRepository;
     const now = new Date().toISOString();
     const schedule: any = {
       _id: uuidv4(), flowId, type: 'event', eventName, label: label || eventName,
@@ -76,8 +76,8 @@ router.post('/api-trigger', async (req: Request, res: Response) => {
   const { flowId, label, expiresAt, singleUse = false, variantId, workerId, branch } = req.body;
   if (!flowId) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'flowId required' } }) as any;
   try {
-    const schedulesCol = getCollection('schedules');
-    const tokensCol = getCollection('trigger_tokens');
+    const schedulesCol = scheduleRepository;
+    const tokensCol = triggerTokenRepository;
     const now = new Date().toISOString();
 
     const schedule: any = {
@@ -111,7 +111,7 @@ router.post('/api-trigger', async (req: Request, res: Response) => {
 // Toggle enable/disable
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('schedules');
+    const col = scheduleRepository;
     const schedule = await col.findOne({ _id: req.params.id });
     if (!schedule) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Schedule not found' } }) as any;
 
@@ -138,7 +138,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('schedules');
+    const col = scheduleRepository;
     const schedule = await col.findOne({ _id: req.params.id });
     if (!schedule) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Schedule not found' } }) as any;
 
@@ -146,7 +146,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await col.remove({ _id: req.params.id });
 
     // Remove associated tokens
-    const tokensCol = getCollection('trigger_tokens');
+    const tokensCol = triggerTokenRepository;
     await tokensCol.remove({ scheduleId: req.params.id }, { multi: true });
 
     res.json({ message: 'Schedule deleted' });
@@ -158,7 +158,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 // Get tokens for a schedule
 router.get('/:id/tokens', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('trigger_tokens');
+    const col = triggerTokenRepository;
     const tokens = await col.find({ scheduleId: req.params.id });
     res.json(tokens.map((t: any) => ({ _id: t._id, label: t.label, scheduleId: t.scheduleId, singleUse: t.singleUse, used: t.used, expiresAt: t.expiresAt, revokedAt: t.revokedAt, createdAt: t.createdAt })));
   } catch (err: any) {

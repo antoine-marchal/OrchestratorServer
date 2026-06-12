@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { encrypt, decrypt } from '../src/services/crypto/aes';
+import { encrypt, decrypt } from '../src/infra/crypto/aes';
 
 describe('AES-GCM crypto', () => {
   const KEY = 'unit-test-master-key-do-not-use-in-prod';

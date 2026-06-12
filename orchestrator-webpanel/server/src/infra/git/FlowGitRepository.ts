@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { GitRepository, type GitRef, type GitObject, type ReceiveCommand, type ReceivedObject } from '@fusebit/cloud-git';
-import { getCollection } from '../db/index';
-import { hashApiKey } from '../../middleware/auth';
+import { flowRepository, userRepository } from '../../data/repositories';
+import { hashApiKey } from '../auth/tokens';
 import {
   getObject as storeGetObject,
   putObject,
@@ -32,7 +32,7 @@ interface GitUser {
 
 async function authenticateApiKey(login: string, rawKey: string): Promise<GitUser | null> {
   if (!login || !rawKey) return null;
-  const users = getCollection('users');
+  const users = userRepository;
   const keyHash = hashApiKey(rawKey);
   const matched: any[] = await users.find({ 'apiKeys.keyHash': keyHash });
   for (const user of matched) {
@@ -61,7 +61,7 @@ async function canEdit(user: GitUser, flow: any): Promise<boolean> {
   if (user.role !== 'operator') return false;
   const ownerLogin = flow?.owner;
   if (!ownerLogin || ownerLogin === user.login) return true;
-  const owner = await getCollection('users').findOne({ login: ownerLogin });
+  const owner = await userRepository.findOne({ login: ownerLogin });
   if (!owner) return true;
   return owner.role !== 'admin';
 }
@@ -80,7 +80,7 @@ export class FlowGitRepository extends GitRepository {
   async authorize(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const flowId = flowIdOf(req);
-      const flow = await getCollection('flows').findOne({ _id: flowId });
+      const flow = await flowRepository.findOne({ _id: flowId });
       if (!flow) {
         res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } });
         return;
@@ -111,7 +111,7 @@ export class FlowGitRepository extends GitRepository {
   }
 
   private async computeHead(flowId: string): Promise<GitRef | null> {
-    const flow = await getCollection('flows').findOne({ _id: flowId });
+    const flow = await flowRepository.findOne({ _id: flowId });
     const refs = await listRefs(flowId);
     if (refs.length === 0) return null;
     const preferred = flow ? activeRef(flow) : 'refs/heads/main';

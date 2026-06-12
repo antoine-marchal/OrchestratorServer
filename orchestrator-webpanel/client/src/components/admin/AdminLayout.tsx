@@ -1,99 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  Users, Lock, Plus, Trash2, Key, Copy, Check,
+  Users, Lock, Plus, Trash2, Key,
   Eye, EyeOff, ChevronDown, ChevronRight,
   AlertCircle, Search, ShieldCheck, RefreshCw,
 } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { usersApi, secretsApi, workersApi } from '../../api';
 import { useAuth } from '../../hooks/useAuth';
 
-/* ─── Types ─────────────────────────────────────────── */
-
-interface ApiKey {
-  id: string;
-  label: string;
-  createdAt: string;
-  expiresAt?: string;
-  lastUsedAt?: string;
-}
-
-interface User {
-  _id: string;
-  login: string;
-  role: string;
-  createdAt: string;
-  apiKeys: ApiKey[];
-}
-
-interface Secret {
-  _id: string;
-  name: string;
-  scope: 'global' | 'flow' | 'worker';
-  flowId?: string;
-  workerId?: string;
-  ownerId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface WorkerOption {
-  _id: string;
-  name: string;
-}
-
-type AdminTab = 'users' | 'secrets';
-
-/* ─── Raw key modal ──────────────────────────────────── */
-
-function RawKeyModal({ rawKey, onClose }: { rawKey: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await navigator.clipboard.writeText(rawKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
-      <div className="rounded-lg p-6 w-full max-w-lg" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
-        <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>API Key Created</h2>
-        <p className="text-xs mb-4" style={{ color: 'var(--err)' }}>
-          This key will not be shown again. Copy and store it securely.
-        </p>
-        <div className="flex items-center gap-2 p-2 rounded" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
-          <code className="text-xs flex-1 truncate" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{rawKey}</code>
-          <button onClick={copy} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', gap: 4, fontSize: 11 }}>
-            {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        <div className="flex justify-end mt-4">
-          <button onClick={onClose} className="tc-btn" style={{ height: 28, padding: '0 14px', fontSize: 12 }}>Done</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Role badge ─────────────────────────────────────── */
-
-const ROLE_COLORS: Record<string, string> = {
-  admin: 'var(--accent)',
-  operator: 'var(--ok)',
-  viewer: 'var(--text-3)',
-};
-
-function RoleBadge({ role }: { role: string }) {
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 4,
-      padding: '2px 8px', borderRadius: 4,
-      background: 'var(--surface-hi)', border: '1px solid var(--border)',
-      fontFamily: 'var(--font-mono)', fontSize: 11,
-      color: ROLE_COLORS[role] ?? 'var(--text-3)',
-    }}>
-      {role}
-    </span>
-  );
-}
+import type { User, Secret, WorkerOption, AdminTab } from './adminTypes';
+import { RawKeyModal } from './RawKeyModal';
+import { RoleBadge } from './RoleBadge';
 
 /* ─── Main component ─────────────────────────────────── */
 
@@ -138,7 +54,7 @@ export const AdminLayout: React.FC = () => {
     setUsersLoading(true);
     setUsersError(null);
     try {
-      const data = await apiClient.get('/api/v1/users');
+      const data = await usersApi.list();
       setUsers(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setUsersError(e?.message ?? 'Failed to load users');
@@ -151,7 +67,7 @@ export const AdminLayout: React.FC = () => {
     setSecretsLoading(true);
     setSecretsError(null);
     try {
-      const data = await apiClient.get('/api/v1/secrets');
+      const data = await secretsApi.list();
       setSecrets(Array.isArray(data) ? data : data.secrets ?? []);
     } catch (e: any) {
       setSecretsError(e?.message ?? 'Failed to load secrets');
@@ -166,7 +82,7 @@ export const AdminLayout: React.FC = () => {
     // Worker list is only needed for the "worker" secret-scope picker — best
     // effort, ignore failures so an unavailable workers endpoint doesn't
     // block the panel rendering.
-    apiClient.get('/api/v1/workers').then((data: any) => {
+    workersApi.list().then((data: any) => {
       const list = Array.isArray(data) ? data : [];
       setWorkerOptions(list.map((w: any) => ({ _id: w._id, name: w.name })));
     }).catch(() => { /* non-fatal */ });
@@ -175,7 +91,7 @@ export const AdminLayout: React.FC = () => {
   /* ── User actions ── */
   const handleCreateUser = async () => {
     try {
-      await apiClient.post('/api/v1/users', { login: newLogin, password: newPassword, role: newRole });
+      await usersApi.create({ login: newLogin, password: newPassword, role: newRole });
       setShowCreateUser(false);
       setNewLogin(''); setNewPassword(''); setNewRole('operator');
       await loadUsers();
@@ -184,7 +100,7 @@ export const AdminLayout: React.FC = () => {
 
   const handleDeleteUser = async (id: string) => {
     try {
-      await apiClient.delete(`/api/v1/users/${id}`);
+      await usersApi.remove(id);
       await loadUsers();
     } catch (e: any) { setUsersError(e?.message ?? 'Failed to delete user'); }
   };
@@ -192,7 +108,7 @@ export const AdminLayout: React.FC = () => {
   const handleCreateKey = async (userId: string) => {
     if (!keyLabel.trim()) return;
     try {
-      const result: any = await apiClient.post(`/api/v1/users/${userId}/apikeys`, { label: keyLabel });
+      const result: any = await usersApi.createApiKey(userId, { label: keyLabel });
       setRawKey(result.rawKey);
       setKeyUserId(null); setKeyLabel('');
       await loadUsers();
@@ -201,7 +117,7 @@ export const AdminLayout: React.FC = () => {
 
   const handleRevokeKey = async (userId: string, keyId: string) => {
     try {
-      await apiClient.delete(`/api/v1/users/${userId}/apikeys/${keyId}`);
+      await usersApi.deleteApiKey(userId, keyId);
       await loadUsers();
     } catch (e: any) { setUsersError(e?.message ?? 'Failed to revoke key'); }
   };
@@ -209,7 +125,7 @@ export const AdminLayout: React.FC = () => {
   const handleChangePassword = async (userId: string) => {
     if (!newPwd.trim()) return;
     try {
-      await apiClient.patch(`/api/v1/users/${userId}/password`, { password: newPwd });
+      await usersApi.setPassword(userId, newPwd);
       setPwdUserId(null); setNewPwd('');
     } catch (e: any) { setUsersError(e?.message ?? 'Failed to change password'); }
   };
@@ -225,7 +141,7 @@ export const AdminLayout: React.FC = () => {
       const body: any = { name: secName.trim(), value: secValue.trim(), scope: secScope };
       if (secScope === 'flow' && secFlowId.trim()) body.flowId = secFlowId.trim();
       if (secScope === 'worker') body.workerId = secWorkerId;
-      await apiClient.post('/api/v1/secrets', body);
+      await secretsApi.create(body);
       setShowCreateSecret(false);
       setSecName(''); setSecValue(''); setSecScope('global'); setSecFlowId(''); setSecWorkerId('');
       await loadSecrets();
@@ -234,7 +150,7 @@ export const AdminLayout: React.FC = () => {
 
   const handleDeleteSecret = async (id: string) => {
     try {
-      await apiClient.delete(`/api/v1/secrets/${id}`);
+      await secretsApi.remove(id);
       await loadSecrets();
     } catch (e: any) { setSecretsError(e?.message ?? 'Failed to delete secret'); }
   };
@@ -245,7 +161,7 @@ export const AdminLayout: React.FC = () => {
       return;
     }
     try {
-      const data: any = await apiClient.get(`/api/v1/secrets/${id}/reveal`);
+      const data: any = await secretsApi.reveal(id);
       setRevealedValues(prev => ({ ...prev, [id]: data.value }));
     } catch (e: any) { setSecretsError(e?.message ?? 'Failed to reveal secret'); }
   };

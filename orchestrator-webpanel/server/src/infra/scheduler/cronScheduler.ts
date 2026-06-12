@@ -1,6 +1,6 @@
 import cron from 'node-cron';
-import { getCollection } from '../db/index';
-import { Schedule } from '../db/models/Schedule';
+import { flowRepository, scheduleRepository } from '../../data/repositories';
+import { Schedule } from '../../data/models/Schedule';
 
 type ExecuteOverrides = { workerId?: string | null; branch?: string };
 type ExecuteFlowFn = (flowId: string, triggeredBy: string, triggeredUser?: string, overrides?: ExecuteOverrides) => Promise<string | null>;
@@ -14,7 +14,7 @@ export function setExecuteFlowFn(fn: ExecuteFlowFn): void {
 
 export async function loadAll(): Promise<void> {
   try {
-    const schedules = getCollection('schedules');
+    const schedules = scheduleRepository;
     const all: Schedule[] = await schedules.find({ type: 'cron', enabled: true });
     for (const s of all) {
       register(s);
@@ -48,13 +48,13 @@ export function register(schedule: Schedule): void {
         // The subrow may have been deleted by someone who couldn't remove the
         // schedule row (schedule mgmt is admin-only). Skip rather than fire a
         // ghost run; best-effort unregister so it stops ticking.
-        const flow = await getCollection('flows').findOne({ _id: schedule.flowId });
+        const flow = await flowRepository.findOne({ _id: schedule.flowId });
         const exists = flow && Array.isArray(flow.variants) && flow.variants.some((v: any) => v.id === variantId);
         if (!exists) { unregister(schedule._id); return; }
         ov = { workerId: (schedule as any).workerId ?? '', branch: (schedule as any).branch };
       }
       await _executeFlow(schedule.flowId, 'cron', undefined, ov);
-      const schedules = getCollection('schedules');
+      const schedules = scheduleRepository;
       await schedules.update({ _id: schedule._id }, { $set: { lastFiredAt: new Date().toISOString() } });
     } catch (err) {
       console.error(`[Cron] Error executing flow ${schedule.flowId}:`, (err as Error).message);

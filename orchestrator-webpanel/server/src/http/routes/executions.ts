@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { getCollection } from '../services/db/index';
-import { jobs, jobLogBuffers, terminateJobAndChildren, executionSSEListeners, executionNodeStatuses } from '../services/executor/nodeExecutor';
-import { loadExecutionLogs, deleteExecutionLogs } from '../services/executor/executionLogs';
-import { flowFieldsAtCommit } from '../services/git/flowCommit';
+import { executionRepository, flowRepository } from '../../data/repositories';
+import { jobs, jobLogBuffers, terminateJobAndChildren, executionSSEListeners, executionNodeStatuses } from '../../domain/execution/nodeExecutor';
+import { loadExecutionLogs, deleteExecutionLogs } from '../../domain/execution/executionLogs';
+import { flowFieldsAtCommit } from '../../infra/git/flowCommit';
 
 const router = Router();
 
@@ -30,7 +30,7 @@ async function hydrateExecution(exec: any): Promise<any> {
 
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('executions');
+    const col = executionRepository;
     const query: any = {};
     if (req.query.flowId) query.flowId = req.query.flowId;
     if (req.query.status) query.status = req.query.status;
@@ -69,8 +69,8 @@ router.delete('/', async (req: Request, res: Response) => {
     if (req.user?.role !== 'admin') {
       return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins can clear execution history' } }) as any;
     }
-    const execsCol = getCollection('executions');
-    const flowsCol = getCollection('flows');
+    const execsCol = executionRepository;
+    const flowsCol = flowRepository;
     const flowId = req.query.flowId ? String(req.query.flowId) : null;
 
     const query = flowId ? { flowId } : {};
@@ -101,8 +101,8 @@ router.delete('/', async (req: Request, res: Response) => {
 // an admin can remove those.
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const execsCol = getCollection('executions');
-    const flowsCol = getCollection('flows');
+    const execsCol = executionRepository;
+    const flowsCol = flowRepository;
     const exec = await execsCol.findOne({ _id: req.params.id });
     if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } }) as any;
 
@@ -141,8 +141,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const execsCol = getCollection('executions');
-    const flowsCol = getCollection('flows');
+    const execsCol = executionRepository;
+    const flowsCol = flowRepository;
     let exec = await execsCol.findOne({ _id: req.params.id });
     if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } }) as any;
 
@@ -178,7 +178,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('executions');
+    const col = executionRepository;
     const exec = await col.findOne({ _id: req.params.id });
     if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } }) as any;
 
@@ -199,8 +199,8 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
 router.post('/:id/kill', async (req: Request, res: Response) => {
   try {
-    const execsCol = getCollection('executions');
-    const flowsCol = getCollection('flows');
+    const execsCol = executionRepository;
+    const flowsCol = flowRepository;
     const exec = await execsCol.findOne({ _id: req.params.id });
     if (!exec) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Execution not found' } }) as any;
     if (exec.status !== 'RUNNING') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Execution is not running' } }) as any;
@@ -238,7 +238,7 @@ router.get('/:id/stream', async (req: Request, res: Response) => {
   let jobId: string | null = null;
   let persistedStatuses: Record<string, any> | null = null;
   try {
-    const exec = await getCollection('executions').findOne({ _id: execId });
+    const exec = await executionRepository.findOne({ _id: execId });
     jobId = exec?.jobId || null;
     if (exec && exec.nodeStatuses && typeof exec.nodeStatuses === 'object') {
       persistedStatuses = exec.nodeStatuses;

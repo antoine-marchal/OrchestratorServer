@@ -1,4 +1,4 @@
-import { Node } from 'reactflow';
+
 import { FlowState } from '../types';
 import { collectVariables } from '../utils/variableUtils';
 import { executeNode } from './nodeExecutor';
@@ -266,7 +266,7 @@ export async function executeFlow(
       let attempt = 0;
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        const { error } = await executeNode(nodeId, true, sessionStore);
+        const { error } = await executeNode(nodeId, true, sessionStore as any);
         if (!error) break;
         attempt++;
         if (attempt < maxAttempts) {
@@ -317,7 +317,7 @@ export async function executeFlow(
     visitCount[nextId] = (visitCount[nextId] ?? 0) + 1;
     if (visitCount[nextId] > MAX_VISITS_PER_NODE) return;
 
-    const node = byId(nextId);
+
     const preds = incoming(nextId).map(e => e.source);
 
     // refresh rule applies to ALL nodes, not just goto

@@ -1,12 +1,12 @@
 import { jobs, emitJobLog, collectFlowVariables, sanitizeVariableName, nowUid, createLogCollector, emitNodeStatus, processJob, jobLogBuffers, DEFAULT_FLOW_TIMEOUT_MS, runningProcesses, executionNodeStatuses, executionSSEListeners, extractArtifacts, cleanupArtifacts, SERVER_EXECUTION_ENABLED, scopeKey, NODE_SCOPE_SEP } from './nodeExecutor';
-import { getCollection } from '../db/index';
-import { dispatchToWorker, isWorkerOnline, canUserUseWorker } from '../../routes/workers';
-import { resolveSecretsDetailed } from '../../routes/secrets';
-import { snapshotFlowForExecution, flowFieldsAtCommit, branchRef } from '../git/flowCommit';
+import { executionRepository, flowRepository, userRepository, workerRepository } from '../../data/repositories';
+import { dispatchToWorker, isWorkerOnline, canUserUseWorker } from '../workers/workerService';
+import { resolveSecretsDetailed } from '../secrets/secretService';
+import { snapshotFlowForExecution, flowFieldsAtCommit, branchRef } from '../../infra/git/flowCommit';
 import { resolveRefs } from './artifactStore';
-import { getRef } from '../git/gitStore';
+import { getRef } from '../../infra/git/gitStore';
 import { saveExecutionLogs } from './executionLogs';
-import { eventBus } from '../scheduler/eventBus';
+import { eventBus } from '../../infra/scheduler/eventBus';
 import kill from 'tree-kill';
 import { ChildProcess } from 'child_process';
 
@@ -71,7 +71,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
   // flowRef: node references another flow by ID — load it from DB and execute inline.
   if (nodeType === 'flow' && node?.data?.flowRef) {
     try {
-      const flowsCol = getCollection('flows');
+      const flowsCol = flowRepository;
       const referencedFlow = await flowsCol.findOne({ _id: node.data.flowRef });
       if (!referencedFlow) throw new Error(`Referenced flow not found: ${node.data.flowRef}`);
       rawCode = JSON.stringify({ nodes: referencedFlow.nodes || [], edges: referencedFlow.edges || [] });
@@ -83,7 +83,7 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // would hang until the dispatch timeout (~5 min) — looking like the
       // sub-flow "never triggered". Fail fast with a clear reason instead.
       if (referencedFlow.workerId) {
-        const refW = await getCollection('workers').findOne({ _id: referencedFlow.workerId });
+        const refW = await workerRepository.findOne({ _id: referencedFlow.workerId });
         if (triggerUser && !canUserUseWorker(triggerUser, refW)) {
           throw new Error(`Not allowed to run referenced flow "${referencedFlow.name}" on worker "${refW?.name || referencedFlow.workerId}"`);
         }
@@ -111,8 +111,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
       // Create the flow2 execution record. triggeredBy carries the parent
       // flow's name so the executions list shows "triggered - <flow1>".
       try {
-        const execsCol = getCollection('executions');
-        const workersCol = getCollection('workers');
+        const execsCol = executionRepository;
+        const workersCol = workerRepository;
         let parentFlowName: string | null = null;
         if (jobId) {
           const parentExec = await execsCol.findOne({ jobId });
@@ -318,8 +318,8 @@ async function executeRegularNode(node: any, nodeId: string, processedInputs: an
         const ne = nestedExec;
         (async () => {
           try {
-            const execsCol = getCollection('executions');
-            const flowsCol = getCollection('flows');
+            const execsCol = executionRepository;
+            const flowsCol = flowRepository;
             const endTime = new Date().toISOString();
             const duration = new Date(endTime).getTime() - new Date(ne.startTime).getTime();
             // Rebase scopes for the standalone flow2 execution row: inside the
@@ -658,8 +658,8 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
 export interface ExecuteOverrides { workerId?: string | null; branch?: string }
 
 export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string, overrides?: ExecuteOverrides): Promise<string | null> {
-  const flowsCol = getCollection('flows');
-  const execsCol = getCollection('executions');
+  const flowsCol = flowRepository;
+  const execsCol = executionRepository;
 
   const flow = await flowsCol.findOne({ _id: flowId });
   if (!flow) return null;
@@ -669,7 +669,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   // have no user → null → sub-flows run unrestricted.
   let triggerUser: TriggerUser = null;
   if (triggeredUser) {
-    const u = await getCollection('users').findOne({ login: triggeredUser });
+    const u = await userRepository.findOne({ login: triggeredUser });
     triggerUser = u ? { role: u.role, login: u.login } : { role: 'viewer', login: triggeredUser };
   }
 
@@ -721,7 +721,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
   let resolvedWorkerId: string | null = null;
   let resolvedWorkerName: string | null = null;
   if (effectiveWorkerId) {
-    const workersCol = getCollection('workers');
+    const workersCol = workerRepository;
     const w = await workersCol.findOne({ _id: effectiveWorkerId });
     const isOnline = isWorkerOnline(w?.lastSeenAt);
     if (!w || !isOnline) {

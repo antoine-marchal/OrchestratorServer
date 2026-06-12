@@ -1,14 +1,14 @@
-import { Node, Edge } from 'reactflow';
+import { Node } from 'reactflow';
 import { useSessionStore } from './sessionStore';
 import { pathUtils } from '../utils/pathUtils';
 import { apiClient } from '../utils/apiClient';
 
 // Import shared types
-import { FlowState, ConsoleMessage, FlowStoreInterface, coerceStoppingNodes } from './types';
+import { FlowState, FlowStoreInterface, coerceStoppingNodes } from './types';
 
 // Import utilities
-import { prettyFormat } from './utils/formatUtils';
-import { collectVariables } from './utils/variableUtils';
+
+
 
 // Import actions
 import * as historyActions from './actions/historyActions';

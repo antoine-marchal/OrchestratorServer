@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Upload, List, GitBranch, FilePlus } from 'lucide-react';
 import { useSessionStore } from '../store/sessionStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';

@@ -10,7 +10,7 @@ import { NodeFooter } from './NodeFooter';
 import { Loader2, ExternalLink } from 'lucide-react';
 
 const CustomNode = ({ data, id, selected }: NodeProps) => {
-  const { updateNodeData,updateCodeFilePath, executeNode, edges, removeNode, nodes, nodeLoading, stopNodeExecution, outputClearCounter } = useFlowStore();
+  const { updateNodeData, executeNode, edges, removeNode, nodes, nodeLoading, outputClearCounter } = useFlowStore();
   const sessionStore = useSessionStore();
   const navigate = useNavigate();
   const isLoading = nodeLoading?.[id];
@@ -23,7 +23,7 @@ const CustomNode = ({ data, id, selected }: NodeProps) => {
   };
   
   const [expanded, setExpanded] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [_connecting, setConnecting] = useState(false);
   
   const getNodeLabel = (nodeId: string) => {
     const node = nodes.find(n => n.id === nodeId);

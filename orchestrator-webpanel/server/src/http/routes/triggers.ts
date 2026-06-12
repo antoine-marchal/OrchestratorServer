@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { getCollection } from '../services/db/index';
-import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
+import { flowRepository, scheduleRepository, triggerTokenRepository } from '../../data/repositories';
+import { executeOrchestratorFlow } from '../../domain/execution/flowExecutor';
 import { authMiddleware } from '../middleware/auth';
 import { requireRole } from '../middleware/rbac';
 
@@ -14,7 +14,7 @@ function hashToken(raw: string): string {
 // Revoke a trigger token
 router.post('/trigger-tokens/:id/revoke', authMiddleware, requireRole('admin'), async (req: Request, res: Response) => {
   try {
-    const col = getCollection('trigger_tokens');
+    const col = triggerTokenRepository;
     const token = await col.findOne({ _id: req.params.id });
     if (!token) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Token not found' } }) as any;
     await col.update({ _id: req.params.id }, { $set: { revokedAt: new Date().toISOString() } });
@@ -30,8 +30,8 @@ router.get('/trigger/:token', async (req: Request, res: Response) => {
   const tokenHash = hashToken(token);
 
   try {
-    const tokensCol = getCollection('trigger_tokens');
-    const schedulesCol = getCollection('schedules');
+    const tokensCol = triggerTokenRepository;
+    const schedulesCol = scheduleRepository;
 
     const tokenDoc = await tokensCol.findOne({ tokenHash });
     if (!tokenDoc) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid token' } }) as any;
@@ -54,7 +54,7 @@ router.get('/trigger/:token', async (req: Request, res: Response) => {
     // exists so a deleted variant's token can't fire a ghost run.
     let ov: { workerId?: string; branch?: string } | undefined;
     if (schedule.variantId) {
-      const flow = await getCollection('flows').findOne({ _id: schedule.flowId });
+      const flow = await flowRepository.findOne({ _id: schedule.flowId });
       const exists = flow && Array.isArray(flow.variants) && flow.variants.some((v: any) => v.id === schedule.variantId);
       if (!exists) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'Subrow no longer exists' } }) as any;
       ov = { workerId: schedule.workerId ?? '', branch: schedule.branch };

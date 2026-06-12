@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import path from 'path';
-import { safeArtifactPath } from '../src/services/executor/nodeExecutor';
+import { safeArtifactPath } from '../src/domain/execution/nodeExecutor';
 
 describe('safeArtifactPath', () => {
   const TARGET = path.resolve('/tmp/orchestrator-test-target');

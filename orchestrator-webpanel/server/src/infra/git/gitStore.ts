@@ -1,4 +1,4 @@
-import { getCollection, isMongoMode } from '../db/index';
+import { getCollection, isMongoMode } from '../../data/db/index';
 import type { GitObjectType } from './gitObjects';
 
 // DB-backed git object/ref store, scoped per flow. Objects are content-addressed

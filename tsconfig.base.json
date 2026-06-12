@@ -1,0 +1,12 @@
+{
+  "//": "Shared TypeScript base for the CommonJS Node backends (orchestrator-webpanel/server + orchestrator-worker). Each package extends this and adds path-specific options (outDir, rootDir, include) — those must stay per-package because TS resolves them relative to the file that declares them. The client uses a separate bundler/DOM config and does not extend this base.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  }
+}

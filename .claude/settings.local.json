@@ -19,7 +19,16 @@
       "Bash(cargo --version)",
       "Bash(npx tauri *)",
       "Bash(Copy-Item *)",
-      "PowerShell(Copy-Item *)"
+      "PowerShell(Copy-Item *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk wc *)",
+      "Bash(rtk grep *)",
+      "Bash(cd /tmp)",
+      "Bash(magick \"C:\\\\workspace\\\\OrchestratorServer\\\\logo.png[5]\" /tmp/logo_view.png)",
+      "Bash(convert \"C:\\\\workspace\\\\OrchestratorServer\\\\logo.png[5]\" /tmp/logo_view.png)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $ico = New-Object System.Drawing.Icon\\(\"C:\\\\workspace\\\\OrchestratorServer\\\\logo.png\", 256, 256\\); $bmp = $ico.ToBitmap\\(\\); $bmp.Save\\(\"C:\\\\workspace\\\\logo_view.png\", [System.Drawing.Imaging.ImageFormat]::Png\\); \"Saved $\\($bmp.Width\\)x$\\($bmp.Height\\)\")",
+      "Bash(awk '/## God Nodes/,/## Suggested Questions/' graphify-out/GRAPH_REPORT.md)",
+      "Bash(awk '/## Suggested Questions/,0' graphify-out/GRAPH_REPORT.md)"
     ]
   }
 }

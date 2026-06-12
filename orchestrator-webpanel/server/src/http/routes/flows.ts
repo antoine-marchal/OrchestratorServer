@@ -1,9 +1,9 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
-import { getCollection } from '../services/db/index';
-import { nowUid } from '../services/executor/nodeExecutor';
-import { executeOrchestratorFlow } from '../services/executor/flowExecutor';
-import { register as registerCron, unregister as unregisterCron } from '../services/scheduler/cronScheduler';
-import { canUserUseWorker } from './workers';
+import { flowRepository, scheduleRepository, userRepository, workerRepository } from '../../data/repositories';
+import { nowUid } from '../../domain/execution/nodeExecutor';
+import { executeOrchestratorFlow } from '../../domain/execution/flowExecutor';
+import { register as registerCron, unregister as unregisterCron } from '../../infra/scheduler/cronScheduler';
+import { canUserUseWorker } from '../../domain/workers/workerService';
 import {
   commitFlowState,
   listCommits,
@@ -18,11 +18,11 @@ import {
   activeRef,
   activeBranchName,
   type ResetMode,
-} from '../services/git/flowCommit';
-import { listExtraEntries, resolveExtraPath } from '../services/git/flowMaterialize';
-import { getRef, getObject } from '../services/git/gitStore';
-import { parseCommit } from '../services/git/gitObjects';
-import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../services/executor/artifactStore';
+} from '../../infra/git/flowCommit';
+import { listExtraEntries, resolveExtraPath } from '../../infra/git/flowMaterialize';
+import { getRef, getObject } from '../../infra/git/gitStore';
+import { parseCommit } from '../../infra/git/gitObjects';
+import { putArtifacts, getArtifactBase64, getArtifactSize, artifactChunks } from '../../domain/execution/artifactStore';
 
 // Resolve a flow's active-branch HEAD tree sha (null when the repo has no commit).
 async function activeHeadTreeSha(flowId: string, flow: any): Promise<string | null> {
@@ -61,7 +61,7 @@ async function canUserEditFlow(user: any, flow: any): Promise<boolean> {
   const ownerLogin = flow?.owner;
   if (!ownerLogin) return true; // legacy unowned: treat as operator-editable
   if (ownerLogin === user.login) return true;
-  const usersCol = getCollection('users');
+  const usersCol = userRepository;
   const owner = await usersCol.findOne({ login: ownerLogin });
   // Owner missing/deleted → treat as operator (don't trap edits to nobody).
   if (!owner) return true;
@@ -72,7 +72,7 @@ async function canUserEditFlow(user: any, flow: any): Promise<boolean> {
 // the error string when invalid, null when OK.
 async function validateOwnerLogin(login: string | undefined): Promise<string | null> {
   if (!login) return null; // no change requested
-  const owner = await getCollection('users').findOne({ login });
+  const owner = await userRepository.findOne({ login });
   if (!owner) return `Owner '${login}' is not a known user`;
   if (owner.role === 'viewer') return `Owner '${login}' is a viewer — viewers cannot own flows`;
   return null;
@@ -85,7 +85,7 @@ async function requireFlowEditAccess(req: Request, res: Response, next: NextFunc
     res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins and operators can edit flows' } });
     return;
   }
-  const flow = await getCollection('flows').findOne({ _id: req.params.id });
+  const flow = await flowRepository.findOne({ _id: req.params.id });
   // Missing flow on PUT means upsert (create) — admins and operators may
   // create. On DELETE the caller will hit a 404 inside the handler itself.
   if (!flow) { next(); return; }
@@ -96,7 +96,7 @@ async function requireFlowEditAccess(req: Request, res: Response, next: NextFunc
 
 router.get('/', async (_req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flows = await col.find({});
     flows.sort((a: any, b: any) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     res.json({ flows, total: flows.length });
@@ -112,7 +112,7 @@ router.post('/', async (req: Request, res: Response) => {
   const owner = (req as any).user?.login || 'unknown';
   const flow = { _id: nowUid(), name, namespace, description, nodes, edges, workerId, owner, schedule: null, createdAt: now, updatedAt: now, lastExecution: null };
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     await col.insert(flow);
     res.status(201).json(flow);
   } catch (err: any) {
@@ -122,7 +122,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     res.json(flow);
@@ -139,7 +139,7 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
     // Don't let a user assign a worker they're forbidden from — selecting a
     // worker in a flow requires access to it (see canUserUseWorker).
     if (req.body?.workerId) {
-      const worker = await getCollection('workers').findOne({ _id: req.body.workerId });
+      const worker = await workerRepository.findOne({ _id: req.body.workerId });
       if (worker && !canUserUseWorker((req as any).user, worker)) {
         return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to use worker "${worker.name}"` } }) as any;
       }
@@ -158,7 +158,7 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
       }
       req.body.artifacts = refs;
     }
-    const col = getCollection('flows');
+    const col = flowRepository;
     let flow = await col.findOne({ _id: req.params.id });
     if (!flow) {
       const { name = 'Untitled', namespace = 'default', description = '', nodes = [], edges = [], workerId = '', artifacts = [] } = req.body;
@@ -196,7 +196,7 @@ router.put('/:id', requireFlowEditAccess, async (req: Request, res: Response) =>
 // "Save version" button). Returns the new commit, or 200 with unchanged=true.
 router.post('/:id/versions', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const login = (req as any).user?.login || 'unknown';
     const message = (req.body?.message as string) || `Manual checkpoint by ${login}`;
@@ -212,7 +212,7 @@ router.post('/:id/versions', requireFlowEditAccess, async (req: Request, res: Re
 // (_id is the commit sha; savedAt/author/name retained).
 router.get('/:id/versions', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const commits = await listCommits(req.params.id, activeRef(flow));
     res.json(commits.map((c) => ({
@@ -236,7 +236,7 @@ router.get('/:id/versions/:vid', async (req: Request, res: Response) => {
 router.post('/:id/versions/:vid/restore', requireFlowEditAccess, async (req: Request, res: Response) => {
   const now = new Date().toISOString();
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     let fields;
@@ -263,7 +263,7 @@ router.post('/:id/versions/:vid/restore', requireFlowEditAccess, async (req: Req
 // List git branches for this flow.
 router.get('/:id/branches', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const branches = await listBranches(req.params.id);
     res.json({ branches, active: flow.activeBranch || 'main' });
@@ -287,7 +287,7 @@ router.post('/:id/branches/:name/checkout', requireFlowEditAccess, async (req: R
 // via `from`). Used by the editor's branch switcher "+" button.
 router.post('/:id/branches', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const { name, from } = req.body || {};
     if (!name || typeof name !== 'string') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'name is required' } }) as any;
@@ -302,7 +302,7 @@ router.post('/:id/branches', requireFlowEditAccess, async (req: Request, res: Re
 // (deleteBranch enforces both). Unreachable objects + orphaned artifacts are GC'd.
 router.delete('/:id/branches/:name', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const branches = await deleteBranch(req.params.id, req.params.name);
     res.json({ branches, active: flow.activeBranch || 'main' });
@@ -316,13 +316,13 @@ router.delete('/:id/branches/:name', requireFlowEditAccess, async (req: Request,
 // Unreachable git objects + orphaned artifact blobs are GC'd immediately.
 router.post('/:id/branches/:name/reset', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const { commit, mode } = req.body || {};
     if (!commit || typeof commit !== 'string') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'commit is required' } }) as any;
     if (mode !== 'head' && mode !== 'root') return res.status(400).json({ error: { code: 'BAD_REQUEST', message: "mode must be 'head' or 'root'" } }) as any;
     const tip = await resetBranch(req.params.id, req.params.name, commit, mode as ResetMode);
-    res.json({ tip, flow: await getCollection('flows').findOne({ _id: req.params.id }) });
+    res.json({ tip, flow: await flowRepository.findOne({ _id: req.params.id }) });
   } catch (err: any) {
     res.status(400).json({ error: { code: 'BAD_REQUEST', message: err.message } });
   }
@@ -333,7 +333,7 @@ router.post('/:id/branches/:name/reset', requireFlowEditAccess, async (req: Requ
 // relations.json). Read-only; surfaced in the editor file tree.
 router.get('/:id/tree/extra', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const treeSha = await activeHeadTreeSha(req.params.id, flow);
     const entries = await listExtraEntries(req.params.id, treeSha);
@@ -347,7 +347,7 @@ router.get('/:id/tree/extra', async (req: Request, res: Response) => {
 // inline (utf8) when small and not binary, otherwise a download-only marker.
 router.get('/:id/tree/file', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const path = (req.query.path as string) || '';
     if (!path) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'path is required' } }) as any;
@@ -368,7 +368,7 @@ router.get('/:id/tree/file', async (req: Request, res: Response) => {
 // Authorization header (apiClient.downloadBinary sets it on the XHR).
 router.get('/:id/tree/raw', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const path = (req.query.path as string) || '';
     if (!path) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'path is required' } }) as any;
@@ -390,7 +390,7 @@ router.get('/:id/tree/raw', async (req: Request, res: Response) => {
 // ref. Committed to git so the artifact is versioned alongside the graph.
 router.post('/:id/artifacts', requireFlowEditAccess, rawArtifact, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const name = (req.query.name as string) || req.header('x-artifact-name');
@@ -414,7 +414,7 @@ router.post('/:id/artifacts', requireFlowEditAccess, rawArtifact, async (req: Re
 // header). Only artifacts referenced by this flow are served.
 router.get('/:id/artifacts/:sha/raw', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const ref = (flow.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
     if (!ref) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact not referenced by this flow' } }) as any;
@@ -437,7 +437,7 @@ router.get('/:id/artifacts/:sha/raw', async (req: Request, res: Response) => {
 // Download one artifact body (base64) by sha — only if referenced by this flow.
 router.get('/:id/artifacts/:sha', async (req: Request, res: Response) => {
   try {
-    const flow = await getCollection('flows').findOne({ _id: req.params.id });
+    const flow = await flowRepository.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const ref = (flow.artifacts || []).find((a: any) => a && a.sha === req.params.sha);
     if (!ref) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Artifact not referenced by this flow' } }) as any;
@@ -452,7 +452,7 @@ router.get('/:id/artifacts/:sha', async (req: Request, res: Response) => {
 // Remove an artifact ref from the flow (blob is reclaimed later by the janitor).
 router.delete('/:id/artifacts/:name', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const name = decodeURIComponent(req.params.name);
@@ -469,7 +469,7 @@ router.delete('/:id/artifacts/:name', requireFlowEditAccess, async (req: Request
 
 router.delete('/:id', requireFlowEditAccess, async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
+    const col = flowRepository;
     const n = await col.remove({ _id: req.params.id });
     if (!n) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     // Cascade: drop the flow's git objects/refs and reclaim its now-orphaned
@@ -489,7 +489,7 @@ router.post('/:id/execute', async (req: Request, res: Response) => {
     if (!user || (user.role !== 'admin' && user.role !== 'operator')) {
       return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Only admins and operators can execute flows' } }) as any;
     }
-    const col = getCollection('flows');
+    const col = flowRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     // Optional per-run overrides (subrow variants): a different worker and/or
@@ -508,7 +508,7 @@ router.post('/:id/execute', async (req: Request, res: Response) => {
     // flow's own) must be permitted for the user.
     const effectiveWorkerId = hasWorkerOverride ? (req.body.workerId || '') : flow.workerId;
     if (effectiveWorkerId) {
-      const worker = await getCollection('workers').findOne({ _id: effectiveWorkerId });
+      const worker = await workerRepository.findOne({ _id: effectiveWorkerId });
       if (worker && !canUserUseWorker(user, worker)) {
         return res.status(403).json({ error: { code: 'FORBIDDEN', message: `You are not allowed to run flows on worker "${worker.name}"` } }) as any;
       }
@@ -525,8 +525,8 @@ router.put('/:id/schedule', async (req: Request, res: Response) => {
   const { cron, enabled = true, timezone = 'UTC' } = req.body;
   if (!cron) return res.status(400).json({ error: { code: 'BAD_REQUEST', message: 'cron is required' } }) as any;
   try {
-    const col = getCollection('flows');
-    const schedulesCol = getCollection('schedules');
+    const col = flowRepository;
+    const schedulesCol = scheduleRepository;
     const flow = await col.findOne({ _id: req.params.id });
     if (!flow) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Flow not found' } }) as any;
     const now = new Date().toISOString();
@@ -559,8 +559,8 @@ router.put('/:id/schedule', async (req: Request, res: Response) => {
 
 router.delete('/:id/schedule', async (req: Request, res: Response) => {
   try {
-    const col = getCollection('flows');
-    const schedulesCol = getCollection('schedules');
+    const col = flowRepository;
+    const schedulesCol = scheduleRepository;
     await col.update({ _id: req.params.id }, { $set: { schedule: null, updatedAt: new Date().toISOString() } });
     // Tear down the mirrored cron row + its registered node-cron task.
     const sched = await schedulesCol.findOne({ flowId: req.params.id, type: 'cron' });

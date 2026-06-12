@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { apiClient } from '../utils/apiClient';
+import { workersApi } from '../api';
 
 export interface WorkerAccess {
   mode: 'allow' | 'deny';
@@ -58,7 +58,7 @@ export function useServerWorkers(pollMs = 10_000) {
 
   const load = useCallback(async () => {
     try {
-      const data: any = await apiClient.get('/api/v1/workers');
+      const data: any = await workersApi.list();
       const next: ServerWorker[] = Array.isArray(data) ? data : [];
       setWorkers(prev => (workersUiEqual(prev, next) ? prev : next));
       setError(null);

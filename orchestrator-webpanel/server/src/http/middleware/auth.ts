@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
-import { getCollection } from '../services/db/index';
+import { userRepository } from '../../data/repositories';
+import { hashApiKey, verifyJWT } from '../../infra/auth/tokens';
 
 export interface AuthUser {
   _id: string;
@@ -17,28 +16,6 @@ declare global {
       user?: AuthUser;
     }
   }
-}
-
-const JWT_SECRET = process.env.JWT_SECRET || 'orchestrator-jwt-secret-change-in-prod';
-
-export function hashApiKey(rawKey: string): string {
-  return crypto.createHash('sha256').update(rawKey).digest('hex');
-}
-
-export function generateJWT(payload: object): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
-}
-
-export function generateRefreshToken(payload: object): string {
-  return jwt.sign(payload, JWT_SECRET + '-refresh', { expiresIn: '7d' });
-}
-
-export function verifyJWT(token: string): any {
-  return jwt.verify(token, JWT_SECRET);
-}
-
-export function verifyRefreshToken(token: string): any {
-  return jwt.verify(token, JWT_SECRET + '-refresh');
 }
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -60,7 +37,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const keyHash = hashApiKey(rawKey);
 
     try {
-      const users = getCollection('users');
+      const users = userRepository;
       // Direct lookup via nested field — Mongo uses the apiKeys.keyHash index;
       // NeDB still scans but the query semantics are identical, so we avoid
       // dragging every user document into Node memory on every request.

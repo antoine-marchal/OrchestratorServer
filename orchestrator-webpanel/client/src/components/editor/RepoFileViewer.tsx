@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Download, X, FileText, Maximize2, Minimize2 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';

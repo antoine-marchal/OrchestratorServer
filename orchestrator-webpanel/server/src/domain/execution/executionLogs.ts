@@ -1,5 +1,5 @@
 import { gzipSync, gunzipSync } from 'zlib';
-import { getCollection } from '../db/index';
+import { getCollection } from '../../data/db/index';
 
 // Execution logs used to live inline on the execution document, which made that
 // doc grow without bound on chatty runs and bloated every full-doc read. They

@@ -1,4 +1,4 @@
-﻿import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -982,7 +982,7 @@ export function processJob(job: any): void {
   if (job.workerId && REMOTE_TYPES.has(type)) {
     (async () => {
       try {
-        const { dispatchToWorker } = await import('../../routes/workers');
+        const { dispatchToWorker } = await import('../workers/workerService');
         const remoteNode = {
           type,
           data: { code, input: job.input, variables: vars, timeout: effectiveTimeout ? Math.ceil(effectiveTimeout / 1000) : 0 },

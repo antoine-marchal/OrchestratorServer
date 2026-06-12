@@ -2,9 +2,9 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import os from 'os'; import path from 'path'; import fs from 'fs';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-push-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP; delete process.env.MONGO_URI;
-import { connectDB, getCollection } from '../src/services/db/index';
-import { commitFlowState, syncDocFromRefIfActive, activeRef, branchRef } from '../src/services/git/flowCommit';
-import { putArtifacts, getArtifactBase64, resolveRefs } from '../src/services/executor/artifactStore';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { commitFlowState, syncDocFromRefIfActive, activeRef, branchRef } from '../src/infra/git/flowCommit';
+import { putArtifacts, getArtifactBase64, resolveRefs } from '../src/domain/execution/artifactStore';
 
 beforeAll(async () => { await connectDB(); });
 

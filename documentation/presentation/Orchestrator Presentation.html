@@ -398,7 +398,7 @@
             <li>Sélecteur de branche / variantes</li>
             <li>Logs SSE en direct</li>
             <li>Admin : secrets, users, workers</li>
-            <li>Stores Zustand · apiClient</li>
+            <li>Stores Zustand · couche api/ par domaine</li>
           </ul>
         </div>
       </div>
@@ -408,11 +408,11 @@
           <h3>Serveur</h3>
           <div class="tagline">server/ · Express + TS</div>
           <ul>
-            <li>Routes REST + exécuteur DAG</li>
+            <li>Contrôleurs fins → services métier (DAG)</li>
             <li>Planificateur cron + eventBus</li>
             <li>Versionnage git (objets/refs en base)</li>
             <li>Store d'artefacts (sha256)</li>
-            <li>Auth/RBAC · crypto AES · DB</li>
+            <li>Auth/RBAC · validation · repos · DB</li>
           </ul>
         </div>
       </div>
@@ -423,7 +423,7 @@
           <div class="tagline">orchestrator-worker/ · TS</div>
           <ul>
             <li>S'enregistre → poll → exécute</li>
-            <li>Processus enfants par langage</li>
+            <li>Runtimes par langage (registre)</li>
             <li>node / python / java / pwsh / cmd</li>
             <li>Télécharge artefacts par sha</li>
             <li>Sans état — tout vit sur le serveur</li>

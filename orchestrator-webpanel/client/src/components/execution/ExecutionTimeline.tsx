@@ -4,7 +4,7 @@ import type { FlowExecution, ExecutionStatus } from '../../types/flows';
 import { computeNodeRuns, formatDurationShort, type NodeRun } from '../../utils/execTiming';
 import { scopeKey } from '../../utils/execScope';
 import {
-  NodeIcon, StatusIcon, RelationBadge, topologicalSort, buildRelations, isVisibleInTree,
+  NodeIcon, StatusIcon, topologicalSort, buildRelations, isVisibleInTree,
   type NodeExecStatus,
 } from './ExecutionNodeTree';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
@@ -258,15 +258,10 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
       {rows.filter(r => !isHidden(r)).map(row => {
         const isSel = !!selectedNodeId && selectedNodeId === row.id;
         const isCollapsed = collapsed.has(row.id);
-        const lastRun = row.runs[row.runs.length - 1];
-        const lastDur = lastRun ? lastRun.end - lastRun.start : null;
         const totalActive = row.runs.reduce((a, r) => a + (r.end - r.start), 0);
         const rightmost = row.runs.length ? Math.max(...row.runs.map(r => r.end)) : flowStart;
         const rightPct = ((rightmost - flowStart) / totalSpan) * 100;
         const labelOnLeft = rightPct > 78;
-        const summary = row.runs.length > 1
-          ? `×${row.runs.length} · ${formatDurationShort(lastDur)} (last)`
-          : formatDurationShort(lastDur);
         const isFlowRoot = row.id === '__flow__';
         return (
           <div

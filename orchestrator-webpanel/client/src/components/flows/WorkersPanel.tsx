@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Server, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, ChevronDown, ChevronRight, Edit2, Check, X, Lock, Shield } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { workersApi, usersApi } from '../../api';
 import { useAuth } from '../../hooks/useAuth';
 
 type WorkerPlatform = 'win32' | 'linux' | 'darwin' | 'unknown';
@@ -254,7 +254,7 @@ const WorkersPanel: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const data: any = await apiClient.get('/api/v1/workers');
+      const data: any = await workersApi.list();
       setWorkers(Array.isArray(data) ? data : []);
       setError(null);
     } catch (e: any) {
@@ -274,7 +274,7 @@ const WorkersPanel: React.FC = () => {
   // have access and viewers never run flows, so only operators are listed.
   useEffect(() => {
     if (!isAdmin) return;
-    apiClient.get('/api/v1/users').then((data: any) => {
+    usersApi.list().then((data: any) => {
       const list = Array.isArray(data) ? data : [];
       setUserLogins(list.filter((u: any) => u.role === 'operator').map((u: any) => u.login).filter(Boolean));
     }).catch(() => { /* non-fatal */ });
@@ -282,7 +282,7 @@ const WorkersPanel: React.FC = () => {
 
   const handleAccessChange = async (id: string, access: WorkerAccess | null) => {
     try {
-      await apiClient.patch(`/api/v1/workers/${id}`, { access });
+      await workersApi.update(id, { access });
       setWorkers(prev => prev.map(w => w._id === id ? { ...w, access } : w));
     } catch (e: any) {
       setError(e?.message ?? 'Failed to update access');
@@ -292,7 +292,7 @@ const WorkersPanel: React.FC = () => {
   const handleGroupAccess = async (groupKey: string, access: WorkerAccess | null) => {
     const seg = groupKey === '' ? '__ungrouped__' : encodeURIComponent(groupKey);
     try {
-      await apiClient.patch(`/api/v1/workers/groups/${seg}/access`, { access });
+      await workersApi.setGroupAccess(seg, { access });
       setGroupAccessKey(null);
       await load();
     } catch (e: any) {
@@ -303,7 +303,7 @@ const WorkersPanel: React.FC = () => {
   const handleRemove = async (id: string) => {
     setRemoving(id);
     try {
-      await apiClient.delete(`/api/v1/workers/${id}/record`);
+      await workersApi.deleteRecord(id);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to remove worker');
@@ -314,7 +314,7 @@ const WorkersPanel: React.FC = () => {
 
   const handleGroupChange = async (id: string, group: string) => {
     try {
-      await apiClient.patch(`/api/v1/workers/${id}`, { group: group || null });
+      await workersApi.update(id, { group: group || null });
       setWorkers(prev => prev.map(w => w._id === id ? { ...w, group: group || undefined } : w));
     } catch (e: any) {
       setError(e?.message ?? 'Failed to update group');

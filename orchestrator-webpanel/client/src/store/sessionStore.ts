@@ -180,7 +180,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   updateActiveFlowState: (updates: Partial<FlowState>) => {
-    const { activeSessionId, sessions } = get();
+    const { activeSessionId } = get();
     if (!activeSessionId) return;
     set((state) => ({
       sessions: state.sessions.map(session =>

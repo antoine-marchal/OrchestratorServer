@@ -6,14 +6,6 @@ export interface MonacoSnippet {
   documentation?: string;
 }
 
-// Convert Ace-style snippet body to Monaco snippet format
-// Ace uses ${1:placeholder} which is same as Monaco, so mostly compatible
-function convertSnippetBody(body: string): string {
-  // Ace and Monaco both use ${n:placeholder} syntax, so most conversions are direct
-  // Just ensure proper escaping
-  return body;
-}
-
 // ============ JavaScript Snippets ============
 export const jsSnippets: MonacoSnippet[] = [
   { label: "log", insertText: "console.log(${1:msg});", documentation: "Console log" },

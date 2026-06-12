@@ -1,4 +1,4 @@
-import React, { memo, useRef, useLayoutEffect, useState, useEffect } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { NodeResizer, NodeProps } from 'reactflow';
 import { Trash2 } from 'lucide-react';
 import { useFlowStore } from '../../store/sessionFlowStore';

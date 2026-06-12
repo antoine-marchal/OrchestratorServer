@@ -9,9 +9,9 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-git-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP;
 delete process.env.MONGO_URI;
 
-import { connectDB, getCollection } from '../src/services/db/index';
-import { commitFlowState, listCommits, resetBranch, flowFieldsAtCommit, branchRef } from '../src/services/git/flowCommit';
-import { getObject, getRef } from '../src/services/git/gitStore';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { commitFlowState, listCommits, resetBranch, flowFieldsAtCommit, branchRef } from '../src/infra/git/flowCommit';
+import { getObject, getRef } from '../src/infra/git/gitStore';
 
 // Commit a flow with the given node count and return the new commit sha.
 async function commitNodes(flowId: string, n: number): Promise<string> {

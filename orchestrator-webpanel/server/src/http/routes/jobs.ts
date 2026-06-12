@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { jobs, jobLogBuffers, jobLogListeners, processJob, terminateJobAndChildren, nowUid } from '../services/executor/nodeExecutor';
-import { resolveSecretsDetailed } from './secrets';
-import { getCollection } from '../services/db/index';
-import { resolveRefs } from '../services/executor/artifactStore';
+import { jobs, jobLogBuffers, jobLogListeners, processJob, terminateJobAndChildren, nowUid } from '../../domain/execution/nodeExecutor';
+import { resolveSecretsDetailed } from '../../domain/secrets/secretService';
+import { flowRepository } from '../../data/repositories';
+import { resolveRefs } from '../../domain/execution/artifactStore';
 
 const router = Router();
 
@@ -16,7 +16,7 @@ router.post('/', async (req: Request, res: Response) => {
   let jobArtifacts: Array<{ name: string; data: string }> | undefined =
     Array.isArray(artifacts) && artifacts.length ? artifacts : undefined;
   if (!jobArtifacts && flowId) {
-    const flow = await getCollection('flows').findOne({ _id: flowId });
+    const flow = await flowRepository.findOne({ _id: flowId });
     const resolved = await resolveRefs(flow?.artifacts);
     if (resolved.length) jobArtifacts = resolved;
   }

@@ -203,7 +203,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
 
 
 
-    const commitRow = (idx?: number) => {
+    const commitRow = (_idx?: number) => {
       const next = localConds;
       updateNodeData(nodeId, { conditions: next });
     };

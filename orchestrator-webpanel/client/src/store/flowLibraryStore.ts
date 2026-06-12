@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiClient } from '../utils/apiClient';
+import { apiClient, executionsApi, flowsApi } from '../api';
 import type { OrchestratorFlow, FlowExecution, ExecutionStatus } from '../types/flows';
 
 export type { OrchestratorFlow, FlowExecution };
@@ -212,7 +212,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       if (!exec || exec.status !== 'RUNNING') { stopPoll(execId); return; }
 
       try {
-        const remoteExec: any = await apiClient.get(`/api/v1/executions/${execId}`);
+        const remoteExec: any = await executionsApi.get(execId);
         const status: ExecutionStatus =
           remoteExec.status === 'SUCCESS' ? 'SUCCESS' :
           remoteExec.status === 'FAILED' ? 'FAILED' :
@@ -268,7 +268,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
       (async () => {
         try {
-          const data: any = await apiClient.get('/api/v1/flows');
+          const data: any = await flowsApi.list();
           const serverFlows: OrchestratorFlow[] = (data.flows || []).map(mapServerFlow);
           // Preserve in-flight optimistic edits. When the local copy's
           // updatedAt is newer than the server's, the PUT just hasn't landed
@@ -306,7 +306,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       persistFlows([flow, ...getFlows()]);
 
       // Upsert on server using the same local id (PUT = upsert)
-      apiClient.put(`/api/v1/flows/${flow.id}`, {
+      flowsApi.update(flow.id, {
         name: flow.name, namespace: flow.namespace,
         description: flow.description, nodes: [], edges: [],
         workerId: flow.workerId || '',
@@ -339,7 +339,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         variants: updated.variants || [],
       };
       if ('artifacts' in data) body.artifacts = (data as any).artifacts || [];
-      return apiClient.put(`/api/v1/flows/${id}`, body).then(() => undefined).catch(err => { console.error(err); });
+      return flowsApi.update(id, body).then(() => undefined).catch(err => { console.error(err); });
     },
 
     updateFlowLocal: (id, data) => {
@@ -351,7 +351,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
     deleteFlow: (id) => {
       persistFlows(getFlows().filter(f => f.id !== id));
       getExecs().filter(e => e.flowId === id && e.status === 'RUNNING').forEach(e => stopPoll(e.id));
-      apiClient.delete(`/api/v1/flows/${id}`).catch(console.error);
+      flowsApi.remove(id).catch(console.error);
     },
 
     syncWorkerFlows: async () => {
@@ -366,7 +366,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       const body: any = { triggeredBy };
       if (overrides && Object.prototype.hasOwnProperty.call(overrides, 'workerId')) body.workerId = overrides.workerId || '';
       if (overrides?.branch) body.branch = overrides.branch;
-      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/execute`, body);
+      const data: any = await flowsApi.execute(flowId, body);
       const executionId: string = data.executionId;
 
       const ovWorkerId = overrides && Object.prototype.hasOwnProperty.call(overrides, 'workerId') ? (overrides.workerId || '') : (flow.workerId || '');
@@ -401,7 +401,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       const exec = getExecs().find(e => e.id === execId);
       if (!exec || exec.status !== 'RUNNING') return;
 
-      try { await apiClient.post(`/api/v1/executions/${execId}/kill`); } catch { /* best effort */ }
+      try { await executionsApi.kill(execId); } catch { /* best effort */ }
 
       const endTime = new Date().toISOString();
       const updated: Partial<FlowExecution> = {
@@ -426,7 +426,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         const exec = getExecs().find(e => e.id === execId);
         if (!exec) return;
         try {
-          const updated: any = await apiClient.patch(`/api/v1/executions/${execId}`, { displayName: exec.displayName || '' });
+          const updated: any = await executionsApi.rename(execId, exec.displayName || '');
           updateExec(execId, { displayName: updated.displayName });
         } catch (err) {
           console.error('Failed to rename execution', err);
@@ -457,7 +457,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
       // reject with 403 (not your execution) or 409 (still running). Let the
       // error propagate so the caller can surface it; only touch local state
       // once the server confirms the delete.
-      await apiClient.delete(`/api/v1/executions/${encodeURIComponent(execId)}`);
+      await executionsApi.remove(execId);
       stopPoll(execId);
       const remaining = getExecs().filter(e => e.id !== execId);
       persistExecs(remaining);
@@ -502,7 +502,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
 
       try {
         const query = flowId ? `?flowId=${encodeURIComponent(flowId)}&limit=100` : '?limit=100';
-        const data: any = await apiClient.get(`/api/v1/executions${query}`);
+        const data: any = await executionsApi.list(query);
         const backendExecs: any[] = data.executions || [];
 
         // Build the next executions array in one pass and persist it ONCE.
@@ -580,7 +580,7 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
     // an execution. RUNNING execs are kept fresh by startPoll instead.
     fetchExecutionDetail: async (execId) => {
       try {
-        const d: any = await apiClient.get(`/api/v1/executions/${execId}`);
+        const d: any = await executionsApi.get(execId);
         updateExec(execId, {
           logs: d.logs || [],
           nodes: Array.isArray(d.nodes) ? d.nodes : undefined,

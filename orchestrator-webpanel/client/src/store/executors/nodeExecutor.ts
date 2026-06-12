@@ -102,7 +102,7 @@ export async function executeNode(
   };
 
   try {
-    let result: any, log: any, error: any;
+    let result: any, error: any;
     let hasStreamedError = false; // Track if errors were already streamed via polling
 
     if (node.data.type === 'goto') {
@@ -173,7 +173,7 @@ async function executeGotoNode(
   nodeId: string,
   sessionStore: SessionStoreGetter,
   updateFlowState: (updates: Partial<FlowState>) => void,
-  addLog: (type: ConsoleMessage['type'], message: string) => void
+  _addLog: (type: ConsoleMessage['type'], message: string) => void
 ): Promise<void> {
   // When executing individually, goto nodes just pass through their input
   // They don't evaluate conditions or forward input
@@ -409,7 +409,6 @@ async function executeRegularNode(
   }
 
   const originalConsoleLog = console.log;
-  let code = node.data.code?.trim() || '';
 
   // --- NEW: Run JS directly if language is javascript ---
   if (node.data.language === 'javascript') {

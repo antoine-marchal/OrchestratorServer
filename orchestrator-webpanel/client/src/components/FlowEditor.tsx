@@ -23,7 +23,7 @@ import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useUIStore } from '../store/uiStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';
-import { apiClient } from '../utils/apiClient';
+import { flowsApi } from '../api';
 import { openFlowNodeEditor, makeFlowNode } from '../store/flowNodeContent';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
@@ -188,10 +188,10 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
       });
       const cleanEdges = (getEdges() as any[]).map((e) => { const c = { ...e }; delete (c as any).selected; return c; });
       // Await the persist so the snapshot below sees the latest graph.
-      await apiClient.put(`/api/v1/flows/${flowId}`, { nodes: cleanNodes, edges: cleanEdges });
+      await flowsApi.update(flowId, { nodes: cleanNodes, edges: cleanEdges });
       // Keep the local library mirror in sync (drives the version-diff view).
       useFlowLibraryStore.getState().updateFlow(flowId, { nodes: cleanNodes, edges: cleanEdges });
-      await apiClient.post(`/api/v1/flows/${flowId}/versions`, {});
+      await flowsApi.createVersion(flowId);
       if (!versionsVisible) onToggleVersions?.();
     } catch (e) {
       console.error('Force save version failed:', e);
@@ -592,7 +592,7 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
   };
 
   // Handle opening the editor modal for flow nodes
-  const handleNodeDoubleClick = async (event: React.MouseEvent, node: Node) => {
+  const handleNodeDoubleClick = async (_event: React.MouseEvent, node: Node) => {
     if (readOnly) return;
     // In browser environment, we can't access external files directly
     // The code is already stored in the node data, so we just open the editor

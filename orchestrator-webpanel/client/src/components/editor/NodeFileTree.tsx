@@ -18,7 +18,7 @@ import { Node, Edge } from 'reactflow';
 // mirroring ExtraEntry in the server materializer.
 interface ExtraEntry { name: string; path: string; type: 'file' | 'dir'; size?: number; children?: ExtraEntry[] }
 
-const CODE_NODE_TYPES = new Set(['javascript', 'jsbackend', 'groovy', 'batch', 'powershell', 'python', 'playwright']);
+
 
 // Mirror the server materializer (flowMaterialize.ts) so the tree matches a real
 // `git clone`: leaf code nodes → nodes/<camelLabel>.<ext>, flow nodes →

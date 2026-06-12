@@ -47,31 +47,46 @@ Orchestrator exécute des **flux** d'automatisation écrits par les utilisateurs
 
 ### Serveur (`orchestrator-webpanel/server/src`)
 
-| Domaine | Fichiers | Responsabilité |
+Architecture en couches type MVC. Le sens des dépendances ne va que vers le bas :
+`http → domain → data` (+ adaptateurs `infra`). Une couche basse n'importe jamais
+une couche haute ; une route ne touche jamais directement la base.
+
+```
+http/      Contrôleurs : routes/ (fines) + middleware/ (auth, rbac, errorHandler) + validators/
+domain/    Services métier sans framework : execution/, workers/, secrets/
+data/      db/ (ICollection NeDB/Mongo) + models/ (entités) + repositories/ (un repo typé par entité)
+infra/     Adaptateurs : git/, scheduler/, crypto/, auth/ (primitives JWT/clé API)
+server.ts  Composition root (câblage, CORS, montage des routes, errorHandler global, démarrage)
+```
+
+| Couche | Fichiers | Responsabilité |
 |---|---|---|
-| Point d'entrée / câblage | `server.ts` | Configuration Express, CORS, service du panneau statique, montage des routes, migrations de démarrage, planificateurs, reaper de workers, écoute HTTP/HTTPS. |
-| Authentification | `middleware/auth.ts`, `middleware/rbac.ts` | Auth JWT + clé API, contrôle des rôles. |
-| API | `routes/*.ts` | flows, executions, jobs, workers, schedules, triggers, secrets, users. |
-| Exécution | `services/executor/flowExecutor.ts`, `nodeExecutor.ts` | Parcours du DAG + runners par langage. |
-| Artefacts | `services/executor/artifactStore.ts` | Stockage adressé par contenu (sha256), chunking des gros fichiers, GC des blobs non référencés. |
-| Versionnage git | `services/git/*` | Dépôt git par flux : matérialisation flux↔arbre git (`flowMaterialize.ts`), commits/branches (`flowCommit.ts`), objets/refs en base (`gitObjects.ts`, `gitStore.ts`), smart-HTTP clone/push (`receivePack.ts`, `FlowGitRepository.ts`). |
-| Planification | `services/scheduler/cronScheduler.ts`, `eventBus.ts` | Planifications node-cron + surveillance du dossier inbox pour les événements. |
-| Crypto | `services/crypto/aes.ts` | AES-256-GCM pour les secrets au repos. |
-| Données | `services/db/index.ts`, `db/models/*` | Abstraction de stockage NeDB/MongoDB + modèles typés. |
+| Point d'entrée / câblage | `server.ts` | Express, CORS, panneau statique, montage des routes, `errorHandler` global, migrations de démarrage, planificateurs, reaper de workers, écoute HTTP/HTTPS. |
+| Contrôleurs (HTTP) | `http/routes/*.ts` | flows, executions, jobs, workers, schedules, triggers, secrets, users. Fines : valident, appellent un service, renvoient la réponse. |
+| Auth / validation | `http/middleware/{auth,rbac,errorHandler}.ts`, `http/validators/*` | Auth JWT + clé API, rôles, gestion d'erreurs centralisée, validation des corps de requête (zod, `validateBody`). |
+| Services métier | `domain/execution/{flowExecutor,nodeExecutor,artifactStore,executionLogs}.ts`, `domain/workers/workerService.ts`, `domain/secrets/secretService.ts` | Parcours du DAG + runners, dispatch worker, résolution des secrets. Sans Express ni accès base direct. |
+| Repositories | `data/repositories/*` (un par entité) + `data/db/index.ts` (`ICollection`) + `data/models/*` | Accès aux entités métier via repos typés (`flowRepository`, etc.) ; l'abstraction NeDB/MongoDB reste cachée. |
+| Versionnage git | `infra/git/*` | Dépôt git par flux : matérialisation flux↔arbre git (`flowMaterialize.ts`), commits/branches (`flowCommit.ts`), objets/refs en base (`gitObjects.ts`, `gitStore.ts`), smart-HTTP clone/push (`receivePack.ts`, `FlowGitRepository.ts`). |
+| Planification | `infra/scheduler/{cronScheduler,eventBus}.ts` | Planifications node-cron + surveillance du dossier inbox pour les événements. |
+| Crypto / tokens | `infra/crypto/aes.ts`, `infra/auth/tokens.ts` | AES-256-GCM pour les secrets ; primitives de hachage de clé API et signature/vérification JWT. |
+
+Règle d'accès : `getCollection` n'apparaît plus que dans `data/repositories/BaseRepository.ts`
+et trois adaptateurs de stockage (`artifactStore`, `executionLogs`, `gitStore`). Tout accès
+à une entité métier passe par un repository.
 
 ### Client (`orchestrator-webpanel/client/src`)
 
-React 18 + Vite. React Flow dessine le graphe de nœuds ; Monaco gère l'édition de code par nœud. Les stores Zustand portent l'état session/flux/éditeur (`store/`). `utils/apiClient.ts` enveloppe l'API REST ; les logs en direct arrivent via SSE.
+React 18 + Vite. React Flow dessine le graphe de nœuds ; Monaco gère l'édition de code par nœud. Les stores Zustand portent l'état session/flux/éditeur (`store/`). La couche `api/` sépare le transport HTTP (`api/http.ts` — auth, refresh, verbes génériques, binaire) des clients par domaine (`flowsApi`, `flowGitApi`, `executionsApi`, `workersApi`, `secretsApi`, `usersApi`, `schedulesApi`) : les vues appellent `flowsApi.update(id, body)` plutôt que d'écrire des URLs à la main. `utils/apiClient.ts` reste un ré-export de compatibilité. Les logs en direct arrivent via SSE.
 
 ### Worker (`orchestrator-worker/src`)
 
-`agent.ts` gère l'enregistrement, le polling, le heartbeat et la répartition. `executor/nodeExecutor.ts` lance les processus enfants par langage. Sans état — toute la mémoire des jobs vit sur le serveur.
+Découpé par responsabilité. `agent.ts` est un point d'entrée fin (câblage). `config.ts` centralise la configuration ; `transport/httpClient.ts` l'instance axios + le token. `lifecycle.ts` gère enregistrement/heartbeat/déconnexion, `poller.ts` la boucle de long-poll et le mode d'exécution. `jobs/` exécute un job (`jobRunner.ts`) avec résolution des secrets (`secrets.ts`) et cycle de vie des artefacts (`artifacts.ts`). `runtimes/` contient un fichier par langage (js/python/groovy/powershell/batch/shell) derrière une interface `Runtime` commune, plus un registre `index.ts` qui expose `executeNode`. Sans état — toute la mémoire des jobs vit sur le serveur.
 
 ---
 
 ## 3. Modèle de données
 
-Le stockage est masqué derrière `ICollection` (`services/db/index.ts`). Une implémentation enveloppe MongoDB, l'autre `@seald-io/nedb` ; la même sémantique de requêtes fonctionne sur les deux. Le choix est automatique : si `MONGO_URI` est défini → MongoDB, sinon → fichiers NeDB sous `<WORK_DIR>/data/`.
+Le stockage est masqué derrière `ICollection` (`data/db/index.ts`). Une implémentation enveloppe MongoDB, l'autre `@seald-io/nedb` ; la même sémantique de requêtes fonctionne sur les deux. Le choix est automatique : si `MONGO_URI` est défini → MongoDB, sinon → fichiers NeDB sous `<WORK_DIR>/data/`.
 
 Les collections :
 
@@ -110,7 +125,7 @@ Un flux est un document JSON de `nodes` + `edges`. `parseFlowContent` (`flowExec
 
 Un flux peut transporter des **artefacts** : des fichiers attachés au flux lui-même, déposés sur le disque avant l'exécution pour que le code des nœuds puisse les lire. Typiquement un jar, un CSV de référence, un binaire, ou une archive à décompresser.
 
-**Stockage adressé par contenu** (`services/executor/artifactStore.ts`). Le corps de chaque artefact est stocké **une seule fois** dans la collection `artifact_blobs`, clé = son `sha256`. Le document `flows` ne porte qu'un **pointeur** `{ name, sha }` ; les `worker_jobs` répartis idem. Avantages par rapport à l'ancien modèle (base64 inliné dans chaque flux *et* dans chaque job réparti) : déduplication entre nœuds d'un même run et entre runs au contenu identique, et plus de copie jamais réclamée. Les bytes sont gardés en `BinData` sur Mongo (pas d'inflation base64) et en base64 sur NeDB (qui ne sait pas round-tripper un Buffer proprement).
+**Stockage adressé par contenu** (`domain/execution/artifactStore.ts`). Le corps de chaque artefact est stocké **une seule fois** dans la collection `artifact_blobs`, clé = son `sha256`. Le document `flows` ne porte qu'un **pointeur** `{ name, sha }` ; les `worker_jobs` répartis idem. Avantages par rapport à l'ancien modèle (base64 inliné dans chaque flux *et* dans chaque job réparti) : déduplication entre nœuds d'un même run et entre runs au contenu identique, et plus de copie jamais réclamée. Les bytes sont gardés en `BinData` sur Mongo (pas d'inflation base64) et en base64 sur NeDB (qui ne sait pas round-tripper un Buffer proprement).
 
 **Chunking.** Mongo plafonne un document BSON à 16 Mo. Un artefact dont le corps dépasse `CHUNK_BYTES` (8 Mo) est découpé en tranches dans `artifact_chunks` (`<sha>:<idx>`), `artifact_blobs` ne gardant qu'un manifeste (`size`, `chunks`). Les lectures réassemblent les tranches dans l'ordre, et le téléchargement streamé (`artifactChunks`) ne matérialise jamais le fichier entier en mémoire.
 
@@ -159,7 +174,7 @@ Les logs d'exécution sont streamés vers le navigateur en **Server-Sent Events*
 
 ## 4.bis Versionnage git des flux
 
-Chaque flux est un **dépôt git complet** vivant en base (`services/git/*`). Pas de `.git` sur disque : objets et refs sont des documents (`git_objects`, `git_refs`), scopés par `flowId`.
+Chaque flux est un **dépôt git complet** vivant en base (`infra/git/*`). Pas de `.git` sur disque : objets et refs sont des documents (`git_objects`, `git_refs`), scopés par `flowId`.
 
 **Matérialisation flux ↔ arbre git** (`flowMaterialize.ts`). Un flux JSON est projeté dans une arborescence lisible, et relue sans perte :
 
