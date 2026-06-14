@@ -124,7 +124,7 @@ Chaque flux est exposé comme un dépôt git sous **`/git/:flowId`** (hors préf
 git clone http://<login>:<apikey>@localhost:3939/git/<flowId> mon-flux
 ```
 
-Les artefacts apparaissent dans le clone sous `artifacts/` en **pointeurs** (`sha256`), pas en bytes (style git-LFS).
+Les artefacts apparaissent dans le clone sous `artifacts/` en **bytes réels** (le fichier complet, pas seulement le `sha256`) — ouvrables directement dans le dossier cloné, y compris pour un artefact uploadé via l'UI. Les anciens commits utilisaient un pointeur style git-LFS, encore lu en rétro-compatibilité.
 
 ---
 

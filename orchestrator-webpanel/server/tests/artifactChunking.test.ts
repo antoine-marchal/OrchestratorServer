@@ -7,8 +7,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-chunk-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP;
 delete process.env.MONGO_URI;
 
-import { connectDB, getCollection } from '../src/services/db/index';
-import { putArtifacts, getArtifactBase64, gcArtifacts } from '../src/services/executor/artifactStore';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { putArtifacts, getArtifactBase64, gcArtifacts } from '../src/domain/execution/artifactStore';
 
 beforeAll(async () => { await connectDB(); });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractSecretNames, substituteSecrets, SECRET_REF_RE } from '../src/routes/secrets';
+import { extractSecretNames, substituteSecrets, SECRET_REF_RE } from '../src/domain/secrets/secretService';
 
 describe('secret placeholder utilities', () => {
   it('extracts a single secret reference', () => {

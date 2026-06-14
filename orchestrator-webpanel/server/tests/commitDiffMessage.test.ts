@@ -7,8 +7,8 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-msg-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP;
 delete process.env.MONGO_URI;
 
-import { connectDB, getCollection } from '../src/services/db/index';
-import { commitFlowState, listCommits, activeRef } from '../src/services/git/flowCommit';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { commitFlowState, listCommits, activeRef } from '../src/infra/git/flowCommit';
 
 beforeAll(async () => { await connectDB(); });
 

@@ -2,8 +2,17 @@
 # Disable the auto debuginfo/debugsource subpackage (else: "Empty %files").
 %global debug_package %{nil}
 
+# @yao-pkg/pkg appends its payload (prelude + bundled assets) AFTER the ELF and
+# records byte offsets into the produced file. RPM's default post-install steps
+# run `strip` on every ELF in the buildroot, which rewrites the binary and
+# discards that trailing appended data — the payload is lost, the recorded
+# offsets point past EOF, and the binary dies at startup with:
+#     Pkg: Error reading from file.
+# Disable all automatic binary post-processing so the pkg output ships verbatim.
+%global __os_install_post %{nil}
+
 Name:           orchestrator-webpanel
-Version:        3.2.7
+Version:        3.2.9
 Release:        1%{?dist}
 Summary:        Orchestrator Server with bundled Web UI
 
@@ -22,6 +31,10 @@ BuildRequires:  systemd-rpm-macros
 
 Requires:       systemd
 Requires(pre):  shadow-utils
+# openssl is only needed by %post to auto-fill the machine secrets. Keep it a
+# weak dep so a host without it (or without the repo) still installs — %post
+# detects the absence and warns instead of failing the transaction.
+Recommends:     openssl
 
 # groovyExec.jar is bundled and extracted at runtime; running Groovy nodes
 # needs a JRE on the host. Enable if you use Groovy execution.
@@ -91,6 +104,22 @@ exit 0
 
 %post
 %systemd_post orchestrator-webpanel.service
+# Fill the machine secrets (JWT_SECRET, ORCHESTRATOR_MASTER_KEY,
+# WORKER_REGISTRATION_SECRET) with random values so the service starts without
+# manual setup — the server refuses to boot in production while these hold their
+# placeholders. Idempotent: real values already present are left untouched, so
+# this is safe on upgrade too. ADMIN_PASSWORD is intentionally skipped
+# (--no-admin) to avoid randomizing the login; set it via gen-secrets or the UI.
+#
+# openssl is a weak dep (Recommends), so it may be absent. Never fail the
+# transaction over secret generation: warn and let the operator run gen-secrets
+# later — the server's startup check will remind them if placeholders remain.
+if command -v openssl >/dev/null 2>&1; then
+  %{_bindir}/orchestrator-webpanel-gen-secrets --no-admin >/dev/null 2>&1 || :
+else
+  echo "orchestrator-webpanel: openssl not found; machine secrets were NOT generated." >&2
+  echo "  Install openssl, then run: orchestrator-webpanel-gen-secrets" >&2
+fi
 
 %preun
 %systemd_preun orchestrator-webpanel.service

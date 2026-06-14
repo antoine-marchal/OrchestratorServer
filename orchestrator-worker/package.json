@@ -1,6 +1,6 @@
 {
   "name": "orchestrator-worker",
-  "version": "3.2.7",
+  "version": "3.2.9",
   "description": "Orchestrator remote execution agent",
   "main": "dist/agent.js",
   "scripts": {

@@ -12,7 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { usersApi } from '../../api';
 
 interface ApiKey {
   id: string;
@@ -86,7 +86,7 @@ export const UsersPanel: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get('/api/v1/users');
+      const data = await usersApi.list();
       setUsers(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load users');
@@ -99,7 +99,7 @@ export const UsersPanel: React.FC = () => {
 
   const handleCreate = async () => {
     try {
-      await apiClient.post('/api/v1/users', { login, password: password || undefined, role });
+      await usersApi.create({ login, password: password || undefined, role });
       setShowCreate(false);
       setLogin(''); setPassword(''); setRole('operator');
       await load();
@@ -110,7 +110,7 @@ export const UsersPanel: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiClient.delete(`/api/v1/users/${id}`);
+      await usersApi.remove(id);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to delete user');
@@ -120,7 +120,7 @@ export const UsersPanel: React.FC = () => {
   const handleCreateKey = async (userId: string) => {
     if (!keyLabel.trim()) return;
     try {
-      const result: any = await apiClient.post(`/api/v1/users/${userId}/apikeys`, { label: keyLabel });
+      const result: any = await usersApi.createApiKey(userId, { label: keyLabel });
       setRawKey(result.rawKey);
       setKeyUserId(null);
       setKeyLabel('');
@@ -132,7 +132,7 @@ export const UsersPanel: React.FC = () => {
 
   const handleRevokeKey = async (userId: string, keyId: string) => {
     try {
-      await apiClient.delete(`/api/v1/users/${userId}/apikeys/${keyId}`);
+      await usersApi.deleteApiKey(userId, keyId);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to revoke API key');
@@ -142,7 +142,7 @@ export const UsersPanel: React.FC = () => {
   const handleChangePassword = async (userId: string) => {
     if (!newPwd.trim()) return;
     try {
-      await apiClient.patch(`/api/v1/users/${userId}/password`, { password: newPwd });
+      await usersApi.setPassword(userId, newPwd);
       setPwdUserId(null);
       setNewPwd('');
     } catch (e: any) {

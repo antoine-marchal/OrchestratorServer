@@ -2,11 +2,11 @@
 
 Une plateforme d'automatisation auto-hébergée : un éditeur de flux visuel, un moteur d'exécution en graphe (DAG), de la planification, une gestion des secrets et des agents d'exécution distants — le tout dans un seul dépôt.
 
-Concrètement : on construit des flux dans un éditeur de graphe en glisser-déposer (JavaScript, Python, Groovy, PowerShell, Batch, Playwright, sous-flux, conditions), on les déclenche via cron, événement, requête HTTP ou à la demande, et on regarde les logs défiler en direct dans le navigateur. Le travail lourd ou propre à un OS est délégué à des agents **worker** distants, qui s'enregistrent eux-mêmes auprès du serveur en HTTP.
+Concrètement : on construit des flux dans un éditeur de graphe en glisser-déposer (JavaScript, Python, Groovy, PowerShell, Batch, Shell, sous-flux, conditions ; automatisation Playwright via les nœuds JS), on les déclenche via cron, événement, requête HTTP ou à la demande, et on regarde les logs défiler en direct dans le navigateur. Le travail lourd ou propre à un OS est délégué à des agents **worker** distants, qui s'enregistrent eux-mêmes auprès du serveur en HTTP.
 
 Chaque flux est en plus versionné dans un **dépôt git interne** : les sauvegardes de l'éditeur deviennent des commits, on travaille par **branches**, et on peut `git clone`/`push`/`pull` un flux avec un client git standard. On exécute un même flux en plusieurs **variantes** (worker/branche différents) planifiables indépendamment, et ses fichiers joints (**artefacts**) sont stockés une seule fois en adressage par contenu.
 
-> Version 3.2.4 · Node.js ≥ 18 · TypeScript
+> Version : voir [`.version`](.version) (propagée à tous les `package.json` par [`set-version.bat`](set-version.bat)) · Node.js ≥ 18 · TypeScript
 
 ---
 

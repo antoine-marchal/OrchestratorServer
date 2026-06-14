@@ -29,7 +29,7 @@ import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
 import BranchSelect from './BranchSelect';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
-import { apiClient } from '../../utils/apiClient';
+import { apiClient, executionsApi, usersApi, flowsApi } from '../../api';
 import StatusBadge from './StatusBadge';
 import ScheduleModal from './ScheduleModal';
 import { TransferModal } from './TransferModal';
@@ -42,6 +42,7 @@ import ExecutionTimeline from '../execution/ExecutionTimeline';
 import { lastNodeDurations, computeNodeRuns, type NodeRun } from '../../utils/execTiming';
 import { scopeKeyOf, scopeMatchesOrDescends, nodeIdOfScope, NODE_SCOPE_SEP } from '../../utils/execScope';
 import { ansiToHtml } from '../../utils/ansiToHtml';
+import { sanitizeNodesForSave, sanitizeEdgesForSave, normContent } from '../../utils/flowSanitize';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -429,7 +430,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     // back to whatever's already in the store if the refetch fails.
     let logs = selectedExec.logs || [];
     try {
-      const d: any = await apiClient.get(`/api/v1/executions/${selectedExec.id}`);
+      const d: any = await executionsApi.get(selectedExec.id);
       if (Array.isArray(d?.logs)) logs = d.logs;
     } catch { /* offline / transient — export the cached logs */ }
     finally { setIsExporting(false); }
@@ -870,25 +871,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   );
 };
 
-// React Flow tags nodes/edges with transient UI state — selection, drag,
-// measured size — that is NOT graph content. Selecting or dragging-highlighting
-// a node must not count as an edit, otherwise autosave fires (and even persists
-// `selected: true`) on every click. Strip it everywhere we fingerprint or save.
-const stripNode = (n: any) => {
-  const { selected, dragging, resizing, positionAbsolute, ...rest } = n;
-  return { ...rest, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } };
-};
-const stripEdge = (e: any) => {
-  const { selected, ...rest } = e;
-  return rest;
-};
-export const sanitizeNodesForSave = (nodes: any[]): any[] => (nodes || []).map(stripNode);
-export const sanitizeEdgesForSave = (edges: any[]): any[] => (edges || []).map(stripEdge);
-
-// Stable string fingerprint of a graph, ignoring transient run overlays + UI
-// state, so we can tell whether the editor session matches the server def.
-const normContent = (nodes: any[], edges: any[]): string =>
-  JSON.stringify({ nodes: sanitizeNodesForSave(nodes), edges: sanitizeEdgesForSave(edges) });
+// Graph sanitizers + fingerprint live in utils/flowSanitize so every save path
+// (autosave here, manual version in FlowEditor, set-main in SessionTabs) strips
+// the exact same transient UI/run state.
 
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();
@@ -1073,7 +1058,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
 
   const handleArtifactRemove = async (name: string) => {
     try {
-      const resp: any = await apiClient.delete(`/api/v1/flows/${flow.id}/artifacts/${encodeURIComponent(name)}`);
+      const resp: any = await flowsApi.deleteArtifact(flow.id, name);
       updateFlowLocal(flow.id, { artifacts: Array.isArray(resp?.artifacts) ? resp.artifacts : artifacts.filter(a => a.name !== name) });
     } catch (err) {
       console.error('artifact remove failed', err);
@@ -1184,7 +1169,7 @@ const FlowDetail: React.FC = () => {
   const [adminLogins, setAdminLogins] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!canEdit) return;
-    apiClient.get('/api/v1/users').then((data: any) => {
+    usersApi.list().then((data: any) => {
       const list = Array.isArray(data) ? data : [];
       setAdminLogins(new Set(list.filter((u: any) => u.role === 'admin').map((u: any) => u.login)));
     }).catch(() => { /* ignore */ });
@@ -1257,7 +1242,7 @@ const FlowDetail: React.FC = () => {
     navigate('/flows');
   };
 
-  const handleScheduleSave = (schedule: { cron: string; enabled: boolean; timezone: string } | null) => {
+  const handleScheduleSave = async (schedule: { cron: string; enabled: boolean; timezone: string } | null) => {
     if (!id) return;
     updateFlow(id, { schedule: schedule ?? undefined });
     setShowSchedule(false);

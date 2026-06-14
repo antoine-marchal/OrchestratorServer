@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Généré par build-standalone.mjs le 2026-06-06T20:00:05.185Z — NE PAS éditer à la main. -->
+<!-- Généré par build-standalone.mjs le 2026-06-14T11:50:36.829Z — NE PAS éditer à la main. -->
 
 <html lang="fr">
 <head>
@@ -19,7 +19,7 @@
     <rect x="340" y="368" width="520" height="5" rx="3" fill="oklch(0.45 0.20 235)"/>
     <text x="600" y="430" text-anchor="middle" font-family="monospace" font-size="28" fill="#6b7280">Plateforme d'automatisation auto-hébergée</text>
     <rect x="530" y="460" width="140" height="40" rx="20" fill="none" stroke="oklch(0.45 0.20 235)" stroke-width="2"/>
-    <text x="600" y="486" text-anchor="middle" font-family="monospace" font-size="22" fill="oklch(0.45 0.20 235)">v3.2.4</text>
+    <text x="600" y="486" text-anchor="middle" font-family="monospace" font-size="22" fill="oklch(0.45 0.20 235)">v3.2.9</text>
   </svg>
 </template>
 <style>
@@ -552,7 +552,7 @@
   <div id="s1-glow2"></div>
   <div id="s1-content">
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:32px;">
-      <span class="tag tag-blue">v3.2.4</span>
+      <span class="tag tag-blue">v3.2.9</span>
       <span class="tag tag-green"><span class="dot dot-green"></span> Node.js ≥ 18</span>
       <span class="tag tag-amber">TypeScript strict</span>
     </div>
@@ -582,7 +582,7 @@
       <div class="s-sub" style="max-width:1400px;">On construit des flux dans un éditeur de graphe en glisser-déposer, on les déclenche (cron, événement, HTTP, ou à la demande), et on regarde les logs défiler en direct dans le navigateur. Le travail lourd ou propre à un OS est délégué à des <strong style="color:var(--text)">workers</strong> distants.</div>
     </div>
     <div class="feat-grid" style="grid-template-columns:repeat(4,1fr); gap:20px;">
-      <div class="feat b"><div class="ic">✎</div><div class="t">Construire</div><div class="d">Un graphe de nœuds de script — JS, Python, Groovy, PowerShell, Batch, Bash, Playwright, sous-flux, conditions.</div></div>
+      <div class="feat b"><div class="ic">✎</div><div class="t">Construire</div><div class="d">Un graphe de nœuds de script — JS, Python, Groovy, PowerShell, Batch, Shell, sous-flux, conditions (Playwright via les nœuds JS).</div></div>
       <div class="feat a"><div class="ic">⏱</div><div class="t">Déclencher</div><div class="d">Cron, arrivée de fichier (inbox), requête HTTP (trigger), ou bouton « Execute ».</div></div>
       <div class="feat g"><div class="ic">▶</div><div class="t">Exécuter</div><div class="d">Parcours du DAG, retry et timeouts par nœud, logs SSE en temps réel.</div></div>
       <div class="feat p"><div class="ic">⎇</div><div class="t">Versionner</div><div class="d">Chaque flux = un dépôt git : commits auto, branches, variantes, clone/push.</div></div>
@@ -653,7 +653,7 @@
             <li>Sélecteur de branche / variantes</li>
             <li>Logs SSE en direct</li>
             <li>Admin : secrets, users, workers</li>
-            <li>Stores Zustand · apiClient</li>
+            <li>Stores Zustand · couche api/ par domaine</li>
           </ul>
         </div>
       </div>
@@ -663,11 +663,11 @@
           <h3>Serveur</h3>
           <div class="tagline">server/ · Express + TS</div>
           <ul>
-            <li>Routes REST + exécuteur DAG</li>
+            <li>Contrôleurs fins → services métier (DAG)</li>
             <li>Planificateur cron + eventBus</li>
             <li>Versionnage git (objets/refs en base)</li>
             <li>Store d'artefacts (sha256)</li>
-            <li>Auth/RBAC · crypto AES · DB</li>
+            <li>Auth/RBAC · validation · repos · DB</li>
           </ul>
         </div>
       </div>
@@ -678,7 +678,7 @@
           <div class="tagline">orchestrator-worker/ · TS</div>
           <ul>
             <li>S'enregistre → poll → exécute</li>
-            <li>Processus enfants par langage</li>
+            <li>Runtimes par langage (registre)</li>
             <li>node / python / java / pwsh / cmd</li>
             <li>Télécharge artefacts par sha</li>
             <li>Sans état — tout vit sur le serveur</li>
@@ -718,7 +718,7 @@
       <div class="card accent-green">
         <div class="card-title"><span class="dot dot-green"></span> Local vs distant</div>
         <div class="card-body">
-          Les types dans <code>REMOTE_TYPES</code> — <span class="pill" style="font-size:17px">powershell</span> <span class="pill" style="font-size:17px">batch</span> <span class="pill" style="font-size:17px">python</span> <span class="pill" style="font-size:17px">groovy</span> <span class="pill" style="font-size:17px">jsbackend</span> <span class="pill" style="font-size:17px">playwright</span> <span class="pill" style="font-size:17px">shell</span> <span class="pill" style="font-size:17px">bash</span> — partent au worker assigné. Le <strong>JavaScript inline</strong> tourne en cours de processus.
+          Les types dans <code>REMOTE_TYPES</code> — <span class="pill" style="font-size:17px">powershell</span> <span class="pill" style="font-size:17px">batch</span> <span class="pill" style="font-size:17px">python</span> <span class="pill" style="font-size:17px">groovy</span> <span class="pill" style="font-size:17px">jsbackend</span> <span class="pill" style="font-size:17px">shell</span> <span class="pill" style="font-size:17px">bash</span> — partent au worker assigné (Playwright tourne dans un nœud <code>jsbackend</code>). Le <strong>JavaScript inline</strong> tourne en cours de processus.
         </div>
       </div>
       <div class="card">
@@ -752,8 +752,7 @@
         <tr><td class="k">groovy</td><td><code>java -jar groovyExec.jar</code></td><td class="m">Java 11+ requis ; JsonSlurper / JsonOutput.</td></tr>
         <tr><td class="k">powershell</td><td><code>powershell.exe</code> / <code>pwsh</code></td><td class="m">Variables via ConvertFrom-Json ; sortie via $env:OUTPUT.</td></tr>
         <tr><td class="k">batch</td><td><code>cmd.exe</code> (Windows)</td><td class="m">Variables exportées en <code>%VAR%</code> ; pas de capture retour.</td></tr>
-        <tr><td class="k">bash / shell</td><td><code>bash</code> / <code>sh</code> sur $PATH</td><td class="m">Shells POSIX ; variables en env.</td></tr>
-        <tr><td class="k">playwright</td><td>Node.js + Chromium</td><td class="m"><code>npx playwright install chromium</code> une fois.</td></tr>
+        <tr><td class="k">shell / bash</td><td><code>bash</code></td><td class="m">Linux/Mac seulement ; variables + INPUT/OUTPUT en env. Playwright (bundlé) s'utilise dans les nœuds JS, pas un type à part.</td></tr>
         <tr><td class="k">flow / variable / comment / goto</td><td>—</td><td class="m">Orchestration / valeur de variable / pass-through.</td></tr>
       </tbody>
     </table>
@@ -821,7 +820,7 @@
         <span class="kw">nodes/</span>&lt;titreCamel&gt;.<span class="key">ext</span>   <span class="comment"># 1 fichier / nœud feuille (code)</span><br>
         <span class="kw">sessions/</span>&lt;titreCamel&gt;/   <span class="comment"># 1 dossier / nœud 'flow'</span><br>
         &nbsp;&nbsp;<span class="comment"># sous-graphe, récursivement</span><br>
-        <span class="kw">artifacts/</span>&lt;name&gt;        <span class="comment"># pointeur sha256 (pas les bytes)</span><br>
+        <span class="kw">artifacts/</span>&lt;name&gt;        <span class="comment"># bytes réels (clone = vrai fichier)</span><br>
         <span class="kw">relations.json</span>          <span class="comment"># nodes (sans code) + edges</span><br>
         &nbsp;&nbsp;<span class="comment"># + meta + maps id→chemin</span>
       </div>
@@ -890,7 +889,7 @@
         <div class="card-body">Login + <strong>clé API</strong> (pas le mot de passe — les corps git sont binaires <code>application/x-git-*</code>).</div>
       </div>
       <div class="card">
-        <div class="card-body" style="font-size:19px;">Un <strong>push</strong> met à jour le flux : l'arbre poussé est relu en document, les pointeurs d'artefacts résolus, et un nouveau commit devient le HEAD de la branche.</div>
+        <div class="card-body" style="font-size:19px;">Un <strong>push</strong> met à jour le flux : l'arbre poussé est relu en document, les bytes d'artefacts re-homés dans <code>artifact_blobs</code>, et un nouveau commit devient le HEAD de la branche.</div>
       </div>
     </div>
     <div class="col">
@@ -905,7 +904,7 @@
         <span class="comment">#   POST /git/:id/git-upload-pack   (fetch)</span><br>
         <span class="comment">#   POST /git/:id/git-receive-pack  (push)</span>
       </div>
-      <div class="card accent-green" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Les artefacts apparaissent dans le clone sous <code>artifacts/</code> en <strong>pointeurs</strong> sha256 (style git-LFS), pas en bytes.</div></div>
+      <div class="card accent-green" style="padding:16px 24px;"><div class="card-body" style="font-size:18px;">Les artefacts apparaissent dans le clone sous <code>artifacts/</code> en <strong>bytes réels</strong> — ouvrables directement (même uploadés via l'UI). Anciens commits : pointeur git-LFS, encore lu.</div></div>
     </div>
   </div>
   <div class="corner-logo">Orchestrator</div>
@@ -968,12 +967,12 @@
         <div class="card-body">Upload en <strong>binaire brut</strong> (<code>POST /flows/:id/artifacts</code>, limite <code>ARTIFACT_UPLOAD_LIMIT</code> 1 Go) — évite l'inflation base64. Download streamé <code>/:sha/raw</code> ou base64 <code>/:sha</code>.</div>
       </div>
       <div class="card accent-blue">
-        <div class="card-title">⎇ Versionné en pointeur git</div>
-        <div class="card-body">Committé dans git en pointeur sha256 (git-LFS). Un clone récupère le pointeur, pas le fichier.</div>
+        <div class="card-title">⎇ Versionné en bytes réels</div>
+        <div class="card-body">Committé dans git en bytes réels. Un clone récupère le <strong>vrai fichier</strong> (anciens commits : pointeur git-LFS, encore lu).</div>
       </div>
       <div class="card accent-red">
         <div class="card-title">⚿ Path-traversal + GC</div>
-        <div class="card-body"><code>safeArtifactPath</code> rejette chemins absolus, <code>..</code>, noms vides. Le <strong>janitor</strong> réclame les blobs non référencés (par job, flow, ou pointeur git) hors fenêtre <code>ARTIFACT_GC_MIN_AGE_MS</code>.</div>
+        <div class="card-body"><code>safeArtifactPath</code> rejette chemins absolus, <code>..</code>, noms vides. Le <strong>janitor</strong> réclame les blobs non référencés (par job, flow, ou artefact committé dans git) hors fenêtre <code>ARTIFACT_GC_MIN_AGE_MS</code>.</div>
       </div>
       <div class="card" style="padding:14px 22px;"><div class="card-body" style="font-size:18px;"><strong>Héritage sous-flux :</strong> parent + siens ; en cas de collision, <strong style="color:var(--amber)">le parent gagne</strong>.</div></div>
     </div>
@@ -1214,7 +1213,7 @@
         <div class="card-title">🧹 Ce qu'il fait</div>
         <div class="card-body">
           1. Purge les <code>worker_jobs</code> terminés au-delà de <code>WORKER_JOB_RETENTION_MS</code> (1 h).<br>
-          2. Réclame les <strong>blobs d'artefacts</strong> qu'aucun job, flow, ni pointeur git ne référence.<br>
+          2. Réclame les <strong>blobs d'artefacts</strong> qu'aucun job, flow, ni artefact committé dans git ne référence.<br>
           3. Balaye les chunks orphelins (manifeste disparu).
         </div>
       </div>
@@ -1244,8 +1243,8 @@
         <h1 class="s-title">Déploiement production</h1>
       </div>
       <div class="code-block sm">
-        <span class="comment"># 1. Appliquer la version partout</span><br>
-        <span class="kw">set-version.bat</span> <span class="num">3.2.4</span><br><br>
+        <span class="comment"># 1. Appliquer la version partout (source : .version)</span><br>
+        <span class="kw">set-version.bat</span> <span class="num">&lt;version&gt;</span><br><br>
         <span class="comment"># 2. Build + package (pkg)</span><br>
         <span class="kw">build-server.bat</span>   <span class="comment"># → release/orchestrator-server-*</span><br>
         <span class="kw">build-worker.bat</span>   <span class="comment"># → release/orchestrator-worker-*</span><br><br>
@@ -1524,7 +1523,7 @@
       <div>Docs&nbsp;&nbsp;→&nbsp;&nbsp;<b>documentation/</b> — ARCHITECTURE · API · ONBOARDING · RUNBOOK</div>
     </div>
   </div>
-  <div class="corner-logo">v3.2.4</div>
+  <div class="corner-logo">v3.2.9</div>
   <div class="slide-num">30 / 30</div>
 </section>
 

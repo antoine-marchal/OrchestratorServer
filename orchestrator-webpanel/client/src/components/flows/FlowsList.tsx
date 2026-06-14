@@ -15,7 +15,7 @@ import ScheduleModal from './ScheduleModal';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import type { FlowVariant } from '../../types/flows';
 import { useAuth } from '../../hooks/useAuth';
-import { apiClient } from '../../utils/apiClient';
+import { usersApi, schedulesApi } from '../../api';
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -69,7 +69,7 @@ const FlowsList: React.FC = () => {
   const [users, setUsers] = useState<Array<{ _id: string; login: string; role: string }>>([]);
   useEffect(() => {
     if (!canEdit) return;
-    apiClient.get('/api/v1/users').then((data: any) => {
+    usersApi.list().then((data: any) => {
       setUsers(Array.isArray(data) ? data : []);
     }).catch(() => { /* operator may still get users; ignore errors */ });
   }, [canEdit]);
@@ -126,7 +126,7 @@ const FlowsList: React.FC = () => {
 
   const reloadSchedules = useCallback(() => {
     if (!isAdmin) return;
-    apiClient.get('/api/v1/schedules').then((data: any) => {
+    schedulesApi.listAll().then((data: any) => {
       const rows: any[] = data?.schedules || [];
       const byFlow: Record<string, any[]> = {};
       for (const s of rows) (byFlow[s.flowId] = byFlow[s.flowId] || []).push(s);

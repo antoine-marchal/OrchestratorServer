@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFlowContent } from '../src/services/executor/flowExecutor';
+import { parseFlowContent } from '../src/domain/execution/flowExecutor';
 
 describe('parseFlowContent', () => {
   it('parses a minimal valid flow', () => {

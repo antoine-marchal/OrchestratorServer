@@ -7,11 +7,11 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-art-'));
 process.env.ORCHESTRATOR_WORK_DIR = TMP;
 delete process.env.MONGO_URI;
 
-import { connectDB, getCollection } from '../src/services/db/index';
-import { commitFlowState, flowFieldsAtCommit, activeRef } from '../src/services/git/flowCommit';
-import { getObject, getRef, putObject } from '../src/services/git/gitStore';
-import { putArtifacts } from '../src/services/executor/artifactStore';
-import { parseCommit, parseTree, buildBlob } from '../src/services/git/gitObjects';
+import { connectDB, getCollection } from '../src/data/db/index';
+import { commitFlowState, flowFieldsAtCommit, activeRef } from '../src/infra/git/flowCommit';
+import { getObject, getRef, putObject } from '../src/infra/git/gitStore';
+import { putArtifacts } from '../src/domain/execution/artifactStore';
+import { parseCommit, parseTree, buildBlob } from '../src/infra/git/gitObjects';
 
 beforeAll(async () => { await connectDB(); });
 

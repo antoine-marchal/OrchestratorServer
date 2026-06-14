@@ -42,7 +42,7 @@ interface NodeConnectionsProps {
 export const NodeConnections: React.FC<NodeConnectionsProps> = ({
   type,
   edges,
-  nodeId,
+  nodeId: _nodeId,
   getNodeLabel,
   onRemoveConnection,
   onReorder,

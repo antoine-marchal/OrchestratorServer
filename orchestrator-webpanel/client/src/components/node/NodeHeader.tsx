@@ -26,7 +26,7 @@ import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useUIStore } from '../../store/uiStore';
 import { openFlowNodeEditor } from '../../store/flowNodeContent';
-import { pathUtils } from '../../utils/pathUtils';
+
 interface NodeHeaderProps {
   data: NodeData;
   nodeId: string;
@@ -45,7 +45,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
   onDelete,
 }) => {
   const navigate = useNavigate();
-  const { openEditorModal, updateNodeDraggable, updatePanOnDrag, setStarterNode, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath, updateNodeData } = useFlowStore();
+  const { updateNodeDraggable, updatePanOnDrag, setStarterNode, nodeLoading, stopNodeExecution, setTitleEditing, updateCodeFilePath, updateNodeData } = useFlowStore();
   const sessionStore = useSessionStore();
 
   // Check if the node is currently loading/executing

@@ -7,47 +7,38 @@ Central server and web UI for the Orchestrator automation platform. Provides a v
 ```
 orchestrator-webpanel/
 ├── server/          # Express.js + TypeScript backend
-│   └── src/
-│       ├── server.ts                    # Entry point, route registration, startup
-│       ├── middleware/
-│       │   ├── auth.ts                  # Session token + API key authentication
-│       │   └── rbac.ts                  # Role-based access control
-│       ├── routes/                      # REST API endpoints
-│       │   ├── flows.ts                 # Flow CRUD
-│       │   ├── executions.ts            # Execution history + SSE log stream
-│       │   ├── jobs.ts                  # In-process job queue
-│       │   ├── workers.ts               # Worker registration, heartbeat, job dispatch
-│       │   ├── schedules.ts             # Cron / event / API-trigger schedules
-│       │   ├── triggers.ts              # Webhook trigger endpoints
-│       │   ├── secrets.ts               # AES-256-GCM encrypted secrets
-│       │   └── users.ts                 # User management + API key issuance
-│       └── services/
-│           ├── db/                      # NeDB / MongoDB wrappers + model helpers
-│           ├── executor/
-│           │   ├── nodeExecutor.ts      # Per-language node runners (JS, Python, Groovy, …)
-│           │   ├── flowExecutor.ts      # DAG traversal, retry logic, worker dispatch
-│           │   └── artifactStore.ts     # Content-addressed artifact blobs + chunking + GC
-│           ├── git/                     # Per-flow git repo (in DB)
-│           │   ├── flowMaterialize.ts   # Flow doc ⇄ git tree (nodes/, sessions/, artifacts/)
-│           │   ├── flowCommit.ts        # Commits, amend logic, branches, reset
-│           │   ├── gitObjects.ts        # Build/parse git blob/tree/commit objects
-│           │   ├── gitStore.ts          # DB-backed object/ref store
-│           │   └── receivePack.ts       # Smart-HTTP clone / fetch / push
-│           ├── scheduler/
-│           │   ├── cronScheduler.ts     # node-cron based schedule runner
-│           │   └── eventBus.ts          # File-inbox watcher for event-based triggers
-│           └── crypto/aes.ts            # AES-256-GCM encrypt / decrypt
+│   └── src/                            # Layered MVC — deps flow http → domain → data (+ infra)
+│       ├── server.ts                    # Composition root: wiring, routes, errorHandler, startup
+│       ├── http/                        # Controller layer (transport only)
+│       │   ├── routes/                  # REST endpoints: flows, executions, jobs, workers,
+│       │   │                            #   schedules, triggers, secrets, users (thin)
+│       │   ├── middleware/              # auth (JWT + API key), rbac, errorHandler
+│       │   └── validators/              # zod schemas + validateBody middleware
+│       ├── domain/                      # Business services (framework-free)
+│       │   ├── execution/               # flowExecutor, nodeExecutor, artifactStore, executionLogs
+│       │   ├── workers/workerService.ts # Access policy, liveness, node→worker dispatch
+│       │   └── secrets/secretService.ts # ${{ secrets.X }} resolution
+│       ├── data/                        # Data-access layer
+│       │   ├── db/                      # ICollection abstraction (NeDB / MongoDB)
+│       │   ├── models/                  # Typed entities
+│       │   └── repositories/            # One typed repository per entity (flowRepository, …)
+│       └── infra/                       # Adapters
+│           ├── git/                     # Per-flow in-DB git repo (materialize, commit, store, smart-HTTP)
+│           ├── scheduler/               # cronScheduler + eventBus
+│           ├── crypto/aes.ts            # AES-256-GCM encrypt / decrypt
+│           └── auth/tokens.ts           # API-key hashing + JWT sign/verify primitives
 └── client/          # React + Vite frontend
     └── src/
         ├── App.tsx                      # Router, auth guard
+        ├── api/                         # http.ts transport + per-domain clients (flowsApi, …)
         ├── components/
         │   ├── flows/                   # Flows list, execution list, flow detail
-        │   ├── admin/                   # AdminLayout, UsersPanel, SecretsPanel
+        │   ├── admin/                   # AdminLayout, UsersPanel, SecretsPanel, RawKeyModal, RoleBadge
         │   ├── schedule/                # SchedulePanel (cron / event / API trigger)
         │   ├── editor/                  # Full-screen flow editor layout
         │   └── node/                    # Custom React Flow node components
         ├── store/                       # Zustand stores + executors
-        └── utils/                       # apiClient, ANSI renderer, snippets, …
+        └── utils/                       # apiClient shim (→ api/), ANSI renderer, snippets, …
 ```
 
 ## Stack
@@ -133,7 +124,7 @@ Git smart-HTTP lives outside `/api/v1`, under `/git/:flowId` (HTTP Basic: login 
 
 ## Features
 
-**Flow Editor** — drag-and-drop node graph with Monaco-powered code editor. Supports JavaScript (inline), JS Backend, Python, Groovy, PowerShell, Batch, Playwright, and sub-flow nodes. Goto/condition nodes enable branching.
+**Flow Editor** — drag-and-drop node graph with Monaco-powered code editor. Supports JavaScript (inline), JS Backend, Python, Groovy, PowerShell, Batch, Shell, and sub-flow nodes (Playwright browser automation runs inside JS nodes — it is not a separate node type). Goto/condition nodes enable branching.
 
 **Git versioning** — every flow is an in-DB git repo. Editor saves become commits (amend-or-new-commit heuristic), you work on **branches**, and you can `git clone`/`pull`/`push` a flow over smart-HTTP. Flow versions (snapshots) coexist with the git history.
 

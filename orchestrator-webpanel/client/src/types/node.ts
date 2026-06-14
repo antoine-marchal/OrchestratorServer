@@ -13,7 +13,9 @@ export interface NodeData {
   isRelativePath?: boolean;
   isStarterNode?: boolean;
   jobId?: string;
-  
+  // Reference to a library flow this node points at (vs an embedded session/code).
+  flowRef?: string;
+
   //Add Goto-specific fields
   conditions?: Array<{
     expr: string;            // JS expression, e.g. "input.value < 50"

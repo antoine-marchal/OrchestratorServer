@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { apiClient } from '../../utils/apiClient';
+import { flowGitApi } from '../../api';
 
 // Active-branch picker for a flow. Branches are lazy-loaded the first time the
 // select is opened (avoids N requests when rendered in a list). Selecting a
@@ -22,7 +22,7 @@ export const BranchSelect: React.FC<{
   const ensure = async () => {
     if (loaded) return;
     try {
-      const data: any = await apiClient.get(`/api/v1/flows/${flowId}/branches`);
+      const data: any = await flowGitApi.branches(flowId);
       const list: string[] = Array.isArray(data?.branches) ? data.branches : [];
       if (!list.includes(current)) list.unshift(current);
       setBranches(list);
@@ -35,7 +35,7 @@ export const BranchSelect: React.FC<{
     if (onSelect) { onSelect(branch); return; }
     setBusy(true);
     try {
-      await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}/checkout`);
+      await flowGitApi.checkout(flowId, branch);
       onChanged?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Branch checkout failed');

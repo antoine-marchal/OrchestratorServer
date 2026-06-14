@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Lock, Plus, Trash2, Eye, AlertCircle } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { secretsApi } from '../../api';
 
 interface Secret {
   _id: string;
@@ -29,7 +29,7 @@ export const SecretsPanel: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get('/api/v1/secrets');
+      const data = await secretsApi.list();
       setSecrets(Array.isArray(data) ? data : data.secrets ?? []);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load secrets');
@@ -45,7 +45,7 @@ export const SecretsPanel: React.FC = () => {
     try {
       const body: any = { name: name.trim(), value: value.trim(), scope };
       if (scope === 'flow' && flowId.trim()) body.flowId = flowId.trim();
-      await apiClient.post('/api/v1/secrets', body);
+      await secretsApi.create(body);
       setShowCreate(false);
       setName(''); setValue(''); setScope('global'); setFlowId('');
       await load();
@@ -56,7 +56,7 @@ export const SecretsPanel: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiClient.delete(`/api/v1/secrets/${id}`);
+      await secretsApi.remove(id);
       await load();
     } catch (e: any) {
       setError(e?.message ?? 'Failed to delete secret');
@@ -69,7 +69,7 @@ export const SecretsPanel: React.FC = () => {
       return;
     }
     try {
-      const data: any = await apiClient.get(`/api/v1/secrets/${id}/reveal`);
+      const data: any = await secretsApi.reveal(id);
       setRevealedValues(prev => ({ ...prev, [id]: data.value }));
     } catch (e: any) {
       setError(e?.message ?? 'Failed to reveal secret');

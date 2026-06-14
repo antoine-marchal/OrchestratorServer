@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { History, RotateCcw, Diff, RefreshCw, ChevronRight, ChevronDown, GitBranch, Copy, Check, Plus, Trash2, Scissors, ArrowDownToLine } from 'lucide-react';
-import { apiClient } from '../../utils/apiClient';
+import { flowGitApi } from '../../api';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useSessionStore } from '../../store/sessionStore';
 
@@ -103,7 +103,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
   const loadBranches = useCallback(async () => {
     if (!flowId) return;
     try {
-      const data = await apiClient.get(`/api/v1/flows/${flowId}/branches`) as any;
+      const data = await flowGitApi.branches(flowId) as any;
       setBranches(Array.isArray(data?.branches) ? data.branches : []);
       if (data?.active) setActiveBranch(data.active);
     } catch { /* branches are best-effort */ }
@@ -122,7 +122,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get(`/api/v1/flows/${flowId}/versions`) as any;
+      const data = await flowGitApi.versions(flowId) as any;
       setVersions(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load versions');
@@ -137,7 +137,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
   const checkout = useCallback(async (branch: string) => {
     if (!flowId || branch === activeBranch) return;
     try {
-      const updated: any = await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}/checkout`, {});
+      const updated: any = await flowGitApi.checkout(flowId, branch);
       applyToSession(Array.isArray(updated?.nodes) ? updated.nodes : [], Array.isArray(updated?.edges) ? updated.edges : []);
       setActiveBranch(branch);
       await loadAll();
@@ -154,7 +154,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     const name = window.prompt('New branch name (from current HEAD):')?.trim();
     if (!name) return;
     try {
-      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/branches`, { name });
+      const data: any = await flowGitApi.createBranch(flowId, name);
       if (Array.isArray(data?.branches)) setBranches(data.branches);
       await checkout(name);
     } catch (e: any) {
@@ -170,7 +170,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
     if (branch === activeBranch) { setError('Check out another branch before deleting this one'); return; }
     if (!confirm(`Delete branch "${branch}"? This permanently removes it and any commits only it kept. This cannot be undone.`)) return;
     try {
-      const data: any = await apiClient.delete(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(branch)}`);
+      const data: any = await flowGitApi.deleteBranch(flowId, branch);
       if (Array.isArray(data?.branches)) setBranches(data.branches);
       else await loadBranches();
     } catch (e: any) {
@@ -189,7 +189,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
       : `Reset "${activeBranch}" to ${commit.slice(0, 8)}?\nNewer commits are permanently deleted.`;
     if (!confirm(msg)) return;
     try {
-      const data: any = await apiClient.post(`/api/v1/flows/${flowId}/branches/${encodeURIComponent(activeBranch)}/reset`, { commit, mode });
+      const data: any = await flowGitApi.reset(flowId, activeBranch, commit, mode);
       const f = data?.flow;
       if (f && (Array.isArray(f.nodes) || Array.isArray(f.edges))) {
         applyToSession(Array.isArray(f.nodes) ? f.nodes : [], Array.isArray(f.edges) ? f.edges : []);
@@ -214,7 +214,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
   useEffect(() => {
     if (!selected || !flowId) { setDetail(null); return; }
     let cancelled = false;
-    apiClient.get(`/api/v1/flows/${flowId}/versions/${selected}`).then((v: any) => {
+    flowGitApi.version(flowId, selected).then((v: any) => {
       if (!cancelled) setDetail(v as VersionDetail);
     }).catch(e => { if (!cancelled) setError(e?.message ?? 'Failed to load version'); });
     return () => { cancelled = true; };
@@ -229,7 +229,7 @@ const VersionHistoryPanel: React.FC<{ flowId?: string }> = ({ flowId }) => {
       // update the canvas would keep showing the pre-restore graph (the
       // editor reads from the session, not from flowLibraryStore) and the
       // autosave loop would PUT it right back, undoing the restore.
-      const restored: any = await apiClient.post(`/api/v1/flows/${flowId}/versions/${vid}/restore`, {});
+      const restored: any = await flowGitApi.restoreVersion(flowId, vid);
       const restoredNodes = Array.isArray(restored?.nodes) ? restored.nodes : [];
       const restoredEdges = Array.isArray(restored?.edges) ? restored.edges : [];
       const sessionStore = useSessionStore.getState();

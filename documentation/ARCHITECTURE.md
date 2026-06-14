@@ -47,31 +47,46 @@ Orchestrator exécute des **flux** d'automatisation écrits par les utilisateurs
 
 ### Serveur (`orchestrator-webpanel/server/src`)
 
-| Domaine | Fichiers | Responsabilité |
+Architecture en couches type MVC. Le sens des dépendances ne va que vers le bas :
+`http → domain → data` (+ adaptateurs `infra`). Une couche basse n'importe jamais
+une couche haute ; une route ne touche jamais directement la base.
+
+```
+http/      Contrôleurs : routes/ (fines) + middleware/ (auth, rbac, errorHandler) + validators/
+domain/    Services métier sans framework : execution/, workers/, secrets/
+data/      db/ (ICollection NeDB/Mongo) + models/ (entités) + repositories/ (un repo typé par entité)
+infra/     Adaptateurs : git/, scheduler/, crypto/, auth/ (primitives JWT/clé API)
+server.ts  Composition root (câblage, CORS, montage des routes, errorHandler global, démarrage)
+```
+
+| Couche | Fichiers | Responsabilité |
 |---|---|---|
-| Point d'entrée / câblage | `server.ts` | Configuration Express, CORS, service du panneau statique, montage des routes, migrations de démarrage, planificateurs, reaper de workers, écoute HTTP/HTTPS. |
-| Authentification | `middleware/auth.ts`, `middleware/rbac.ts` | Auth JWT + clé API, contrôle des rôles. |
-| API | `routes/*.ts` | flows, executions, jobs, workers, schedules, triggers, secrets, users. |
-| Exécution | `services/executor/flowExecutor.ts`, `nodeExecutor.ts` | Parcours du DAG + runners par langage. |
-| Artefacts | `services/executor/artifactStore.ts` | Stockage adressé par contenu (sha256), chunking des gros fichiers, GC des blobs non référencés. |
-| Versionnage git | `services/git/*` | Dépôt git par flux : matérialisation flux↔arbre git (`flowMaterialize.ts`), commits/branches (`flowCommit.ts`), objets/refs en base (`gitObjects.ts`, `gitStore.ts`), smart-HTTP clone/push (`receivePack.ts`, `FlowGitRepository.ts`). |
-| Planification | `services/scheduler/cronScheduler.ts`, `eventBus.ts` | Planifications node-cron + surveillance du dossier inbox pour les événements. |
-| Crypto | `services/crypto/aes.ts` | AES-256-GCM pour les secrets au repos. |
-| Données | `services/db/index.ts`, `db/models/*` | Abstraction de stockage NeDB/MongoDB + modèles typés. |
+| Point d'entrée / câblage | `server.ts` | Express, CORS, panneau statique, montage des routes, `errorHandler` global, migrations de démarrage, planificateurs, reaper de workers, écoute HTTP/HTTPS. |
+| Contrôleurs (HTTP) | `http/routes/*.ts` | flows, executions, jobs, workers, schedules, triggers, secrets, users. Fines : valident, appellent un service, renvoient la réponse. |
+| Auth / validation | `http/middleware/{auth,rbac,errorHandler}.ts`, `http/validators/*` | Auth JWT + clé API, rôles, gestion d'erreurs centralisée, validation des corps de requête (zod, `validateBody`). |
+| Services métier | `domain/execution/{flowExecutor,nodeExecutor,artifactStore,executionLogs}.ts`, `domain/workers/workerService.ts`, `domain/secrets/secretService.ts` | Parcours du DAG + runners, dispatch worker, résolution des secrets. Sans Express ni accès base direct. |
+| Repositories | `data/repositories/*` (un par entité) + `data/db/index.ts` (`ICollection`) + `data/models/*` | Accès aux entités métier via repos typés (`flowRepository`, etc.) ; l'abstraction NeDB/MongoDB reste cachée. |
+| Versionnage git | `infra/git/*` | Dépôt git par flux : matérialisation flux↔arbre git (`flowMaterialize.ts`), commits/branches (`flowCommit.ts`), objets/refs en base (`gitObjects.ts`, `gitStore.ts`), smart-HTTP clone/push (`receivePack.ts`, `FlowGitRepository.ts`). |
+| Planification | `infra/scheduler/{cronScheduler,eventBus}.ts` | Planifications node-cron + surveillance du dossier inbox pour les événements. |
+| Crypto / tokens | `infra/crypto/aes.ts`, `infra/auth/tokens.ts` | AES-256-GCM pour les secrets ; primitives de hachage de clé API et signature/vérification JWT. |
+
+Règle d'accès : `getCollection` n'apparaît plus que dans `data/repositories/BaseRepository.ts`
+et trois adaptateurs de stockage (`artifactStore`, `executionLogs`, `gitStore`). Tout accès
+à une entité métier passe par un repository.
 
 ### Client (`orchestrator-webpanel/client/src`)
 
-React 18 + Vite. React Flow dessine le graphe de nœuds ; Monaco gère l'édition de code par nœud. Les stores Zustand portent l'état session/flux/éditeur (`store/`). `utils/apiClient.ts` enveloppe l'API REST ; les logs en direct arrivent via SSE.
+React 18 + Vite. React Flow dessine le graphe de nœuds ; Monaco gère l'édition de code par nœud. Les stores Zustand portent l'état session/flux/éditeur (`store/`). La couche `api/` sépare le transport HTTP (`api/http.ts` — auth, refresh, verbes génériques, binaire) des clients par domaine (`flowsApi`, `flowGitApi`, `executionsApi`, `workersApi`, `secretsApi`, `usersApi`, `schedulesApi`) : les vues appellent `flowsApi.update(id, body)` plutôt que d'écrire des URLs à la main. `utils/apiClient.ts` reste un ré-export de compatibilité. Les logs en direct arrivent via SSE.
 
 ### Worker (`orchestrator-worker/src`)
 
-`agent.ts` gère l'enregistrement, le polling, le heartbeat et la répartition. `executor/nodeExecutor.ts` lance les processus enfants par langage. Sans état — toute la mémoire des jobs vit sur le serveur.
+Découpé par responsabilité. `agent.ts` est un point d'entrée fin (câblage). `config.ts` centralise la configuration ; `transport/httpClient.ts` l'instance axios + le token. `lifecycle.ts` gère enregistrement/heartbeat/déconnexion, `poller.ts` la boucle de long-poll et le mode d'exécution. `jobs/` exécute un job (`jobRunner.ts`) avec résolution des secrets (`secrets.ts`) et cycle de vie des artefacts (`artifacts.ts`). `runtimes/` contient un fichier par langage (js/python/groovy/powershell/batch/shell) derrière une interface `Runtime` commune, plus un registre `index.ts` qui expose `executeNode`. Sans état — toute la mémoire des jobs vit sur le serveur.
 
 ---
 
 ## 3. Modèle de données
 
-Le stockage est masqué derrière `ICollection` (`services/db/index.ts`). Une implémentation enveloppe MongoDB, l'autre `@seald-io/nedb` ; la même sémantique de requêtes fonctionne sur les deux. Le choix est automatique : si `MONGO_URI` est défini → MongoDB, sinon → fichiers NeDB sous `<WORK_DIR>/data/`.
+Le stockage est masqué derrière `ICollection` (`data/db/index.ts`). Une implémentation enveloppe MongoDB, l'autre `@seald-io/nedb` ; la même sémantique de requêtes fonctionne sur les deux. Le choix est automatique : si `MONGO_URI` est défini → MongoDB, sinon → fichiers NeDB sous `<WORK_DIR>/data/`.
 
 Les collections :
 
@@ -110,15 +125,15 @@ Un flux est un document JSON de `nodes` + `edges`. `parseFlowContent` (`flowExec
 
 Un flux peut transporter des **artefacts** : des fichiers attachés au flux lui-même, déposés sur le disque avant l'exécution pour que le code des nœuds puisse les lire. Typiquement un jar, un CSV de référence, un binaire, ou une archive à décompresser.
 
-**Stockage adressé par contenu** (`services/executor/artifactStore.ts`). Le corps de chaque artefact est stocké **une seule fois** dans la collection `artifact_blobs`, clé = son `sha256`. Le document `flows` ne porte qu'un **pointeur** `{ name, sha }` ; les `worker_jobs` répartis idem. Avantages par rapport à l'ancien modèle (base64 inliné dans chaque flux *et* dans chaque job réparti) : déduplication entre nœuds d'un même run et entre runs au contenu identique, et plus de copie jamais réclamée. Les bytes sont gardés en `BinData` sur Mongo (pas d'inflation base64) et en base64 sur NeDB (qui ne sait pas round-tripper un Buffer proprement).
+**Stockage adressé par contenu** (`domain/execution/artifactStore.ts`). Le corps de chaque artefact est stocké **une seule fois** dans la collection `artifact_blobs`, clé = son `sha256`. Le document `flows` ne porte qu'un **pointeur** `{ name, sha }` ; les `worker_jobs` répartis idem. Avantages par rapport à l'ancien modèle (base64 inliné dans chaque flux *et* dans chaque job réparti) : déduplication entre nœuds d'un même run et entre runs au contenu identique, et plus de copie jamais réclamée. Les bytes sont gardés en `BinData` sur Mongo (pas d'inflation base64) et en base64 sur NeDB (qui ne sait pas round-tripper un Buffer proprement).
 
 **Chunking.** Mongo plafonne un document BSON à 16 Mo. Un artefact dont le corps dépasse `CHUNK_BYTES` (8 Mo) est découpé en tranches dans `artifact_chunks` (`<sha>:<idx>`), `artifact_blobs` ne gardant qu'un manifeste (`size`, `chunks`). Les lectures réassemblent les tranches dans l'ordre, et le téléchargement streamé (`artifactChunks`) ne matérialise jamais le fichier entier en mémoire.
 
 **Upload / download.** L'éditeur envoie un artefact en **binaire brut** (`POST /flows/:id/artifacts`, corps `application/octet-stream`, nom dans `?name=` — limite `ARTIFACT_UPLOAD_LIMIT`, 1 Go par défaut) pour éviter l'inflation base64 et le parseur JSON. Le téléchargement passe par `GET /flows/:id/artifacts/:sha/raw` (streamé, respectant la backpressure) ou `…/:sha` (base64). Comme le base64 gonfle toujours les payloads de job, c'est l'une des raisons de monter `JSON_BODY_LIMIT` (serveur) et `WORKER_MAX_HTTP_SIZE` (worker).
 
-**Versionné dans git.** Les artefacts sont aussi committés dans le dépôt git du flux (voir §4.bis), mais en **pointeur** (style git-LFS) : le blob git ne contient que le `sha256`, pas les bytes. Un `git clone` récupère donc le pointeur, pas le fichier.
+**Versionné dans git.** Les artefacts sont aussi committés dans le dépôt git du flux (voir §4.bis) en **bytes réels** : le blob git contient le fichier complet, pas seulement le `sha256`. Un `git clone` récupère donc le **vrai fichier**, ouvrable directement dans le dossier cloné — y compris pour un artefact uploadé via l'UI. Les bytes sont **aussi** adressés par contenu dans `artifact_blobs` pour les chemins frontend/worker (duplication assumée). Les anciens commits stockaient un **pointeur** style git-LFS (`sha256` seul, pas les bytes) — encore lu en rétro-compatibilité, et re-homé dans `artifact_blobs` à la lecture.
 
-**Garbage collection.** Le janitor (balayage `JANITOR_INTERVAL_MS`, 5 min) supprime les blobs qu'aucun `worker_job`, aucun `flow`, ni aucun pointeur git ne référence. Les blobs/chunks plus jeunes que `ARTIFACT_GC_MIN_AGE_MS` (10 min) ne sont jamais réclamés, pour ne pas courir contre un upload en cours.
+**Garbage collection.** Le janitor (balayage `JANITOR_INTERVAL_MS`, 5 min) supprime les blobs qu'aucun `worker_job`, aucun `flow`, ni aucun artefact committé dans git ne référence. Les blobs/chunks plus jeunes que `ARTIFACT_GC_MIN_AGE_MS` (10 min) ne sont jamais réclamés, pour ne pas courir contre un upload en cours.
 
 **Cycle de vie d'un run** (`extractArtifacts` / `cleanupArtifacts` dans `nodeExecutor.ts`) :
 
@@ -159,14 +174,14 @@ Les logs d'exécution sont streamés vers le navigateur en **Server-Sent Events*
 
 ## 4.bis Versionnage git des flux
 
-Chaque flux est un **dépôt git complet** vivant en base (`services/git/*`). Pas de `.git` sur disque : objets et refs sont des documents (`git_objects`, `git_refs`), scopés par `flowId`.
+Chaque flux est un **dépôt git complet** vivant en base (`infra/git/*`). Pas de `.git` sur disque : objets et refs sont des documents (`git_objects`, `git_refs`), scopés par `flowId`.
 
 **Matérialisation flux ↔ arbre git** (`flowMaterialize.ts`). Un flux JSON est projeté dans une arborescence lisible, et relue sans perte :
 
 ```
 nodes/<titreCamel>.<ext>     un fichier par nœud feuille — contenu = data.code (.ps1/.py/.js/.groovy/…)
 sessions/<titreCamel>/        un dossier par nœud de type 'flow' — son sous-graphe, récursivement
-artifacts/<name>              un pointeur par artefact (sha256, pas les bytes — style git-LFS)
+artifacts/<name>              un fichier par artefact (bytes réels — `git clone` récupère le fichier ; anciens commits : pointeur sha256 style git-LFS, encore lu)
 relations.json                structure du graphe (nœuds sans le code externalisé + edges + meta + maps id→chemin)
 ```
 
@@ -179,6 +194,12 @@ Les noms de fichiers dérivent du libellé du nœud (camelCase) ; `relations.jso
 
 L'amend ne touche **que** les commits d'autosave de l'UI (préfixe `Save by `) — jamais un commit venu d'un `git push`, d'un checkpoint manuel, d'une restauration ou d'un import.
 
+**État transitoire non persisté.** Avant tout PUT/commit, l'éditeur normalise le graphe (`utils/flowSanitize.ts`, `sanitizeNodesForSave`) pour retirer l'état d'UI et de run de React Flow — il n'est **ni** envoyé en base/git **ni** compté comme une modification, donc il ne déclenche aucun autosave/commit. Ces champs ne vivent que dans le `localStorage` de la session (le canvas les retrouve après un rechargement) :
+- niveau nœud : `selected`, `dragging`, `resizing`, `positionAbsolute`, `width`, `height`, `draggable` ;
+- `data` du nœud : `executionStatus`, `executionAttempt`, `output` (résultat d'exécution du nœud), `executionTime`.
+
+Le même `sanitizeNodesForSave` sert d'empreinte (« le graphe a-t-il vraiment changé ? ») et de filtre de sauvegarde, donc tous les chemins d'écriture (autosave, snapshot manuel, passage en session principale) restent cohérents.
+
 **Branches** (`flowCommit.ts`, routes `/flows/:id/branches*`). Un flux porte une `activeBranch` (défaut `main`) ; l'exécuteur lance toujours le HEAD de la branche active, matérialisé dans le document. On crée une branche depuis le HEAD courant ou un commit/branche explicite, on bascule (`checkout` → re-matérialise le HEAD dans le doc), et on **rework** une branche autour d'un commit : `mode: 'head'` = `reset --hard` (jette les descendants), `mode: 'root'` = fait du commit la nouvelle racine (jette les ancêtres). Les objets git devenus inatteignables et les blobs d'artefacts orphelins sont GC'd dans la foulée.
 
 **Variantes (« subrows »).** Un flux peut déclarer des `variants[]` = `{ id, workerId, branch }` : la même définition de flux exécutée avec un worker et/ou une branche différents, lançable et **planifiable indépendamment**. À l'exécution, `POST /flows/:id/execute` accepte des overrides `{ workerId, branch }` ; les planifications/triggers d'une variante portent `variantId` + `workerId` + `branch` (le cronScheduler évite les « ghost runs » des variantes supprimées).
@@ -189,7 +210,7 @@ L'amend ne touche **que** les commits d'autosave de l'UI (préfixe `Save by `) �
 git clone http://<login>:<apikey>@<host>:<PORT>/git/<flowId> mon-flux
 ```
 
-L'auth est en **HTTP Basic** : login + **clé API** (les bodies git sont binaires `application/x-git-*`). Les trois endpoints (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`) sont implémentés maison — `report-status`, dépaquetage des thin-packs et upload-pack arbitraire, ce que `@fusebit/cloud-git` ne fournissait pas. Un `push` met à jour le flux : l'arbre poussé est relu en document de flux, les pointeurs d'artefacts sont résolus, et un nouveau commit devient le HEAD de la branche.
+L'auth est en **HTTP Basic** : login + **clé API** (les bodies git sont binaires `application/x-git-*`). Les trois endpoints (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`) sont implémentés maison — `report-status`, dépaquetage des thin-packs et upload-pack arbitraire, ce que `@fusebit/cloud-git` ne fournissait pas. Un `push` met à jour le flux : l'arbre poussé est relu en document de flux, les bytes d'artefacts sous `artifacts/` sont re-homés dans `artifact_blobs` (adressage par contenu), et un nouveau commit devient le HEAD de la branche.
 
 ---
 
@@ -243,7 +264,7 @@ Deux types d'identifiants, tous deux via l'en-tête `Authorization` (`middleware
 | Secrets résolus au moment de l'exécution | Le clair n'est jamais stocké dans le JSON du flux ni dans les logs. | Le serveur détient la clé maître AES ; protégez `ORCHESTRATOR_MASTER_KEY`. |
 | Réconciliation des exécutions orphelines au boot | La carte des jobs en mémoire est remise à zéro au redémarrage ; sans ça, les runs tournent à l'infini. | Un run interrompu par un redémarrage est marqué FAILED, pas repris. |
 | Dépôt git par flux, en base (pas de `.git`) | Versionnage type code (branches, commits, clone/push) sans dépendre d'un git système ni d'un stockage fichier. | Implémentation smart-HTTP maison à maintenir ; les objets git vivent dans la même base que le reste. |
-| Artefacts adressés par contenu + pointeurs git | Un seul exemplaire par contenu, dédupliqué entre runs/nœuds ; le clone reste léger. | GC nécessaire (fenêtre de fraîcheur pour ne pas réclamer un upload en cours). |
+| Artefacts adressés par contenu (`artifact_blobs`) + bytes réels committés dans git | Un seul exemplaire par contenu côté base, dédupliqué entre runs/nœuds ; le `git clone` récupère le vrai fichier (ouvrable hors-ligne). | Duplication assumée entre `artifact_blobs` et les blobs git ; GC nécessaire (fenêtre de fraîcheur pour ne pas réclamer un upload en cours). |
 | Binaire unique packagé (`pkg`) | Déploiement « pose-et-lance » ; embarque `groovyExec.jar`. | Épinglé sur la cible Node 18 (backlog : passer à 20/22). |
 
 Voir [todo.md](../todo.md) pour le backlog complet des limites connues et du durcissement prévu.
