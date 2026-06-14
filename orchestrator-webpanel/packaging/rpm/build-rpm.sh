@@ -26,7 +26,7 @@ fi
 echo ">> Building ${PREFIX} from ref '${REF}' (archiving ${ARCHIVE_REF})"
 
 # Spec Version: must match .version (tarball prefix + %prep dir depend on it).
-SPEC_VER="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/${NAME}.spec")"
+SPEC_VER="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/${NAME}.spec" | tr -d ' \t\r\n')"
 if [ "$SPEC_VER" != "$VERSION" ]; then
   echo "ERROR: spec Version ($SPEC_VER) != .version ($VERSION). Sync them." >&2
   exit 1

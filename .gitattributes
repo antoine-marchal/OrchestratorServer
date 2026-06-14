@@ -1,0 +1,11 @@
+# Force LF on files consumed by Linux tooling (RPM build, shell scripts) so a
+# Windows checkout/commit can't inject CRLF. CRLF here breaks build-rpm.sh's
+# version check and leaves a stray \r in the spec's Version: tag.
+*.sh        text eol=lf
+*.spec      text eol=lf
+.version    text eol=lf
+*.service   text eol=lf
+*.mjs       text eol=lf
+
+# Windows-only scripts stay CRLF.
+*.bat       text eol=crlf
