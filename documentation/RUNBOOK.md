@@ -21,10 +21,10 @@ build-worker.bat            :: release/orchestrator-worker-win.exe + -linux
 
 Chaque script : compile le TypeScript, package avec `@yao-pkg/pkg`, et copie le `.env.example` correspondant dans `release/`. `groovyExec.jar` est embarqué dans le binaire et extrait à côté de lui au premier lancement.
 
-Avant tout, appliquez une version à tous les `package.json` + `.version` :
+Avant tout, appliquez une version à tous les `package.json` + `.version` (la version vit dans le fichier [`.version`](../.version) à la racine) :
 
 ```bat
-set-version.bat 3.2.4
+set-version.bat <version>   :: ou éditez .version puis lancez set-version.bat sans argument
 ```
 
 ---

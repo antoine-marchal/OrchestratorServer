@@ -124,7 +124,7 @@ Git smart-HTTP lives outside `/api/v1`, under `/git/:flowId` (HTTP Basic: login 
 
 ## Features
 
-**Flow Editor** — drag-and-drop node graph with Monaco-powered code editor. Supports JavaScript (inline), JS Backend, Python, Groovy, PowerShell, Batch, Playwright, and sub-flow nodes. Goto/condition nodes enable branching.
+**Flow Editor** — drag-and-drop node graph with Monaco-powered code editor. Supports JavaScript (inline), JS Backend, Python, Groovy, PowerShell, Batch, Shell, and sub-flow nodes (Playwright browser automation runs inside JS nodes — it is not a separate node type). Goto/condition nodes enable branching.
 
 **Git versioning** — every flow is an in-DB git repo. Editor saves become commits (amend-or-new-commit heuristic), you work on **branches**, and you can `git clone`/`pull`/`push` a flow over smart-HTTP. Flow versions (snapshots) coexist with the git history.
 

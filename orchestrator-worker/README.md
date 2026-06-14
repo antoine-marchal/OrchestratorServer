@@ -6,25 +6,25 @@ Remote execution agent for the Orchestrator platform. Self-registers with the ce
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Orchestrator Server  (orchestrator-webpanel)        │
-│                                                      │
+│  Orchestrator Server  (orchestrator-webpanel)       │
+│                                                     │
 │  ┌──────────┐   ┌──────────┐   ┌─────────────────┐  │
-│  │  Flow DB  │──►│ Executor │──►│  Worker Router  │  │
+│  │  Flow DB │──►│ Executor │──►│  Worker Router  │  │
 │  └──────────┘   └──────────┘   └────────┬────────┘  │
-└───────────────────────────────────────── │ ──────────┘
-                                           │ HTTP polling
-┌───────────────────────────────────────── │ ──────────┐
-│  orchestrator-worker                     │           │
-│                                          ▼           │
+└──────────────────────────────────────── │ ──────────┘
+                                          │ HTTP polling
+┌──────────────────────────────────────── │ ──────────┐
+│  orchestrator-worker                    │           │
+│                                         ▼           │
 │  ┌──────────┐   ┌──────────┐   ┌─────────────────┐  │
 │  │  agent   │──►│  poll()  │◄──│   /workers/:id  │  │
 │  └──────────┘   └────┬─────┘   │   /jobs         │  │
 │                      │         └─────────────────┘  │
-│               ┌──────▼──────┐                        │
-│               │ executeNode │                        │
-│               │  (per lang) │                        │
-│               └─────────────┘                        │
-└──────────────────────────────────────────────────────┘
+│               ┌──────▼──────┐                       │
+│               │ executeNode │                       │
+│               │  (per lang) │                       │
+│               └─────────────┘                       │
+└─────────────────────────────────────────────────────┘
 ```
 
 1. On startup the agent registers with the orchestrator via `POST /api/v1/workers/register` and receives a bearer token used for every other call.
@@ -38,15 +38,17 @@ Remote execution agent for the Orchestrator platform. Self-registers with the ce
 
 | Type | Runtime | Notes |
 |---|---|---|
-| `javascript` / `jsbackend` | Node.js (current process's `node`) | ESM module, has access to `input`, `output`, named variables |
+| `javascript` / `jsbackend` | Node.js (current process's `node`) | ESM module, has access to `input`, `output`, named variables. Playwright is bundled — `require('playwright')` for browser automation. |
 | `python` | `python` on `$PATH` | Reads/writes JSON via temp files; variables round-tripped as JSON |
 | `groovy` | `java -jar groovyExec.jar` | Requires Java 11+; `groovyExec.jar` must be present |
 | `powershell` | `powershell.exe` (Win) / `pwsh` (Linux/Mac) | Variables loaded from JSON; output via `$env:OUTPUT` file path |
 | `batch` | `cmd.exe` | Windows only; variables exported as `%VAR%` env vars |
-| `bash` / `shell` | `bash` / `sh` on `$PATH` | POSIX shells; variables exported as env vars |
-| `playwright` | Node.js + Playwright Chromium | Requires `playwright` browser binaries (`npx playwright install`) |
+| `shell` / `bash` | `bash` | **Linux/Mac only** (Windows worker errors — use Powershell/Batch); variables + `INPUT`/`OUTPUT` exported as env vars, output read from `$OUTPUT` file or stdout |
 | `variable` | — | Returns the named variable value; no subprocess |
 | `comment` / `goto` | — | Pass-through; no execution |
+
+> There is no first-class `playwright` node type — browser automation runs inside
+> a `javascript`/`jsbackend` node via the bundled `playwright` package.
 
 Each runner:
 - Wraps user code with boilerplate that injects `input` and named flow variables.
@@ -94,10 +96,27 @@ The worker appears in the orchestrator UI (`/workers`) within a few seconds of s
 ```
 orchestrator-worker/
 ├── src/
-│   ├── agent.ts              # Registration, polling, heartbeat, job dispatch
-│   └── executor/
-│       └── nodeExecutor.ts   # Per-language child-process runners
-├── groovyExec.jar            # Bundled Groovy runtime shim
+│   ├── agent.ts               # Entry point: wires config, transport, lifecycle, poller
+│   ├── config.ts              # Env-var config
+│   ├── lifecycle.ts           # Register / deregister / heartbeat
+│   ├── poller.ts              # Long-poll loop for pending jobs
+│   ├── transport/
+│   │   └── httpClient.ts      # Authenticated HTTP calls to the server
+│   ├── jobs/
+│   │   ├── jobRunner.ts       # Per-job orchestration (download artifacts → run → report)
+│   │   ├── artifacts.ts       # Artifact download + extraction
+│   │   └── secrets.ts         # Secret resolution
+│   └── runtimes/
+│       ├── index.ts           # Node type → runtime registry + executeNode dispatcher
+│       ├── processRunner.ts   # Shared child-process spawn/stream/timeout
+│       ├── shared.ts          # Inbox temp-file helpers
+│       ├── jsRuntime.ts       # javascript / jsbackend
+│       ├── pythonRuntime.ts   # python
+│       ├── groovyRuntime.ts   # groovy
+│       ├── powershellRuntime.ts # powershell
+│       ├── batchRuntime.ts    # batch
+│       └── shellRuntime.ts    # shell / bash
+├── groovyExec.jar             # Bundled Groovy runtime shim
 ├── package.json
 └── tsconfig.json
 ```
@@ -108,7 +127,8 @@ orchestrator-worker/
 |---|---|
 | **Java 11+** | Groovy nodes (`java` on `$PATH`) |
 | **Python** | Python nodes (`python` on `$PATH`) |
-| **Playwright browsers** | Playwright nodes — run `npx playwright install chromium` once |
+| **bash** | Shell nodes (Linux/Mac only) |
+| **Playwright browsers** | Browser automation inside JS nodes — run `npx playwright install chromium` once (`playwright` is bundled) |
 | **PowerShell / pwsh** | PowerShell nodes |
 
 If a runtime is missing the job fails with a clear error; other node types are unaffected.
@@ -122,6 +142,7 @@ Flow variables are injected into each script before execution and captured back 
 - **Groovy**: variables parsed from JSON via `JsonSlurper`; captured back via `JsonOutput`.
 - **PowerShell**: loaded from a JSON file via `ConvertFrom-Json`; captured back via `ConvertTo-Json`.
 - **Batch**: simple string variables only, passed as `SET NAME=value` lines; no capture back.
+- **Shell**: string/number variables exported as env vars (plus `INPUT`/`OUTPUT`); no capture back — output is read from the `$OUTPUT` file or stdout.
 
 ## Security Notes
 

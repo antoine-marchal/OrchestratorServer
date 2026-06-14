@@ -131,9 +131,9 @@ Un flux peut transporter des **artefacts** : des fichiers attachés au flux lui-
 
 **Upload / download.** L'éditeur envoie un artefact en **binaire brut** (`POST /flows/:id/artifacts`, corps `application/octet-stream`, nom dans `?name=` — limite `ARTIFACT_UPLOAD_LIMIT`, 1 Go par défaut) pour éviter l'inflation base64 et le parseur JSON. Le téléchargement passe par `GET /flows/:id/artifacts/:sha/raw` (streamé, respectant la backpressure) ou `…/:sha` (base64). Comme le base64 gonfle toujours les payloads de job, c'est l'une des raisons de monter `JSON_BODY_LIMIT` (serveur) et `WORKER_MAX_HTTP_SIZE` (worker).
 
-**Versionné dans git.** Les artefacts sont aussi committés dans le dépôt git du flux (voir §4.bis), mais en **pointeur** (style git-LFS) : le blob git ne contient que le `sha256`, pas les bytes. Un `git clone` récupère donc le pointeur, pas le fichier.
+**Versionné dans git.** Les artefacts sont aussi committés dans le dépôt git du flux (voir §4.bis) en **bytes réels** : le blob git contient le fichier complet, pas seulement le `sha256`. Un `git clone` récupère donc le **vrai fichier**, ouvrable directement dans le dossier cloné — y compris pour un artefact uploadé via l'UI. Les bytes sont **aussi** adressés par contenu dans `artifact_blobs` pour les chemins frontend/worker (duplication assumée). Les anciens commits stockaient un **pointeur** style git-LFS (`sha256` seul, pas les bytes) — encore lu en rétro-compatibilité, et re-homé dans `artifact_blobs` à la lecture.
 
-**Garbage collection.** Le janitor (balayage `JANITOR_INTERVAL_MS`, 5 min) supprime les blobs qu'aucun `worker_job`, aucun `flow`, ni aucun pointeur git ne référence. Les blobs/chunks plus jeunes que `ARTIFACT_GC_MIN_AGE_MS` (10 min) ne sont jamais réclamés, pour ne pas courir contre un upload en cours.
+**Garbage collection.** Le janitor (balayage `JANITOR_INTERVAL_MS`, 5 min) supprime les blobs qu'aucun `worker_job`, aucun `flow`, ni aucun artefact committé dans git ne référence. Les blobs/chunks plus jeunes que `ARTIFACT_GC_MIN_AGE_MS` (10 min) ne sont jamais réclamés, pour ne pas courir contre un upload en cours.
 
 **Cycle de vie d'un run** (`extractArtifacts` / `cleanupArtifacts` dans `nodeExecutor.ts`) :
 
@@ -181,7 +181,7 @@ Chaque flux est un **dépôt git complet** vivant en base (`infra/git/*`). Pas d
 ```
 nodes/<titreCamel>.<ext>     un fichier par nœud feuille — contenu = data.code (.ps1/.py/.js/.groovy/…)
 sessions/<titreCamel>/        un dossier par nœud de type 'flow' — son sous-graphe, récursivement
-artifacts/<name>              un pointeur par artefact (sha256, pas les bytes — style git-LFS)
+artifacts/<name>              un fichier par artefact (bytes réels — `git clone` récupère le fichier ; anciens commits : pointeur sha256 style git-LFS, encore lu)
 relations.json                structure du graphe (nœuds sans le code externalisé + edges + meta + maps id→chemin)
 ```
 
@@ -194,6 +194,12 @@ Les noms de fichiers dérivent du libellé du nœud (camelCase) ; `relations.jso
 
 L'amend ne touche **que** les commits d'autosave de l'UI (préfixe `Save by `) — jamais un commit venu d'un `git push`, d'un checkpoint manuel, d'une restauration ou d'un import.
 
+**État transitoire non persisté.** Avant tout PUT/commit, l'éditeur normalise le graphe (`utils/flowSanitize.ts`, `sanitizeNodesForSave`) pour retirer l'état d'UI et de run de React Flow — il n'est **ni** envoyé en base/git **ni** compté comme une modification, donc il ne déclenche aucun autosave/commit. Ces champs ne vivent que dans le `localStorage` de la session (le canvas les retrouve après un rechargement) :
+- niveau nœud : `selected`, `dragging`, `resizing`, `positionAbsolute`, `width`, `height`, `draggable` ;
+- `data` du nœud : `executionStatus`, `executionAttempt`, `output` (résultat d'exécution du nœud), `executionTime`.
+
+Le même `sanitizeNodesForSave` sert d'empreinte (« le graphe a-t-il vraiment changé ? ») et de filtre de sauvegarde, donc tous les chemins d'écriture (autosave, snapshot manuel, passage en session principale) restent cohérents.
+
 **Branches** (`flowCommit.ts`, routes `/flows/:id/branches*`). Un flux porte une `activeBranch` (défaut `main`) ; l'exécuteur lance toujours le HEAD de la branche active, matérialisé dans le document. On crée une branche depuis le HEAD courant ou un commit/branche explicite, on bascule (`checkout` → re-matérialise le HEAD dans le doc), et on **rework** une branche autour d'un commit : `mode: 'head'` = `reset --hard` (jette les descendants), `mode: 'root'` = fait du commit la nouvelle racine (jette les ancêtres). Les objets git devenus inatteignables et les blobs d'artefacts orphelins sont GC'd dans la foulée.
 
 **Variantes (« subrows »).** Un flux peut déclarer des `variants[]` = `{ id, workerId, branch }` : la même définition de flux exécutée avec un worker et/ou une branche différents, lançable et **planifiable indépendamment**. À l'exécution, `POST /flows/:id/execute` accepte des overrides `{ workerId, branch }` ; les planifications/triggers d'une variante portent `variantId` + `workerId` + `branch` (le cronScheduler évite les « ghost runs » des variantes supprimées).
@@ -204,7 +210,7 @@ L'amend ne touche **que** les commits d'autosave de l'UI (préfixe `Save by `) �
 git clone http://<login>:<apikey>@<host>:<PORT>/git/<flowId> mon-flux
 ```
 
-L'auth est en **HTTP Basic** : login + **clé API** (les bodies git sont binaires `application/x-git-*`). Les trois endpoints (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`) sont implémentés maison — `report-status`, dépaquetage des thin-packs et upload-pack arbitraire, ce que `@fusebit/cloud-git` ne fournissait pas. Un `push` met à jour le flux : l'arbre poussé est relu en document de flux, les pointeurs d'artefacts sont résolus, et un nouveau commit devient le HEAD de la branche.
+L'auth est en **HTTP Basic** : login + **clé API** (les bodies git sont binaires `application/x-git-*`). Les trois endpoints (`/info/refs`, `/git-upload-pack`, `/git-receive-pack`) sont implémentés maison — `report-status`, dépaquetage des thin-packs et upload-pack arbitraire, ce que `@fusebit/cloud-git` ne fournissait pas. Un `push` met à jour le flux : l'arbre poussé est relu en document de flux, les bytes d'artefacts sous `artifacts/` sont re-homés dans `artifact_blobs` (adressage par contenu), et un nouveau commit devient le HEAD de la branche.
 
 ---
 
@@ -258,7 +264,7 @@ Deux types d'identifiants, tous deux via l'en-tête `Authorization` (`middleware
 | Secrets résolus au moment de l'exécution | Le clair n'est jamais stocké dans le JSON du flux ni dans les logs. | Le serveur détient la clé maître AES ; protégez `ORCHESTRATOR_MASTER_KEY`. |
 | Réconciliation des exécutions orphelines au boot | La carte des jobs en mémoire est remise à zéro au redémarrage ; sans ça, les runs tournent à l'infini. | Un run interrompu par un redémarrage est marqué FAILED, pas repris. |
 | Dépôt git par flux, en base (pas de `.git`) | Versionnage type code (branches, commits, clone/push) sans dépendre d'un git système ni d'un stockage fichier. | Implémentation smart-HTTP maison à maintenir ; les objets git vivent dans la même base que le reste. |
-| Artefacts adressés par contenu + pointeurs git | Un seul exemplaire par contenu, dédupliqué entre runs/nœuds ; le clone reste léger. | GC nécessaire (fenêtre de fraîcheur pour ne pas réclamer un upload en cours). |
+| Artefacts adressés par contenu (`artifact_blobs`) + bytes réels committés dans git | Un seul exemplaire par contenu côté base, dédupliqué entre runs/nœuds ; le `git clone` récupère le vrai fichier (ouvrable hors-ligne). | Duplication assumée entre `artifact_blobs` et les blobs git ; GC nécessaire (fenêtre de fraîcheur pour ne pas réclamer un upload en cours). |
 | Binaire unique packagé (`pkg`) | Déploiement « pose-et-lance » ; embarque `groovyExec.jar`. | Épinglé sur la cible Node 18 (backlog : passer à 20/22). |
 
 Voir [todo.md](../todo.md) pour le backlog complet des limites connues et du durcissement prévu.

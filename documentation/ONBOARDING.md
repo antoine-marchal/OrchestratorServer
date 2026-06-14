@@ -111,7 +111,7 @@ Où regarder quand vous devez changer quelque chose :
 ### Construire un binaire packagé
 
 ```bat
-set-version.bat 3.2.4       :: applique la version partout
+set-version.bat <version>   :: applique .version à tous les package.json (ou éditez .version puis lancez sans argument)
 build-server.bat            :: -> release/orchestrator-server-*
 build-worker.bat            :: -> release/orchestrator-worker-*
 ```

@@ -45,6 +45,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM --- Presentation deck: bump the displayed version badges (vX.Y.Z) ---
+REM Patches both the editable source and the generated standalone so a version
+REM bump doesn't require a full rebuild. Content edits still need build-standalone.
+node -e "const fs=require('fs');const v='%VER%';const files=['documentation/presentation/Orchestrator Presentation.html','documentation/presentation/Orchestrator Presentation - Standalone.html'];for(const f of files){if(!fs.existsSync(f)){console.log('  '+f+' : (absent, skipped)');continue;}let s=fs.readFileSync(f,'utf8');const before=s;s=s.replace(/v\d+\.\d+\.\d+/g,'v'+v);if(s!==before){fs.writeFileSync(f,s);console.log('  '+f+' : version badges -> v'+v);}else{console.log('  '+f+' : no version badge found');}}"
+
+if errorlevel 1 (
+  echo.
+  echo  ERROR: failed to patch presentation deck version.
+  pause
+  exit /b 1
+)
+
 echo.
 echo  Done.
 echo.

@@ -25,6 +25,7 @@ import { useUIStore } from '../store/uiStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';
 import { flowsApi } from '../api';
 import { openFlowNodeEditor, makeFlowNode } from '../store/flowNodeContent';
+import { sanitizeNodesForSave, sanitizeEdgesForSave } from '../utils/flowSanitize';
 import CustomNode from './node/CustomNode';
 import Console from './Console';
 import { useTheme } from '../context/ThemeContext';
@@ -178,15 +179,11 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
   const forceSaveVersion = useCallback(async () => {
     if (!flowId) return;
     try {
-      const cleanNodes = (getNodes() as any[]).map((n) => {
-        const c = JSON.parse(JSON.stringify(n));
-        // Drop transient React Flow UI state so manual snapshots don't bake in
-        // selection/drag/measure noise (keeps git diffs to real edits).
-        delete c.selected; delete c.dragging; delete c.resizing; delete c.positionAbsolute;
-        if (c?.data) { delete c.data.executionStatus; delete c.data.executionAttempt; }
-        return c;
-      });
-      const cleanEdges = (getEdges() as any[]).map((e) => { const c = { ...e }; delete (c as any).selected; return c; });
+      // Use the shared sanitizer so manual snapshots strip exactly the same
+      // transient UI/run state as autosave (selection, drag, measured size,
+      // output, executionTime, …) — keeps git diffs to real edits.
+      const cleanNodes = sanitizeNodesForSave(getNodes() as any[]);
+      const cleanEdges = sanitizeEdgesForSave(getEdges() as any[]);
       // Await the persist so the snapshot below sees the latest graph.
       await flowsApi.update(flowId, { nodes: cleanNodes, edges: cleanEdges });
       // Keep the local library mirror in sync (drives the version-diff view).

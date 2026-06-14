@@ -42,6 +42,7 @@ import ExecutionTimeline from '../execution/ExecutionTimeline';
 import { lastNodeDurations, computeNodeRuns, type NodeRun } from '../../utils/execTiming';
 import { scopeKeyOf, scopeMatchesOrDescends, nodeIdOfScope, NODE_SCOPE_SEP } from '../../utils/execScope';
 import { ansiToHtml } from '../../utils/ansiToHtml';
+import { sanitizeNodesForSave, sanitizeEdgesForSave, normContent } from '../../utils/flowSanitize';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -870,25 +871,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   );
 };
 
-// React Flow tags nodes/edges with transient UI state — selection, drag,
-// measured size — that is NOT graph content. Selecting or dragging-highlighting
-// a node must not count as an edit, otherwise autosave fires (and even persists
-// `selected: true`) on every click. Strip it everywhere we fingerprint or save.
-const stripNode = (n: any) => {
-  const { selected, dragging, resizing, positionAbsolute, ...rest } = n;
-  return { ...rest, data: { ...n.data, executionStatus: undefined, executionAttempt: undefined } };
-};
-const stripEdge = (e: any) => {
-  const { selected, ...rest } = e;
-  return rest;
-};
-export const sanitizeNodesForSave = (nodes: any[]): any[] => (nodes || []).map(stripNode);
-export const sanitizeEdgesForSave = (edges: any[]): any[] => (edges || []).map(stripEdge);
-
-// Stable string fingerprint of a graph, ignoring transient run overlays + UI
-// state, so we can tell whether the editor session matches the server def.
-const normContent = (nodes: any[], edges: any[]): string =>
-  JSON.stringify({ nodes: sanitizeNodesForSave(nodes), edges: sanitizeEdgesForSave(edges) });
+// Graph sanitizers + fingerprint live in utils/flowSanitize so every save path
+// (autosave here, manual version in FlowEditor, set-main in SessionTabs) strips
+// the exact same transient UI/run state.
 
 const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
   const { nodes, edges } = useFlowStore();

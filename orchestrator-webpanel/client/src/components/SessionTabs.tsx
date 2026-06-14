@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSessionStore } from '../store/sessionStore';
 import { useFlowLibraryStore } from '../store/flowLibraryStore';
+import { sanitizeNodesForSave, sanitizeEdgesForSave } from '../utils/flowSanitize';
 import { X, Plus, Edit2, Server, GripVertical, KeyRound, Star } from 'lucide-react';
 import { apiClient } from '../utils/apiClient';
 import {
@@ -295,13 +296,9 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
     // to the server flow definition so cron / API triggers / Execute run it.
     const s = useSessionStore.getState().sessions.find(x => x.id === sessionId);
     if (s?.isMain && s.linkedFlowId) {
-      const cleanNodes = (s.flowState.nodes || []).map(n => ({
-        ...n,
-        data: { ...n.data, executionStatus: undefined, executionAttempt: undefined },
-      }));
       useFlowLibraryStore.getState().updateFlow(s.linkedFlowId, {
-        nodes: cleanNodes,
-        edges: s.flowState.edges || [],
+        nodes: sanitizeNodesForSave(s.flowState.nodes || []),
+        edges: sanitizeEdgesForSave(s.flowState.edges || []),
       });
     }
   };

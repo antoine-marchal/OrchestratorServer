@@ -53,8 +53,8 @@ Needs `rpm-build`, `nodejs >= 18`, `npm`, and a JDK if you use Groovy nodes.
 ```bash
 # From repo root. Builds from HEAD (uncommitted files are NOT included).
 ./orchestrator-webpanel/packaging/rpm/build-rpm.sh
-# or build from a tag:
-./orchestrator-webpanel/packaging/rpm/build-rpm.sh v3.2.7
+# or build from a tag (use the value in the repo .version file):
+./orchestrator-webpanel/packaging/rpm/build-rpm.sh v<version>
 ```
 
 Output: `~/rpmbuild/RPMS/x86_64/orchestrator-webpanel-<version>-1*.x86_64.rpm`.
@@ -87,7 +87,7 @@ Output: `~/rpmbuild/RPMS/x86_64/orchestrator-webpanel-<version>-1*.x86_64.rpm`.
 ## Install & configure
 
 ```bash
-sudo dnf install ./orchestrator-webpanel-3.2.7-1*.x86_64.rpm
+sudo dnf install ./orchestrator-webpanel-<version>-1*.x86_64.rpm
 ```
 
 `%post` auto-generates the three **machine secrets** the server fatally

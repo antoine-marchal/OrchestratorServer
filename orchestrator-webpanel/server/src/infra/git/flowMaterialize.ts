@@ -406,9 +406,10 @@ async function readLevel(flowId: string, treeSha: string): Promise<FlowFields> {
     }
   }
 
-  // artifacts/ — each git blob is a pointer to a sha256 in artifact_blobs.
-  // Legacy commits stored the raw bytes inline; detect that and surface them as
-  // {name,data} so fieldsToDoc re-homes them into artifact_blobs on read.
+  // artifacts/ — each git blob holds the artifact's real bytes (current format),
+  // surfaced as {name,data} so fieldsToDoc re-homes them into artifact_blobs.
+  // Legacy commits stored an LFS-style pointer blob (sha256 only); detect that
+  // and surface {name,sha} instead.
   const artifacts: ArtifactEntry[] = [];
   const artEntry = rootEntries.find((e) => e.name === 'artifacts' && e.mode === '40000');
   if (artEntry) {
@@ -418,8 +419,8 @@ async function readLevel(flowId: string, treeSha: string): Promise<FlowFields> {
         const blob = await getObject(flowId, fe.sha);
         if (!blob) continue;
         const sha = parseArtifactPointer(blob.data.toString('utf8'));
-        if (sha) artifacts.push({ name: fe.name, sha });
-        else artifacts.push({ name: fe.name, data: blob.data.toString('base64') }); // legacy inline
+        if (sha) artifacts.push({ name: fe.name, sha }); // legacy LFS-style pointer
+        else artifacts.push({ name: fe.name, data: blob.data.toString('base64') }); // real bytes (current)
       }
     }
   }
