@@ -54,6 +54,10 @@ under a dedicated unprivileged user with data under /var/lib/orchestrator-webpan
 # point it at the tracked JAR via GROOVY_JAR (absolute path) before pkg:linux.
 export GROOVY_JAR="$(pwd)/orchestrator-worker/groovyExec.jar"
 
+# Vite/tsc bundle the client in one Node process; the default ~2GB heap (Node 18)
+# OOMs ("Reached heap limit") on this build. Give it room.
+export NODE_OPTIONS="--max-old-space-size=4096"
+
 cd orchestrator-webpanel
 
 cd client
