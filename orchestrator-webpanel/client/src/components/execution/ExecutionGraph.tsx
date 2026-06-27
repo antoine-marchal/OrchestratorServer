@@ -10,7 +10,6 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, ChevronRight, ChevronDown } from 'lucide-react';
-import { apiClient, getJwt } from '../../utils/apiClient';
 import { NODE_TYPES } from '../../constants/nodeTypes';
 import { formatDurationShort } from '../../utils/execTiming';
 import { scopeKey } from '../../utils/execScope';
@@ -251,11 +250,12 @@ const nodeTypes = { execution: ExecutionNode };
 interface ExecutionGraphProps {
   executionId: string;
   flowDefinition?: { nodes: any[]; edges: any[] } | null;
-  workerBaseUrl?: string;
   selectedNodeId?: string | null;
   onNodeSelect?: (id: string | null) => void;
-  /** Fired whenever live per-node statuses change (id -> 'running'|'retrying'|'success'|'failed'|...). */
-  onStatusesChange?: (statuses: Record<string, string>) => void;
+  /** Live per-node status map (instance-scope key -> status), owned by the parent
+   *  via useNodeStatuses so the graph, timeline and node tree stay in sync even
+   *  when the graph panel is hidden. */
+  statuses?: Record<string, NodeStatus>;
   /** Per-node wall-clock duration in ms (derived from logs by the parent). */
   nodeDurations?: Record<string, number>;
 }
@@ -273,27 +273,17 @@ function parseInnerFlow(node: any): { nodes: any[]; edges: any[] } | null {
 export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   executionId,
   flowDefinition,
-  workerBaseUrl,
   selectedNodeId,
   onNodeSelect,
-  onStatusesChange,
+  statuses,
   nodeDurations,
 }) => {
-  const [nodeStatuses, setNodeStatuses] = useState<Record<string, NodeStatus>>({});
+  // Live status now flows in from the parent (useNodeStatuses) so the graph is a
+  // pure consumer — hiding it no longer starves the timeline/tree of statuses.
+  const nodeStatuses = statuses ?? {};
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const sseRef = useRef<EventSource | null>(null);
   const onNodeSelectRef = useRef(onNodeSelect);
   onNodeSelectRef.current = onNodeSelect;
-  const onStatusesChangeRef = useRef(onStatusesChange);
-  onStatusesChangeRef.current = onStatusesChange;
-
-  // Mirror the live status map up to the parent (used by the node tree).
-  useEffect(() => {
-    if (!onStatusesChangeRef.current) return;
-    const flat: Record<string, string> = {};
-    for (const [id, st] of Object.entries(nodeStatuses)) flat[id] = st.status;
-    onStatusesChangeRef.current(flat);
-  }, [nodeStatuses]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
@@ -308,7 +298,6 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   const nodeCache = useRef<Map<string, { sig: string; node: any }>>(new Map());
 
   useEffect(() => {
-    setNodeStatuses({});
     setExpanded({});
     nodeCache.current.clear();
   }, [executionId]);
@@ -510,39 +499,6 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
     setRfEdges([...baseEdges, ...gotoEdges]);
   }, [flowDefinition, nodeStatuses, visibleNodes, visibleNodeIds, visibleEdges]);
-
-  useEffect(() => {
-    if (!executionId) return;
-    const base = workerBaseUrl ?? apiClient.getBaseUrl().replace('/api/v1', '');
-    const jwt = getJwt();
-    const url = `${base}/api/v1/executions/${executionId}/stream${jwt ? `?token=${encodeURIComponent(jwt)}` : ''}`;
-
-    const es = new EventSource(url);
-    sseRef.current = es;
-
-    es.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        if (data.nodeId && data.status) {
-          // Key by node *instance* scope so A.F1 and B.F1 don't overwrite each
-          // other. Top-level nodes have no parentScope → key is just the id.
-          const key = scopeKey(data.parentScope, data.nodeId);
-          setNodeStatuses(prev => ({
-            ...prev,
-            [key]: {
-              status: data.status as NodeExecStatus,
-              attempt: data.attempt,
-              parentNodeId: data.parentNodeId ?? null,
-            },
-          }));
-        }
-      } catch { /* ignore parse errors */ }
-    };
-
-    es.onerror = () => { es.close(); };
-
-    return () => { es.close(); sseRef.current = null; };
-  }, [executionId, workerBaseUrl]);
 
   if (!flowDefinition?.nodes?.length) {
     return (

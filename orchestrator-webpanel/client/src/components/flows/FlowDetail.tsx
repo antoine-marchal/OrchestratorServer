@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
+import { useNodeStatuses, type NodeExecStatus } from '../../hooks/useNodeStatuses';
 import BranchSelect from './BranchSelect';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -227,9 +228,17 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   // `scope` is the full node-instance key (ancestor chain + id); `nodeId` is the
   // bare id used to scope the run's log window.
   const [selectedRun, setSelectedRun] = useState<{ scope: string; nodeId: string; idx: number; start: number; end: number } | null>(null);
-  // Live per-node execution status (fed by the SSE stream inside ExecutionGraph)
-  // so the node tree shows the same running/retrying/success/error colour code.
-  const [nodeStatuses, setNodeStatuses] = useState<Record<string, any>>({});
+  // Live per-node execution status (SSE stream, owned here via useNodeStatuses)
+  // so the graph, timeline and node tree all share the same running/retrying/
+  // success/error state — even when the graph panel is toggled off. `nodeStatuses`
+  // is the flattened (id -> status) view the timeline/tree consume; the graph
+  // takes the full map (status + attempt).
+  const nodeStatusMap = useNodeStatuses(selectedId);
+  const nodeStatuses = useMemo(() => {
+    const flat: Record<string, NodeExecStatus> = {};
+    for (const [id, st] of Object.entries(nodeStatusMap)) flat[id] = st.status;
+    return flat;
+  }, [nodeStatusMap]);
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [collapsedFlowNodes, setCollapsedFlowNodes] = useState<Set<string>>(new Set());
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -663,7 +672,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                           flowDefinition={graphDefinition}
                           selectedNodeId={selectedNodeId}
                           onNodeSelect={id => setSelectedNodeId(id)}
-                          onStatusesChange={setNodeStatuses}
+                          statuses={nodeStatusMap}
                           nodeDurations={nodeDurations}
                         />
                       </div>
