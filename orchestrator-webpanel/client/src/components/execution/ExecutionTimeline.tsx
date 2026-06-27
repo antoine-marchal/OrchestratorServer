@@ -122,7 +122,14 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
     const runsByNode = computeNodeRuns(exec.logs);
     const execDone = exec.status !== 'RUNNING' && exec.status !== 'QUEUED';
 
-    const flowStart = new Date(exec.startTime).getTime();
+    // Anchor the axis to the earliest activity. exec.startTime is the record's
+    // creation time, but a node's first log can predate it (worker dispatch /
+    // clock skew on the remote runtime) — when it does, that node's bar gets a
+    // negative offset and paints left of 0ms, over the label column. Shrink
+    // flowStart to the earliest run start, symmetric with the flowEnd expansion
+    // below, so every bar stays within the axis.
+    let flowStart = new Date(exec.startTime).getTime();
+    for (const list of runsByNode.values()) for (const r of list) if (r.start > 0) flowStart = Math.min(flowStart, r.start);
     let flowEnd = exec.endTime ? new Date(exec.endTime).getTime() : 0;
     for (const list of runsByNode.values()) for (const r of list) flowEnd = Math.max(flowEnd, r.end);
     if (!exec.endTime) flowEnd = Math.max(flowEnd, now);
