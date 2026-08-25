@@ -1,0 +1,86 @@
+{
+  "name": "Demo 02 - Conditional Routing",
+  "namespace": "demo",
+  "description": "Goto conditions, ordered rules, input forwarding, and multiple possible terminal branches.",
+  "nodes": [
+    {
+      "id": "node-score",
+      "type": "custom",
+      "position": { "x": 80, "y": 300 },
+      "data": {
+        "label": "Create scored result",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { customer: 'Ada', score: 82, evaluatedAt: new Date().toISOString() };",
+        "isStarterNode": true
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-router",
+      "type": "custom",
+      "position": { "x": 500, "y": 300 },
+      "data": {
+        "label": "Route by score",
+        "type": "goto",
+        "conditions": [
+          { "expr": "input && input.score >= 80", "goto": "node-approved", "forwardInput": true },
+          { "expr": "input && input.score >= 50", "goto": "node-review", "forwardInput": true },
+          { "expr": "true", "goto": "node-rejected", "forwardInput": true }
+        ]
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-approved",
+      "type": "custom",
+      "position": { "x": 950, "y": 80 },
+      "data": {
+        "label": "Approved branch",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { ...input, decision: 'APPROVED', reason: 'score >= 80' };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-review",
+      "type": "custom",
+      "position": { "x": 950, "y": 300 },
+      "data": {
+        "label": "Manual review branch",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { ...input, decision: 'REVIEW', reason: 'score between 50 and 79' };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-rejected",
+      "type": "custom",
+      "position": { "x": 950, "y": 520 },
+      "data": {
+        "label": "Rejected branch",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { ...input, decision: 'REJECTED', reason: 'score below 50' };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-comment",
+      "type": "comment",
+      "position": { "x": 480, "y": 20 },
+      "data": {
+        "label": "Branching behavior",
+        "type": "comment",
+        "value": "Goto rules are evaluated top-to-bottom. The first match wins and forwards the input directly to its target without running that target's graph predecessors."
+      },
+      "draggable": true
+    }
+  ],
+  "edges": [
+    { "id": "edge-score-router", "source": "node-score", "target": "node-router", "type": "smoothstep", "animated": true }
+  ],
+  "artifacts": []
+}

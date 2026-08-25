@@ -1,0 +1,1119 @@
+# Orchestrator `.or` file authoring guide for AI agents
+
+Purpose: teach an automated agent how to create a correct, portable, readable, and executable Orchestrator workflow file with the `.or` extension.
+
+This document describes the format implemented by this repository. Treat the source code as the ultimate authority if this guide and a future implementation diverge.
+
+===============================================================================
+1. EXECUTIVE SUMMARY
+===============================================================================
+
+An `.or` file is UTF-8 JSON. It is not a custom textual programming language and it must not contain comments, trailing commas, JavaScript object syntax, Markdown fences, or prose outside the JSON document.
+
+The smallest accepted file is:
+
+{
+  "nodes": [],
+  "edges": []
+}
+
+For a useful executable flow, populate `nodes` with React Flow node objects and `edges` with directed connections between their IDs.
+
+The canonical portable library form is:
+
+{
+  "name": "Example flow",
+  "namespace": "default",
+  "description": "What the flow does.",
+  "nodes": [],
+  "edges": [],
+  "artifacts": []
+}
+
+Hard parser requirements:
+
+- The document must be valid JSON.
+- The root must be an object.
+- `nodes` must be an array.
+- `edges` must be an array.
+
+Important: the current parser performs little structural validation beyond those requirements. A malformed graph can import successfully and still render incorrectly, execute incorrectly, or do nothing. An authoring agent must therefore enforce the stronger rules in this guide itself.
+
+Always prefer:
+
+- unique, stable string IDs;
+- `type: "custom"` for executable, variable, flow, and goto nodes;
+- `type: "comment"` for comment nodes;
+- finite numeric positions;
+- embedded source code rather than machine-specific paths;
+- exactly one intentional entry point;
+- edges that reference existing nodes;
+- no transient UI or execution fields;
+- no plaintext secrets.
+
+===============================================================================
+2. TWO COMPATIBLE DOCUMENT SHAPES
+===============================================================================
+
+2.1 Minimal editor-session shape
+
+The editor's direct Save/Load workflow writes and reads:
+
+{
+  "nodes": [ ... ],
+  "edges": [ ... ]
+}
+
+The direct loader ignores optional library metadata. Use this shape when the user only needs a graph that can be opened as an editor session.
+
+2.2 Enriched library import/export shape
+
+The flow library import/export workflow recognizes:
+
+{
+  "name": "Human-readable flow name",
+  "namespace": "default",
+  "description": "Purpose, inputs, outputs, and assumptions.",
+  "nodes": [ ... ],
+  "edges": [ ... ],
+  "artifacts": [ ... ]
+}
+
+Field behavior:
+
+- `name`: optional string. On library import, the filename without `.or` is the fallback.
+- `namespace`: optional string. The fallback is `"default"`.
+- `description`: optional string. The fallback is `""`.
+- `nodes`: graph nodes. Use an array even when empty.
+- `edges`: directed graph edges. Use an array even when empty.
+- `artifacts`: optional array. See the artifacts section.
+
+Scheduling, worker assignment, ownership, active branch, variants, timestamps, execution history, and database `_id` are server-side flow-record concerns, not part of the canonical portable `.or` export. Do not invent them in a generated `.or` file unless a separate API contract explicitly requests them.
+
+There is currently no top-level format version or `$schema` discriminator. Do not add one and assume the application will validate against it. Unknown top-level keys may survive some paths and disappear in others.
+
+===============================================================================
+3. CANONICAL NODE OBJECT
+===============================================================================
+
+A normal executable node should have this outer shape:
+
+{
+  "id": "node-fetch-users",
+  "type": "custom",
+  "position": { "x": 120, "y": 160 },
+  "data": {
+    "label": "Fetch users",
+    "type": "javascript",
+    "language": "javascript",
+    "code": "return input;"
+  },
+  "draggable": true
+}
+
+Required in practice:
+
+- `id`: non-empty unique string.
+- `type`: React Flow renderer type. Use `"custom"`, except comments use `"comment"`.
+- `position`: object with finite numeric `x` and `y`.
+- `data`: object.
+- `data.label`: non-empty human-readable string.
+- `data.type`: semantic node type described below.
+
+Recommended:
+
+- `draggable`: `true`.
+- `data.language`: the same value as `data.type` for script nodes.
+- `data.code`: string for script and embedded-flow nodes.
+- `data.value`: string for variable and comment nodes.
+
+3.1 ID rules
+
+The UI commonly creates IDs like `node-<timestamp>` and edge IDs like `e<timestamp>`, but manually authored descriptive IDs are valid and more maintainable.
+
+Use IDs matching this conservative pattern:
+
+  node-[a-z0-9][a-z0-9-]*
+
+Examples:
+
+- `node-input`
+- `node-normalize-users`
+- `node-route-success`
+
+Every node ID must be unique. Duplicate IDs are dangerous: the runtime's node map silently lets the later node replace the earlier node while the original still remains in the node array.
+
+Do not change an ID without also updating:
+
+- every edge `source` and `target`;
+- every goto condition's `goto` target or targets;
+- any external tooling that refers to that ID.
+
+3.2 Position and layout
+
+`position.x` and `position.y` affect only the canvas layout, not execution ordering. Use a left-to-right layout:
+
+- entry nodes near x = 100;
+- each subsequent stage 350-500 pixels farther right;
+- parallel branches separated vertically by 220-350 pixels;
+- comments above or below the nodes they explain.
+
+Avoid overlapping nodes. Position does not select the entry point and does not change edge ordering.
+
+3.3 Safe outer fields
+
+React Flow may accept additional presentation fields such as `style`, `hidden`, `className`, `zIndex`, `parentNode`, and `extent`. They are not necessary for a portable authored flow. Omit them unless the user specifically requests custom presentation.
+
+Do not generate transient fields:
+
+- node-level `selected`
+- node-level `dragging`
+- node-level `resizing`
+- node-level `positionAbsolute`
+- node-level `width`
+- node-level `height`
+- node-level `draggable` only if false is deliberately desired
+- `data.executionStatus`
+- `data.executionAttempt`
+- `data.output`
+- `data.executionTime`
+- `data.gotoDecision`
+- `data.jobId`
+
+These fields represent editor measurements, selection state, or results from a prior run. Persisting them makes files noisy and misleading. Some save paths sanitize them, but generated files should be clean at the source.
+
+===============================================================================
+4. EDGE OBJECTS AND DATA FLOW
+===============================================================================
+
+Canonical minimal edge:
+
+{
+  "id": "edge-input-to-transform",
+  "source": "node-input",
+  "target": "node-transform"
+}
+
+Optional visual form:
+
+{
+  "id": "edge-input-to-transform",
+  "source": "node-input",
+  "target": "node-transform",
+  "sourceHandle": null,
+  "targetHandle": null,
+  "type": "smoothstep",
+  "animated": true,
+  "style": {
+    "stroke": "#64748b",
+    "strokeWidth": 2
+  }
+}
+
+Only `source` and `target` affect server traversal. Presentation fields are optional.
+
+Strong edge rules:
+
+- `id` must be a unique non-empty string.
+- `source` must equal an existing node ID.
+- `target` must equal an existing node ID.
+- Avoid duplicate source-target edges unless their duplication is intentional.
+- Avoid self-edges.
+- Use a DAG for ordinary data processing.
+- Use goto deliberately for conditional jumps or bounded loops.
+- Keep the `edges` array in the intended predecessor order.
+
+Input propagation:
+
+- A node with one incoming edge receives that predecessor's output directly.
+- A node with multiple incoming edges receives an array of predecessor outputs.
+- The array order follows the order of matching edges in the top-level `edges` array.
+- A root node receives the flow input.
+- A variable node produces its parsed configured value.
+- A goto node normally passes its input through as its own result.
+- A goto rule with `forwardInput: true` explicitly injects its input into jump targets.
+
+There is no named-port data binding in server execution. `sourceHandle` and `targetHandle` are visual metadata only in the current executor.
+
+===============================================================================
+5. ENTRY POINT AND TRAVERSAL SEMANTICS
+===============================================================================
+
+The runtime builds incoming/outgoing maps and finds roots: nodes with no incoming edges.
+
+Entry selection is not "run every root." It chooses one entry:
+
+1. If any node has `data.isStarterNode` truthy, the first such node in `nodes` is the entry.
+2. Otherwise, if goto nodes exist, it finds the first goto in node-array order and begins at the earliest-created root in that goto's ancestry.
+3. Otherwise, it begins at the first root in node-array order.
+4. If no valid entry exists, execution fails with `No valid entry point found.`
+
+Consequences for an authoring agent:
+
+- Prefer exactly one node with `isStarterNode: true` for unambiguous flows.
+- Set `isStarterNode: false` nowhere; omit it on all non-starters to reduce noise.
+- A starter's predecessors are not automatically executed before it.
+- Disconnected roots are not automatically executed.
+- Put the desired root first if you intentionally omit a starter.
+- Do not rely on canvas coordinates for execution order.
+
+Ordinary traversal is sequential depth-first traversal. Before a node executes, unexecuted graph predecessors are ensured, except when a goto directly jumps to a target. Outgoing branches are processed in `edges` array order, not concurrently.
+
+The runtime limits traversal to 1,000 steps and 1,000 visits per node. Do not use these limits as loop control. Design explicit termination conditions and avoid accidental cycles.
+
+The flow's returned output is the result of the last non-goto node executed.
+
+===============================================================================
+6. COMMON `data` FIELDS
+===============================================================================
+
+These fields apply to some or all semantic node types:
+
+- `label` (string): displayed name. For variables, it also determines the injected variable identifier.
+- `type` (string): semantic execution type.
+- `language` (string): editor language mode; recommended for script nodes.
+- `code` (string): inline source or, for an embedded flow, a JSON string containing `{nodes,edges}`.
+- `codeFilePath` (string): optional external code path. Avoid in portable files.
+- `value` (string): configured variable value or comment text.
+- `isStarterNode` (boolean): explicit flow entry marker.
+- `flowRef` (string): ID of a persisted library flow.
+- `linkedSessionId` (string): client-local link to an editor session.
+- `sessionName` (string): display/folder name for a linked nested session.
+- `isRelativePath` (boolean): legacy/path-oriented flow-node metadata.
+- `conditions` (array): goto rules.
+- `onError` (`"stop"`, `"continue"`, or `"retry"`): node failure policy.
+- `retry` (object): retry configuration.
+
+Fields named `input` and `output` can appear in UI/runtime objects, but do not use them to statically wire flow data. Edges determine input, and runtime execution determines output.
+
+===============================================================================
+7. NODE TYPES
+===============================================================================
+
+Current authoring types:
+
+- `javascript`
+- `jsbackend`
+- `groovy`
+- `batch`
+- `powershell`
+- `python`
+- `shell`
+- `variable`
+- `comment`
+- `flow`
+- `goto`
+
+The runtime also accepts `bash` as an alias of `shell`, but the current creation UI exposes `shell`. Prefer `shell`.
+
+Do not generate legacy or unknown types such as `constant`. Unknown types currently fall through to the JavaScript runner, which is permissive implementation behavior, not a stable format contract.
+
+-------------------------------------------------------------------------------
+7.1 Variable
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-api-limit",
+  "type": "custom",
+  "position": { "x": 100, "y": 100 },
+  "data": {
+    "label": "api_limit",
+    "type": "variable",
+    "value": "100",
+    "isStarterNode": true
+  },
+  "draggable": true
+}
+
+`value` is always stored as a string. At runtime the engine tries `JSON.parse(value)`:
+
+- `"100"` becomes number 100.
+- `"true"` becomes boolean true.
+- `"null"` becomes null.
+- `"[1,2]"` becomes an array.
+- `"{\"mode\":\"fast\"}"` becomes an object.
+- non-JSON text such as `hello` remains a string.
+
+Every variable node is also collected into a shared flow-variable dictionary before traversal, whether or not the variable node is connected.
+
+The variable key is derived from `label` by replacing every non-ASCII letter, digit, or underscore with `_`.
+
+Examples:
+
+- `API Limit` -> `API_Limit`
+- `user-count` -> `user_count`
+- `a.b` -> `a_b`
+
+Use labels that are valid identifiers already. Avoid empty labels, leading digits, reserved language words, quotes, and two labels that sanitize to the same name. Script wrappers create language variables from these names; an invalid identifier can make a node fail.
+
+-------------------------------------------------------------------------------
+7.2 Inline JavaScript (`javascript`)
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-double",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Double value",
+    "type": "javascript",
+    "language": "javascript",
+    "code": "const value = Number(input);\nconsole.log('doubling', value);\nreturn value * 2;"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- Runs in-process as an async JavaScript function.
+- `input` contains predecessor output, predecessor-output array, or flow input.
+- `console.log`, `console.warn`, and `console.error` are captured.
+- `return <value>` produces the node output.
+- `await` is allowed.
+- Flow variables are injected as local `let` bindings and captured after execution.
+- `undefined`, `null`, and empty-string returns normalize to null.
+
+Security: this is executable code with the privileges of the orchestrator server. Generate it only from trusted requirements. Never interpolate untrusted text into code.
+
+-------------------------------------------------------------------------------
+7.3 Backend JavaScript (`jsbackend`)
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-backend-js",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Backend JS",
+    "type": "jsbackend",
+    "language": "jsbackend",
+    "code": "console.log('input', input);\noutput = { ok: true, received: input };"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- Runs as a generated `.mjs` child process.
+- `input` is a JavaScript value embedded into the generated module.
+- Assign the result to `output`; a top-level `return` is not the contract.
+- ESM imports are supported subject to installed packages and runtime resolution.
+- Flow variables are injected and serializable modifications are captured.
+- It can run on an assigned remote worker.
+
+Use `javascript` for lightweight in-process transformations and `jsbackend` when a separate Node process, imports, or process isolation is needed.
+
+-------------------------------------------------------------------------------
+7.4 Python
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-python",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Python transform",
+    "type": "python",
+    "language": "python",
+    "code": "print('received', input)\noutput = {'count': len(input) if isinstance(input, list) else 1}"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- `input` is loaded from JSON.
+- Assign a JSON-serializable value to `output`.
+- Flow variables are injected as Python variables and captured back through JSON.
+- Printing writes logs, not the primary result.
+- Requires a `python` executable in the execution environment.
+- It can run on an assigned remote worker.
+
+-------------------------------------------------------------------------------
+7.5 Groovy
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-groovy",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Groovy transform",
+    "type": "groovy",
+    "language": "groovy",
+    "code": "println \"received ${input}\"\noutput = [ok: true, received: input]"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- `input` is reconstructed from serialized input.
+- Assign the result to `output`.
+- Flow variables are injected and captured.
+- Output is JSON-serialized when possible.
+- Requires Java and the bundled Groovy execution JAR.
+- It can run on an assigned remote worker.
+
+-------------------------------------------------------------------------------
+7.6 PowerShell
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-powershell",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "PowerShell step",
+    "type": "powershell",
+    "language": "powershell",
+    "code": "$value = $env:INPUT\nWrite-Output \"received $value\"\nSet-Content -Path $env:OUTPUT -Value $value"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- Input is available as string environment variable `$env:INPUT`.
+- The output-file path is `$env:OUTPUT`.
+- Write the primary result to `$env:OUTPUT` with `Set-Content`.
+- If no output file content exists, stdout is used as a fallback.
+- JSON-looking output is parsed as JSON when valid.
+- Flow variables are injected as PowerShell variables and captured.
+- Windows uses `powershell.exe`; non-Windows uses `pwsh`.
+- It can run on an assigned remote worker.
+
+-------------------------------------------------------------------------------
+7.7 Batch
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-batch",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Batch step",
+    "type": "batch",
+    "language": "batch",
+    "code": "echo %INPUT% > %OUTPUT%"
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- Input is `%INPUT%`.
+- Output-file path is `%OUTPUT%`.
+- Write the primary result to `%OUTPUT%`; stdout is the fallback.
+- Object/array JSON output is parsed when valid.
+- Scalar flow variables are exposed as environment variables.
+- Variable mutations are not captured back by this runner.
+- Requires Windows `cmd.exe`.
+- It can run on an assigned remote worker.
+
+-------------------------------------------------------------------------------
+7.8 Shell
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-shell",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Shell step",
+    "type": "shell",
+    "language": "shell",
+    "code": "printf '%s' \"$INPUT\" > \"$OUTPUT\""
+  },
+  "draggable": true
+}
+
+Runtime contract:
+
+- Input is string environment variable `$INPUT`.
+- Output-file path is `$OUTPUT`.
+- Write the primary result to `$OUTPUT`; stdout is the fallback.
+- Valid JSON output is parsed.
+- Scalar flow variables are exported as environment variables.
+- Variable mutations are not captured back.
+- The script runs with Bash and `set -e`.
+- Local shell nodes are rejected on Windows; use PowerShell or Batch there.
+- It can run on an assigned remote worker with a compatible OS.
+
+-------------------------------------------------------------------------------
+7.9 Comment
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-comment-overview",
+  "type": "comment",
+  "position": { "x": 100, "y": -120 },
+  "data": {
+    "label": "Overview",
+    "type": "comment",
+    "value": "This flow normalizes an incoming list and returns a summary."
+  },
+  "draggable": true
+}
+
+Comments are canvas documentation. Do not connect them with execution edges and do not mark them as starters. Keep their text in `data.value`.
+
+-------------------------------------------------------------------------------
+7.10 Goto
+-------------------------------------------------------------------------------
+
+{
+  "id": "node-route",
+  "type": "custom",
+  "position": { "x": 850, "y": 100 },
+  "data": {
+    "label": "Route by status",
+    "type": "goto",
+    "conditions": [
+      {
+        "expr": "input && input.ok === true",
+        "goto": "node-success",
+        "forwardInput": true
+      },
+      {
+        "expr": "input && input.retryable === true",
+        "goto": ["node-log-retry", "node-retry"],
+        "forwardInput": true
+      }
+    ]
+  },
+  "draggable": true
+}
+
+Rules are evaluated in array order; the first truthy rule with at least one valid-looking target wins.
+
+Rule fields:
+
+- `expr`: JavaScript expression string. It can use `input`, `ninput`, and injected flow-variable names.
+- `goto`: one target node ID string or an array of target node ID strings.
+- `forwardInput`: when true, injects the goto node's input into each selected target.
+
+`ninput` is `input` converted to a number when `input` is a non-empty numeric string; otherwise it equals `input`.
+
+If no rule matches, traversal follows the goto node's ordinary outgoing edges. If a rule matches, the runtime jumps directly to its targets and deliberately does not execute those targets' graph predecessors merely to satisfy the jump.
+
+Goto expressions execute as JavaScript in the orchestrator process. Never put untrusted content in `expr`. Keep expressions side-effect free.
+
+Do not set a goto as a starter in the UI-oriented canonical form; the current UI does not offer that control. A manually authored file could do so, but it is clearer to make an ordinary upstream node the starter.
+
+-------------------------------------------------------------------------------
+7.11 Nested flow
+-------------------------------------------------------------------------------
+
+Portable embedded form:
+
+{
+  "id": "node-subflow",
+  "type": "custom",
+  "position": { "x": 500, "y": 100 },
+  "data": {
+    "label": "Normalize subflow",
+    "type": "flow",
+    "code": "{\"nodes\":[{\"id\":\"node-inner\",\"type\":\"custom\",\"position\":{\"x\":100,\"y\":100},\"data\":{\"label\":\"Inner\",\"type\":\"javascript\",\"language\":\"javascript\",\"code\":\"return input;\",\"isStarterNode\":true},\"draggable\":true}],\"edges\":[]}",
+    "isRelativePath": false
+  },
+  "draggable": true
+}
+
+The `code` value is a JSON string, not a nested JSON object. Its decoded content must itself be valid JSON with `nodes` and `edges` arrays.
+
+Three reference mechanisms exist, in precedence order:
+
+1. `flowRef`: persisted library-flow ID; authoritative and live on the server.
+2. `linkedSessionId`: live editor-session ID; client-local.
+3. `code`: embedded `{nodes,edges}` snapshot; portable fallback.
+
+Portability rules:
+
+- For a standalone `.or`, prefer embedded `code`.
+- A `flowRef` only works in an installation where that flow ID exists and is accessible.
+- A `linkedSessionId` is not portable outside the browser/session state that created it.
+- If retaining `flowRef` or `linkedSessionId`, also include valid embedded `code` as a fallback when possible.
+- Library export resolves available `flowRef` nodes into embedded `code` and removes `flowRef`.
+- Avoid putting a filesystem path in `code`; current server flow execution expects JSON content.
+
+Generate nested JSON safely by serializing the inner object once with a JSON serializer, then assigning that resulting string to the outer node's `data.code`, then serializing the outer document. Do not hand-escape complex nested code.
+
+===============================================================================
+8. ERROR HANDLING AND RETRIES
+===============================================================================
+
+Applicable to executable nodes other than goto, comment, and variable:
+
+{
+  "onError": "retry",
+  "retry": {
+    "maxAttempts": 3,
+    "delaySec": 5,
+    "backoff": "exponential"
+  }
+}
+
+Policies:
+
+- `stop`: default. Abort the flow when the node fails.
+- `continue`: log the failure, use null as the node result, and continue.
+- `retry`: attempt execution up to `maxAttempts`; if all attempts fail, stop.
+
+Retry fields:
+
+- `maxAttempts`: total attempts including the first; integer >= 1. Runtime default is 3 when retry is selected and the value is absent/invalid.
+- `delaySec`: base delay in seconds; number >= 0. Runtime default is 1 second when absent/invalid, while the UI initially proposes 5 seconds.
+- `backoff`: `fixed`, `linear`, or `exponential`; runtime default is `fixed`.
+
+Delay before retry number N, where the first retry is N=1:
+
+- fixed: `delaySec`
+- linear: `delaySec * N`
+- exponential: `delaySec * 2^(N-1)`
+
+Legacy `retry.delayMs` is still recognized and takes precedence over `delaySec`, but do not generate it in new files.
+
+Only add retry to idempotent or safely repeatable operations. Retrying a node that charges a card, sends a message, or mutates external state can duplicate effects.
+
+===============================================================================
+9. VARIABLES, INPUTS, OUTPUTS, AND SECRETS
+===============================================================================
+
+9.1 Flow variables
+
+Variable nodes initialize a shared dictionary before execution. Script runners inject those variables using language-appropriate bindings. JavaScript, Backend JS, Python, Groovy, and PowerShell can capture serializable changes back into the shared dictionary. Batch and Shell receive scalar variables as environment variables but do not capture changes.
+
+Prefer JSON-serializable values only: null, booleans, finite numbers, strings, arrays, and plain objects. Avoid cyclic objects, functions, class instances, open handles, dates that have not been converted to strings, and binary data.
+
+9.2 Inputs and join nodes
+
+Do not put expected upstream data in `data.input`. Inputs are computed at runtime from edges.
+
+For a multi-input node, write code that expects an array. Example JavaScript join:
+
+  const [users, permissions] = input;
+  return { users, permissions };
+
+9.3 Outputs
+
+Do not persist example results in `data.output`. Explain the output contract in `description` or a nearby comment node. Each runner has its own output convention documented above.
+
+9.4 Secrets
+
+Reference secrets in node code with:
+
+  ${{ secrets.SECRET_NAME }}
+
+The server resolves placeholders immediately before local execution; workers resolve them immediately before remote execution. Never place plaintext credentials, tokens, passwords, private keys, or connection strings directly in `.or` files.
+
+Use stable uppercase names such as `API_TOKEN` or `DB_PASSWORD`. Do not log resolved secret values.
+
+===============================================================================
+10. EXTERNAL CODE PATHS AND WORKING DIRECTORY
+===============================================================================
+
+`data.codeFilePath` can point to an external script. If present and resolvable, the runtime reads it and uses its contents instead of inline code.
+
+Avoid this field in portable `.or` files because:
+
+- absolute paths are machine-specific;
+- relative paths depend on execution base path;
+- server and worker filesystems differ;
+- a browser-imported filename is not a server filesystem path.
+
+Prefer inline `data.code`. Use `codeFilePath` only when deployment explicitly places the file at a known location on every execution target. If used, include a meaningful inline fallback only if the runtime/deployment contract guarantees how precedence should work; current runtime replaces inline code when the external file exists.
+
+===============================================================================
+11. ARTIFACTS
+===============================================================================
+
+Library `.or` exports may include:
+
+{
+  "artifacts": [
+    { "name": "config.json", "sha": "<content-addressed hash>" }
+  ]
+}
+
+The server also accepts inline import/legacy entries:
+
+{
+  "artifacts": [
+    { "name": "config.json", "data": "<base64-encoded bytes>" }
+  ]
+}
+
+Rules:
+
+- `name` must be a filename string.
+- `sha` refers to a blob already present in the target server's artifact store.
+- `data` is base64-encoded file bytes and is portable but can make the JSON large.
+- Do not provide plaintext file contents in `data`; encode bytes as base64.
+- Avoid duplicate artifact names. Runtime merging is name-based.
+- Never use artifact names containing traversal components such as `..`.
+- Treat artifact contents as potentially executable/untrusted.
+
+A `{name,sha}` export is not self-contained when moved to a different server that lacks that blob. For a truly portable generated file, either use inline `{name,data}` when the import path supports it or arrange artifact upload separately.
+
+The direct editor-session loader only loads `nodes` and `edges`; use library import when artifacts and metadata matter.
+
+===============================================================================
+12. COMPLETE RECOMMENDED EXAMPLE
+===============================================================================
+
+This flow accepts input, reads a configured multiplier, transforms the input, then routes success/failure-like results. It demonstrates metadata, a variable, explicit starter, JavaScript, goto, retry, comments, and clean edges.
+
+{
+  "name": "Multiply and route",
+  "namespace": "examples",
+  "description": "Converts the incoming value to a number, multiplies it by the configured multiplier, and returns a structured result.",
+  "nodes": [
+    {
+      "id": "node-multiplier",
+      "type": "custom",
+      "position": { "x": 100, "y": 180 },
+      "data": {
+        "label": "multiplier",
+        "type": "variable",
+        "value": "2"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-validate",
+      "type": "custom",
+      "position": { "x": 100, "y": 420 },
+      "data": {
+        "label": "Validate input",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "const value = Number(input);\nif (!Number.isFinite(value)) throw new Error('Input must be numeric');\nreturn value;",
+        "isStarterNode": true,
+        "onError": "stop"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-multiply",
+      "type": "custom",
+      "position": { "x": 520, "y": 420 },
+      "data": {
+        "label": "Multiply",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { ok: true, value: input * multiplier };",
+        "onError": "retry",
+        "retry": {
+          "maxAttempts": 3,
+          "delaySec": 1,
+          "backoff": "fixed"
+        }
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-route",
+      "type": "custom",
+      "position": { "x": 920, "y": 420 },
+      "data": {
+        "label": "Route result",
+        "type": "goto",
+        "conditions": [
+          {
+            "expr": "input && input.ok === true",
+            "goto": "node-finish",
+            "forwardInput": true
+          }
+        ]
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-finish",
+      "type": "custom",
+      "position": { "x": 1320, "y": 420 },
+      "data": {
+        "label": "Return result",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "console.log('result', input);\nreturn input;"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-comment",
+      "type": "comment",
+      "position": { "x": 500, "y": 120 },
+      "data": {
+        "label": "Configuration",
+        "type": "comment",
+        "value": "The multiplier variable is globally available to script nodes even though it is not connected by an edge."
+      },
+      "draggable": true
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-validate-multiply",
+      "source": "node-validate",
+      "target": "node-multiply",
+      "type": "smoothstep"
+    },
+    {
+      "id": "edge-multiply-route",
+      "source": "node-multiply",
+      "target": "node-route",
+      "type": "smoothstep"
+    }
+  ],
+  "artifacts": []
+}
+
+There is intentionally no ordinary edge from `node-route` to `node-finish`: the goto rule performs the jump. Adding such an edge would also make `node-finish` the no-match fallback, which may or may not be desired.
+
+===============================================================================
+13. DETERMINISTIC AUTHORING PROCEDURE
+===============================================================================
+
+When asked to generate an `.or`, follow this exact procedure:
+
+1. Restate the workflow internally as stages, inputs, outputs, external effects, and failure behavior.
+2. Choose the target shape: minimal editor session or enriched library file. Prefer enriched unless the user requests minimal.
+3. Select one explicit starter node.
+4. Assign stable descriptive node IDs before writing edges or goto rules.
+5. Choose the correct semantic node type for each stage.
+6. Write each node's code using that runner's exact input/output convention.
+7. Define variable nodes for non-secret configuration.
+8. Replace sensitive values with `${{ secrets.NAME }}` placeholders.
+9. Add directed edges in intended predecessor and traversal order.
+10. Add goto rules only where normal graph branching is insufficient.
+11. Add `onError` and retry only after considering idempotency.
+12. Embed nested flows as serialized JSON strings; do not hand-escape them.
+13. Lay out nodes left-to-right with non-overlapping finite positions.
+14. Remove runtime/UI state and machine-specific paths.
+15. Serialize with a real JSON serializer and UTF-8 encoding.
+16. Validate using the checklist below.
+17. Save with a `.or` suffix.
+
+If generating programmatically, build an in-memory object and call the language's JSON serializer. Never generate JSON by concatenating unescaped user strings.
+
+===============================================================================
+14. VALIDATION CHECKLIST FOR AGENTS
+===============================================================================
+
+JSON validity:
+
+- [ ] Exactly one JSON object; no Markdown fences or surrounding prose.
+- [ ] UTF-8 text.
+- [ ] Double-quoted keys and strings.
+- [ ] No comments, trailing commas, `NaN`, `Infinity`, or `undefined`.
+- [ ] Parsing and re-serializing succeeds.
+
+Top-level structure:
+
+- [ ] `nodes` exists and is an array.
+- [ ] `edges` exists and is an array.
+- [ ] Metadata values, when present, have the documented types.
+- [ ] `artifacts`, when present, is an array.
+
+Nodes:
+
+- [ ] Every node is an object.
+- [ ] Every `id` is a non-empty unique string.
+- [ ] Every renderer `type` is `custom` or `comment` as appropriate.
+- [ ] Every `position.x` and `position.y` is a finite number.
+- [ ] Every `data` is an object with a non-empty label and supported semantic type.
+- [ ] Script nodes have string `code` and a matching `language`.
+- [ ] Variable values are strings and labels sanitize to unique valid identifiers.
+- [ ] Comment nodes are unconnected.
+- [ ] Nested-flow `code` decodes to an object containing array `nodes` and `edges`.
+- [ ] No transient UI/execution fields are present.
+
+Edges and gotos:
+
+- [ ] Every edge ID is unique.
+- [ ] Every edge source and target exists.
+- [ ] No accidental self-edges or duplicates.
+- [ ] Multi-input edge order matches the expected input-array order.
+- [ ] Every goto target exists.
+- [ ] Every goto expression is syntactically valid, side-effect free JavaScript.
+- [ ] Goto loops have an explicit, reachable exit and cannot exceed practical bounds.
+
+Execution:
+
+- [ ] Exactly one intentional entry point exists.
+- [ ] Every intended executable node is reachable from that entry by edges or goto.
+- [ ] No unintended disconnected execution component exists.
+- [ ] Joins correctly handle arrays of predecessor outputs.
+- [ ] Script output follows the selected runner's convention.
+- [ ] Values crossing process boundaries are JSON-serializable.
+- [ ] OS/runtime dependencies match the execution server or assigned worker.
+- [ ] External side effects have appropriate retry/idempotency behavior.
+
+Security and portability:
+
+- [ ] No plaintext secrets.
+- [ ] Secret placeholders use `${{ secrets.NAME }}`.
+- [ ] No untrusted code or goto expressions.
+- [ ] No machine-specific absolute path unless explicitly required.
+- [ ] `flowRef` and `linkedSessionId` are avoided or have an embedded fallback.
+- [ ] Artifact references will exist on the destination, or artifact bytes are transferred separately.
+
+===============================================================================
+15. RECOMMENDED MACHINE VALIDATION PSEUDOCODE
+===============================================================================
+
+function validateOrFile(document):
+    assert document is a non-null object and not an array
+    assert document.nodes is an array
+    assert document.edges is an array
+
+    nodeIds = empty set
+    starterCount = 0
+
+    for node in document.nodes:
+        assert node is an object
+        assert node.id is a non-empty string
+        assert node.id not in nodeIds
+        add node.id to nodeIds
+        assert node.type in ["custom", "comment"]
+        assert finiteNumber(node.position.x)
+        assert finiteNumber(node.position.y)
+        assert node.data is an object
+        assert node.data.label is a non-empty string
+        assert node.data.type is a supported semantic type
+        if node.data.isStarterNode is true: starterCount += 1
+        if script node: assert node.data.code is a string
+        if variable node: assert node.data.value is a string
+        if flow node with code:
+            inner = JSON.parse(node.data.code)
+            recursively validate inner nodes and edges
+
+    assert starterCount <= 1
+
+    edgeIds = empty set
+    for edge in document.edges:
+        assert edge is an object
+        assert edge.id is a non-empty unique string
+        assert edge.source in nodeIds
+        assert edge.target in nodeIds
+        assert edge.source != edge.target unless intentional
+        add edge.id to edgeIds
+
+    for goto node in document.nodes:
+        for rule in node.data.conditions or []:
+            assert rule.expr is a non-empty string
+            targets = rule.goto if array else [rule.goto]
+            assert targets is non-empty
+            assert every target is in nodeIds
+            assert rule.forwardInput is boolean when present
+
+    determine entry using documented runtime rules
+    assert entry exists when an executable flow is expected
+    traverse edges and goto targets from entry
+    report unreachable executable nodes
+    report cycles
+    report disconnected roots
+    report variable-name collisions after sanitization
+
+===============================================================================
+16. COMMON FAILURE MODES
+===============================================================================
+
+File imports but does nothing:
+
+- `nodes` and `edges` passed shallow validation, but there is no valid entry.
+- The intended component is not the first root and no starter is marked.
+- Nodes are disconnected.
+- A comment or irrelevant root appears first.
+
+Node receives unexpected array:
+
+- It has multiple incoming edges. Their outputs are combined in edge-array order.
+
+Node receives stale or null data:
+
+- An upstream node returned nothing.
+- `onError: "continue"` converted an upstream failure to null.
+- A goto jump skipped the target's normal predecessors.
+- `forwardInput` was false.
+
+Variable is missing or causes syntax failure:
+
+- The label sanitized to an invalid language identifier.
+- Two labels sanitized to the same key.
+- The script expects a name different from the sanitized label.
+- The value is not JSON-serializable after mutation.
+
+Nested flow fails:
+
+- `data.code` is an object instead of a JSON string.
+- The inner string is invalid JSON.
+- The inner object lacks `nodes` or `edges` arrays.
+- Only a stale `linkedSessionId` was provided.
+- `flowRef` does not exist or is inaccessible on the target server.
+
+Script succeeds but output is wrong:
+
+- JavaScript should `return` a value.
+- Backend JS, Python, and Groovy should assign `output`.
+- PowerShell, Batch, and Shell should write to the provided output-file environment variable.
+- Printed/logged text is not always the primary result.
+
+Works locally but not remotely:
+
+- Required executable/package/artifact is absent on the worker.
+- An absolute path belongs to the server machine.
+- Shell is used on Windows.
+- Batch is used on non-Windows.
+- A referenced flow uses a different unavailable/forbidden worker.
+
+JSON is rejected:
+
+- Markdown fences were included.
+- Newlines or quotes inside `code` were not escaped by a JSON serializer.
+- A trailing comma or JavaScript-only value was used.
+
+===============================================================================
+17. SOURCE-OF-TRUTH MAP IN THIS REPOSITORY
+===============================================================================
+
+Use these files when updating this guide after implementation changes:
+
+- `orchestrator-webpanel/client/src/types/node.ts`: node-data TypeScript interface.
+- `orchestrator-webpanel/client/src/constants/nodeTypes.ts`: UI-exposed node types and starter code.
+- `orchestrator-webpanel/client/src/components/FlowEditor.tsx`: node/edge construction.
+- `orchestrator-webpanel/client/src/store/operations/fileOperations.ts`: minimal `.or` Save/Load behavior.
+- `orchestrator-webpanel/client/src/store/flowNodeContent.ts`: nested-flow reference precedence and serialization.
+- `orchestrator-webpanel/client/src/utils/flowSanitize.ts`: fields removed from persistent flow state.
+- `orchestrator-webpanel/client/src/components/flows/FlowsList.tsx`: enriched library import/export.
+- `orchestrator-webpanel/server/src/domain/execution/flowExecutor.ts`: parsing, entry selection, traversal, goto, retries, and input propagation.
+- `orchestrator-webpanel/server/src/domain/execution/nodeExecutor.ts`: language runners, variables, working directory, and outputs.
+- `orchestrator-webpanel/server/src/domain/secrets/secretService.ts`: secret-placeholder syntax and resolution.
+- `orchestrator-webpanel/server/src/data/models/Flow.ts`: persisted library-flow record.
+- `orchestrator-webpanel/server/src/infra/git/flowMaterialize.ts`: git materialization of nodes, nested sessions, relations, and artifacts.
+- `orchestrator-webpanel/server/tests/flowParser.test.ts`: minimum parser expectations.
+
+===============================================================================
+18. FINAL GENERATION CONTRACT
+===============================================================================
+
+When the requested deliverable is an `.or` file, output the file itself as valid JSON, not an explanation. If commentary is useful, put it outside the file in the surrounding chat, never inside the JSON.
+
+Unless the user says otherwise:
+
+- use the enriched top-level shape;
+- use descriptive IDs;
+- mark exactly one starter;
+- use clean left-to-right positions;
+- include no transient fields;
+- embed code and nested flows;
+- include `artifacts: []`;
+- use secret placeholders;
+- validate all references and reachability;
+- format JSON with two-space indentation;
+- terminate the file with a newline;
+- name it `<descriptive-kebab-case-name>.or`.
+
+The quality bar is not merely "the importer accepts it." The file must be deterministic, portable within its declared runtime assumptions, visually understandable, secure, and semantically correct when executed.

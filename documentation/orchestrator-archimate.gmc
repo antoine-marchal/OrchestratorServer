@@ -1,0 +1,199 @@
+model {
+  coucheMetier = grouping "Couche Métier" {
+    concepteur = businessActor "Concepteur de flux" {
+      description "Crée et modifie les flux d'automatisation dans l'éditeur visuel"
+    }
+    operateur = businessActor "Opérateur" {
+      description "Suit les exécutions, consulte les logs, relance les flux"
+    }
+    admin = businessActor "Administrateur" {
+      description "Gère les utilisateurs, les rôles RBAC et les workers"
+    }
+    conception = businessProcess "Concevoir un flux" {
+      description "Édition du graphe de nœuds, code par nœud, artefacts, variantes"
+    }
+    planification = businessProcess "Planifier les exécutions" {
+      description "Définition des déclencheurs cron, événement fichier ou API"
+    }
+    execAuto = businessProcess "Exécuter les flux" {
+      description "Exécution automatique ou à la demande des flux planifiés"
+    }
+    supervision = businessProcess "Superviser les exécutions" {
+      description "Suivi temps réel, historique des runs, diagnostic des échecs"
+    }
+    administration = businessProcess "Administrer la plateforme" {
+      description "Comptes, rôles, clés API, enregistrement des workers"
+    }
+    evtCron = businessEvent "Échéance cron"
+    evtApi = businessEvent "Déclenchement HTTP (trigger)"
+    svcAutomatisation = businessService "Service d'automatisation de flux" {
+      description "Automatisation polyglotte, distribuée et versionnée comme du code"
+    }
+  }
+  coucheApplicative = grouping "Couche Applicative" {
+    ihm = applicationComponent "Interface Web" {
+      description "Éditeur de graphe (React Flow), éditeur de code (Monaco), stores Zustand"
+      technology "React 18 + Vite"
+    }
+    serveur = applicationComponent "Serveur Orchestrator" {
+      description "Architecture en couches http → domain → data (+ infra)"
+      technology "Express / TypeScript"
+      routes = applicationComponent "Routes API" {
+        description "Contrôleurs fins : flows, executions, jobs, workers, schedules, secrets, users"
+        technology "http/routes"
+      }
+      authRbac = applicationComponent "Auth & RBAC" {
+        description "JWT + clés API, rôles admin/operator/viewer, validation zod"
+        technology "http/middleware"
+      }
+      executeur = applicationComponent "Exécuteur de flux" {
+        description "Parcours du DAG, retry, timeouts, sous-flux, artefacts"
+        technology "domain/execution"
+      }
+      routeurWorker = applicationComponent "Routeur de workers" {
+        description "Dispatch des nœuds distants (REMOTE_TYPES) vers le worker assigné"
+        technology "domain/workers"
+      }
+      svcSecrets = applicationComponent "Service de secrets" {
+        description "Résolution de ${{ secrets.NAME }} juste avant exécution"
+        technology "domain/secrets"
+      }
+      planificateur = applicationComponent "Planificateur" {
+        description "Planifications node-cron + eventBus (surveillance inbox)"
+        technology "infra/scheduler"
+      }
+      gitFlux = applicationComponent "Versionnage git des flux" {
+        description "Un dépôt git interne par flux : commits, branches, clone/push smart-HTTP"
+        technology "infra/git"
+      }
+      repos = applicationComponent "Repositories" {
+        description "Un repo typé par entité, abstraction ICollection NeDB/MongoDB"
+        technology "data/repositories"
+      }
+    }
+    workerApp = applicationComponent "Worker Orchestrator" {
+      description "Sans état : s'enregistre, long-poll les jobs, exécute, remonte les logs"
+      technology "Node.js"
+      poller = applicationComponent "Poller" {
+        description "Boucle de long-poll, heartbeat, cycle de vie"
+        technology "lifecycle / poller"
+      }
+      runtimes = applicationComponent "Runtimes" {
+        description "Un runtime par langage derrière une interface commune"
+        technology "js / python / groovy / powershell / batch / shell"
+      }
+    }
+    svcApi = applicationService "API REST /api/v1"
+    svcSse = applicationService "Logs temps réel (SSE)"
+    svcExec = applicationService "Service d'exécution de flux"
+    svcPlanif = applicationService "Service de planification"
+    svcGit = applicationService "Clone / push git (smart-HTTP)"
+    doFlux = dataObject "Flux (nodes + edges)"
+    doExec = dataObject "Exécution"
+    doArtefact = dataObject "Artefact (adressé par contenu)"
+    doSecret = dataObject "Secret (AES-256-GCM)"
+    doUser = dataObject "Utilisateur & rôles"
+  }
+  coucheTechnique = grouping "Couche Technique" {
+    serveurHote = technologyNode "Serveur d'hébergement" {
+      description "Auto-hébergé, livré en binaire unique"
+      nodejsSrv = systemSoftware "Node.js (serveur)"
+      bdd = systemSoftware "Base de données" {
+        description "NeDB embarqué par défaut ; MongoDB si MONGO_URI est défini"
+        technology "NeDB / MongoDB"
+      }
+    }
+    machineWorker = technologyNode "Machine worker" {
+      description "Aucun port entrant : le worker interroge le serveur"
+      nodejsWrk = systemSoftware "Node.js (worker)"
+      moteurs = systemSoftware "Moteurs d'exécution" {
+        description "Processus enfants lancés par le worker"
+        technology "node / python / java / pwsh / cmd"
+      }
+    }
+    reseau = communicationNetwork "HTTP/HTTPS" {
+      description "Long-poll worker → serveur, SSE serveur → navigateur"
+    }
+  }
+
+  concepteur -> conception : assignment
+  concepteur -> planification : assignment
+  operateur -> supervision : assignment
+  admin -> administration : assignment
+  evtCron -> execAuto : triggering
+  evtApi -> execAuto : triggering
+  conception -> svcAutomatisation : realization anchor _ t
+  execAuto -> svcAutomatisation : realization anchor _ b
+  svcApi -> conception : serving
+  svcApi -> administration : serving
+  svcPlanif -> planification : serving
+  svcExec -> execAuto : serving
+  svcSse -> supervision : serving
+  svcGit -> conception : serving
+  routes -> svcApi : realization
+  routes -> svcSse : realization
+  executeur -> svcExec : realization
+  planificateur -> svcPlanif : realization
+  gitFlux -> svcGit : realization
+  svcApi -> ihm : serving
+  svcSse -> ihm : serving
+  authRbac -> routes : serving
+  routes -> executeur : triggering
+  planificateur -> executeur : triggering
+  svcSecrets -> executeur : serving
+  repos -> executeur : serving
+  repos -> gitFlux : serving
+  executeur -> routeurWorker : flow "Nœuds distants (jobs)"
+  routeurWorker -> poller : flow "Jobs / logs (long-poll)"
+  poller -> runtimes : triggering
+  routeurWorker -> workerApp : assignment
+  repos -> doFlux : access
+  repos -> doExec : access
+  repos -> doUser : access
+  svcSecrets -> doSecret : access
+  gitFlux -> doFlux : access
+  executeur -> doArtefact : access
+  authRbac -> doUser : access
+  nodejsSrv -> serveur : serving
+  bdd -> repos : serving
+  nodejsWrk -> workerApp : serving
+  moteurs -> runtimes : serving
+  serveurHote -> reseau : association
+  machineWorker -> reseau : association
+}
+
+views {
+  view vueGlobale "Orchestrator — Vue en couches" {
+    include *
+    autolayout bt
+    concepteur at 304 48
+    coucheMetier at 368 -80
+    svcAutomatisation at 544 48
+    operateur at 832 48
+    admin at 1040 48
+    conception at 230 288
+    planification at 638 288
+    execAuto at 480 528
+    supervision at 832 288
+    administration at 1040 288
+    evtCron at 368 432
+    evtApi at 592 432
+    ihm at 488 76
+    coucheMetier size 1536 618
+  }
+  view vueMetier "Couche Métier" {
+    include coucheMetier, coucheMetier.*
+    autolayout lr
+    svcAutomatisation at 484 136
+    execAuto at 276 248
+    planification at 276 136
+  }
+  view vueApplicative "Couche Applicative" {
+    include coucheApplicative, coucheApplicative.*
+    autolayout lr
+  }
+  view vueTechnique "Couche Technique" {
+    include coucheTechnique, coucheTechnique.*, serveur, workerApp, repos, runtimes
+    autolayout bt
+  }
+}

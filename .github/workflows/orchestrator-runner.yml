@@ -1,0 +1,42 @@
+name: orchestrator-runner compatibility
+
+on:
+  push:
+    paths:
+      - "orchestrator-runner/**"
+      - "orchestrator-worker/src/runtimes/**"
+      - "orchestrator-webpanel/server/src/domain/execution/flowExecutor.ts"
+      - "orchestrator-webpanel/server/src/domain/execution/nodeExecutor.ts"
+      - "demo-flows/**"
+      - ".github/workflows/orchestrator-runner.yml"
+  pull_request:
+    paths:
+      - "orchestrator-runner/**"
+      - "orchestrator-worker/src/runtimes/**"
+      - "orchestrator-webpanel/server/src/domain/execution/flowExecutor.ts"
+      - "orchestrator-webpanel/server/src/domain/execution/nodeExecutor.ts"
+      - "demo-flows/**"
+      - ".github/workflows/orchestrator-runner.yml"
+
+jobs:
+  compatibility:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - run: cargo fmt --manifest-path orchestrator-runner/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path orchestrator-runner/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path orchestrator-runner/Cargo.toml
+      - run: cargo build --release --manifest-path orchestrator-runner/Cargo.toml
+      - name: Exercise file and embedded modes
+        shell: pwsh
+        run: |
+          $ci = Join-Path $env:RUNNER_TEMP "orchestrator-runner"
+          New-Item -ItemType Directory -Force -Path $ci | Out-Null
+          Copy-Item orchestrator-runner/target/release/runner.exe "$ci/runner.exe"
+          & "$ci/runner.exe" "$pwd/demo-flows/demo-01-core-data-pipeline.or"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$ci/runner.exe"
+          exit $LASTEXITCODE

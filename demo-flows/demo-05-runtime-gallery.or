@@ -1,0 +1,126 @@
+{
+  "name": "Demo 05 - Runtime Gallery",
+  "namespace": "demo",
+  "description": "JavaScript, Backend JS, Python, Groovy, PowerShell, Batch, and Shell runner conventions in one annotated flow. Shell is configured to continue on Windows.",
+  "nodes": [
+    {
+      "id": "node-start",
+      "type": "custom",
+      "position": { "x": 60, "y": 320 },
+      "data": {
+        "label": "JavaScript input",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return 'runtime-gallery';",
+        "isStarterNode": true
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-powershell",
+      "type": "custom",
+      "position": { "x": 430, "y": 320 },
+      "data": {
+        "label": "PowerShell",
+        "type": "powershell",
+        "language": "powershell",
+        "code": "Write-Output \"PowerShell received $env:INPUT\"\nSet-Content -Path $env:OUTPUT -Value \"$env:INPUT-powershell\""
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-batch",
+      "type": "custom",
+      "position": { "x": 800, "y": 320 },
+      "data": {
+        "label": "Batch",
+        "type": "batch",
+        "language": "batch",
+        "code": "echo Batch received %INPUT%\necho %INPUT%-batch > %OUTPUT%"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-python",
+      "type": "custom",
+      "position": { "x": 1170, "y": 320 },
+      "data": {
+        "label": "Python",
+        "type": "python",
+        "language": "python",
+        "code": "print('Python received', input)\noutput = {'runtime': 'python', 'previous': input}"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-groovy",
+      "type": "custom",
+      "position": { "x": 1540, "y": 320 },
+      "data": {
+        "label": "Groovy",
+        "type": "groovy",
+        "language": "groovy",
+        "code": "println \"Groovy received ${input}\"\noutput = [runtime: 'groovy', previous: input]"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-backend-js",
+      "type": "custom",
+      "position": { "x": 1910, "y": 320 },
+      "data": {
+        "label": "Backend JS",
+        "type": "jsbackend",
+        "language": "jsbackend",
+        "code": "console.log('Backend JS received', input);\noutput = { runtime: 'jsbackend', previous: input };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-shell",
+      "type": "custom",
+      "position": { "x": 2280, "y": 320 },
+      "data": {
+        "label": "Shell (Unix only)",
+        "type": "shell",
+        "language": "shell",
+        "code": "printf '%s' \"$INPUT-shell\" > \"$OUTPUT\"",
+        "onError": "continue"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-finish",
+      "type": "custom",
+      "position": { "x": 2650, "y": 320 },
+      "data": {
+        "label": "Finish gallery",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { galleryComplete: true, shellResult: input, note: 'Shell returns null on Windows because continue-on-error is enabled.' };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-comment",
+      "type": "comment",
+      "position": { "x": 900, "y": 40 },
+      "data": {
+        "label": "Cross-platform note",
+        "type": "comment",
+        "value": "PowerShell and Batch are Windows-oriented. Shell requires Bash and is Unix-only for local execution. Python, Groovy, and Backend JS require their runtimes/dependencies on the selected server or worker."
+      },
+      "draggable": true
+    }
+  ],
+  "edges": [
+    { "id": "edge-js-ps", "source": "node-start", "target": "node-powershell", "type": "smoothstep" },
+    { "id": "edge-ps-batch", "source": "node-powershell", "target": "node-batch", "type": "smoothstep" },
+    { "id": "edge-batch-python", "source": "node-batch", "target": "node-python", "type": "smoothstep" },
+    { "id": "edge-python-groovy", "source": "node-python", "target": "node-groovy", "type": "smoothstep" },
+    { "id": "edge-groovy-backend", "source": "node-groovy", "target": "node-backend-js", "type": "smoothstep" },
+    { "id": "edge-backend-shell", "source": "node-backend-js", "target": "node-shell", "type": "smoothstep" },
+    { "id": "edge-shell-finish", "source": "node-shell", "target": "node-finish", "type": "smoothstep" }
+  ],
+  "artifacts": []
+}

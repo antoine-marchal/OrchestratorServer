@@ -1,0 +1,87 @@
+{
+  "name": "Demo 03 - Retries and Recovery",
+  "namespace": "demo",
+  "description": "Mutable flow variables, retry with backoff, continue-on-error, logs, and graceful recovery.",
+  "nodes": [
+    {
+      "id": "node-attempt-counter",
+      "type": "custom",
+      "position": { "x": 80, "y": 60 },
+      "data": {
+        "label": "attempt_count",
+        "type": "variable",
+        "value": "0"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-start",
+      "type": "custom",
+      "position": { "x": 80, "y": 330 },
+      "data": {
+        "label": "Start recoverable operation",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { operation: 'demo-retry', requestedAt: new Date().toISOString() };",
+        "isStarterNode": true
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-flaky",
+      "type": "custom",
+      "position": { "x": 500, "y": 330 },
+      "data": {
+        "label": "Simulated transient failure",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "attempt_count += 1;\nconsole.log('attempt', attempt_count);\nif (attempt_count < 2) {\n  throw new Error('Simulated transient failure');\n}\nreturn { ...input, recovered: true, attempts: attempt_count };",
+        "onError": "retry",
+        "retry": { "maxAttempts": 3, "delaySec": 1, "backoff": "exponential" }
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-noncritical",
+      "type": "custom",
+      "position": { "x": 930, "y": 330 },
+      "data": {
+        "label": "Non-critical failing step",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "throw new Error('Optional enrichment service unavailable');",
+        "onError": "continue"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-finish",
+      "type": "custom",
+      "position": { "x": 1360, "y": 330 },
+      "data": {
+        "label": "Finish after recovery",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return { status: 'completed', optionalEnrichment: input, attempts: attempt_count };"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-comment",
+      "type": "comment",
+      "position": { "x": 500, "y": 40 },
+      "data": {
+        "label": "Failure policies",
+        "type": "comment",
+        "value": "The flaky node fails once, persists attempt_count through the JavaScript variable capture, then succeeds. The next failure is non-critical and becomes a null input for the final node."
+      },
+      "draggable": true
+    }
+  ],
+  "edges": [
+    { "id": "edge-start-flaky", "source": "node-start", "target": "node-flaky", "type": "smoothstep", "animated": true },
+    { "id": "edge-flaky-optional", "source": "node-flaky", "target": "node-noncritical", "type": "smoothstep", "animated": true },
+    { "id": "edge-optional-finish", "source": "node-noncritical", "target": "node-finish", "type": "smoothstep", "animated": true }
+  ],
+  "artifacts": []
+}

@@ -1,0 +1,25 @@
+[package]
+name = "orchestrator-runner"
+version = "0.1.0"
+edition = "2024"
+description = "Minimal standalone runner for Orchestrator .or flows"
+license = "MIT"
+
+[[bin]]
+name = "runner"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+winresource = "0.1.31"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

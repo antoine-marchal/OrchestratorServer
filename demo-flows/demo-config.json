@@ -1,0 +1,9 @@
+{
+  "purpose": "Demonstrate flow artifacts",
+  "environment": "demo",
+  "features": [
+    "versioned-with-flow",
+    "deployed-to-execution-directory",
+    "content-addressed-storage"
+  ]
+}

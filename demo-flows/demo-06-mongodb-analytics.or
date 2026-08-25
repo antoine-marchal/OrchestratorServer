@@ -1,0 +1,95 @@
+{
+  "name": "Demo 06 - MongoDB Analytics",
+  "namespace": "demo",
+  "description": "Idempotent MongoDB upserts and aggregation against orchestrator_demo.nodebi_demo on 192.168.1.218:27017 using Backend JS.",
+  "nodes": [
+    {
+      "id": "node-mongo-uri",
+      "type": "custom",
+      "position": { "x": 60, "y": 40 },
+      "data": {
+        "label": "mongodb_uri",
+        "type": "variable",
+        "value": "\"mongodb://192.168.1.218:27017\""
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-mongo-db",
+      "type": "custom",
+      "position": { "x": 430, "y": 40 },
+      "data": {
+        "label": "mongo_database",
+        "type": "variable",
+        "value": "\"orchestrator_demo\""
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-mongo-collection",
+      "type": "custom",
+      "position": { "x": 800, "y": 40 },
+      "data": {
+        "label": "mongo_collection",
+        "type": "variable",
+        "value": "\"nodebi_demo\""
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-seed",
+      "type": "custom",
+      "position": { "x": 60, "y": 360 },
+      "data": {
+        "label": "Create deterministic demo events",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return [\n  { _id: 'demo-alpha', category: 'alpha', value: 12, source: 'orchestrator-demo' },\n  { _id: 'demo-beta', category: 'beta', value: 25, source: 'orchestrator-demo' },\n  { _id: 'demo-gamma', category: 'alpha', value: 18, source: 'orchestrator-demo' }\n];",
+        "isStarterNode": true
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-mongo-upsert",
+      "type": "custom",
+      "position": { "x": 540, "y": 360 },
+      "data": {
+        "label": "Upsert and aggregate in MongoDB",
+        "type": "jsbackend",
+        "language": "jsbackend",
+        "code": "const mongodbModule = await import('file:///C:/workspace/OrchestratorServer/orchestrator-webpanel/server/node_modules/mongodb/lib/index.js');\nconst { MongoClient } = mongodbModule.default ?? mongodbModule;\n\nconst client = new MongoClient(mongodb_uri, { serverSelectionTimeoutMS: 5000 });\ntry {\n  await client.connect();\n  const collection = client.db(mongo_database).collection(mongo_collection);\n  for (const event of input) {\n    await collection.updateOne(\n      { _id: event._id },\n      { $set: { ...event, updatedAt: new Date() } },\n      { upsert: true }\n    );\n  }\n  const summary = await collection.aggregate([\n    { $match: { source: 'orchestrator-demo' } },\n    { $group: { _id: '$category', count: { $sum: 1 }, total: { $sum: '$value' }, average: { $avg: '$value' } } },\n    { $sort: { _id: 1 } }\n  ]).toArray();\n  output = {\n    database: mongo_database,\n    collection: mongo_collection,\n    upsertedIds: input.map(item => item._id),\n    summary\n  };\n} finally {\n  await client.close();\n}",
+        "onError": "retry",
+        "retry": { "maxAttempts": 2, "delaySec": 2, "backoff": "fixed" }
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-report",
+      "type": "custom",
+      "position": { "x": 1060, "y": 360 },
+      "data": {
+        "label": "Format MongoDB report",
+        "type": "javascript",
+        "language": "javascript",
+        "code": "return {\n  status: 'mongodb-demo-complete',\n  target: `${input.database}.${input.collection}`,\n  categories: input.summary,\n  records: input.upsertedIds\n};"
+      },
+      "draggable": true
+    },
+    {
+      "id": "node-comment",
+      "type": "comment",
+      "position": { "x": 500, "y": 650 },
+      "data": {
+        "label": "MongoDB safety",
+        "type": "comment",
+        "value": "This example is idempotent: it upserts three fixed IDs instead of inserting duplicates. It writes only documents tagged source=orchestrator-demo and aggregates only that tag."
+      },
+      "draggable": true
+    }
+  ],
+  "edges": [
+    { "id": "edge-seed-mongo", "source": "node-seed", "target": "node-mongo-upsert", "type": "smoothstep", "animated": true },
+    { "id": "edge-mongo-report", "source": "node-mongo-upsert", "target": "node-report", "type": "smoothstep", "animated": true }
+  ],
+  "artifacts": []
+}
