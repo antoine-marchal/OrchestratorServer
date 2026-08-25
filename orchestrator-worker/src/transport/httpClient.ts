@@ -2,10 +2,16 @@
 // the per-worker bearer-token attach. Centralised so the base URL, size limits,
 // and auth header live in one place.
 import axios, { AxiosInstance } from 'axios';
-import { ORCHESTRATOR_URL, MAX_HTTP_BYTES } from '../config';
+import https from 'https';
+import { ORCHESTRATOR_URL, MAX_HTTP_BYTES, TLS_REJECT_UNAUTHORIZED } from '../config';
+
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: TLS_REJECT_UNAUTHORIZED,
+});
 
 export const http: AxiosInstance = axios.create({
   baseURL: ORCHESTRATOR_URL,
+  httpsAgent,
   timeout: 15000,
   maxContentLength: MAX_HTTP_BYTES,
   maxBodyLength: MAX_HTTP_BYTES,

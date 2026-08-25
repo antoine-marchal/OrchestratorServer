@@ -81,6 +81,7 @@ The worker appears in the orchestrator UI (`/workers`) within a few seconds of s
 | `ORCHESTRATOR_URL` | `http://localhost:3939` | Base URL of the orchestrator server |
 | `WORKER_NAME` | `test` | Display name shown in the UI |
 | `WORKER_REGISTRATION_SECRET` | *(dev default)* | Must match `WORKER_REGISTRATION_SECRET` on the server |
+| `WORKER_TLS_REJECT_UNAUTHORIZED` | `false` | Set to `true` to require a certificate chain trusted by the worker host |
 | `POLL_INTERVAL_MS` | `2000` | How often to check for new jobs |
 | `HEARTBEAT_INTERVAL_MS` | `10000` | How often to send a keepalive to the server |
 | `WORKER_EXECUTION_MODE` | `parallel` | Job pickup: `parallel` (take jobs as they arrive) or `sequential` (finish the current flow's jobs first) |
@@ -147,5 +148,6 @@ Flow variables are injected into each script before execution and captured back 
 ## Security Notes
 
 - The registration secret (`WORKER_REGISTRATION_SECRET`) is the only gate protecting the registration endpoint. Use a strong random value in production and keep it out of source control.
+- TLS certificate verification is disabled by default so compiled workers can connect to private/self-signed orchestrators. Set `WORKER_TLS_REJECT_UNAUTHORIZED=true` when the server has a publicly or privately trusted certificate chain.
 - Executed code runs as the same OS user as the worker process. Scope permissions accordingly.
 - Temp files in `inbox/` are deleted immediately after each job; they are not encrypted on disk.

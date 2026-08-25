@@ -5,6 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 export const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:3939';
 export const WORKER_NAME      = process.env.WORKER_NAME || `worker-${uuidv4().slice(0, 8)}`;
 export const WORKER_SECRET    = process.env.WORKER_REGISTRATION_SECRET || '';
+// Workers commonly connect to private orchestrators whose certificate chain is
+// self-signed or not installed in the host trust store. Keep verification off
+// by default; operators can explicitly restore strict TLS verification.
+export const TLS_REJECT_UNAUTHORIZED = process.env.WORKER_TLS_REJECT_UNAUTHORIZED === 'true';
 export const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '2000');
 export const HEARTBEAT_INTERVAL_MS = parseInt(process.env.HEARTBEAT_INTERVAL_MS || '10000');
 export const WORK_DIR         = process.env.ORCHESTRATOR_WORK_DIR || process.cwd();
