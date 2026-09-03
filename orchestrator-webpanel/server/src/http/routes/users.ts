@@ -13,21 +13,20 @@ import { loginSchema, refreshSchema, createUserSchema, changePasswordSchema, cre
 
 const router = Router();
 
-// Builds the CAS `service` URL from PROTOCOL + DOMAIN + PORT so it matches what
-// the browser used. The same value must be sent at /login (ticket issuance) and
-// /validate (ticket check), or a strict CAS server rejects the mismatch.
-function buildServiceUrl(): string {
+// A configured public domain is already the complete browser-facing URL (for
+// example, an HTTPS URL exposed by HAProxy) and must not inherit the internal
+// service protocol or port. Without one, build the local service URL as before.
+export function buildServiceUrl(): string {
+  const configuredDomain = process.env.DOMAIN || process.env.ORCHESTRATOR_DOMAIN;
+  if (configuredDomain) return configuredDomain;
+
   const protocol = (process.env.HTTPS === 'true' || process.env.ORCHESTRATOR_HTTPS === 'true') ? 'https' : 'http';
-  const domain = process.env.DOMAIN || process.env.ORCHESTRATOR_DOMAIN || 'http://localhost';
   const port = process.env.PORT ? parseInt(process.env.PORT) : 3939;
-  let serviceBase: string;
-  if (/^https?:\/\//i.test(domain)) {
-    serviceBase = domain.replace(/\/$/, '');
-  } else {
-    serviceBase = `${protocol}://${domain.replace(/\/$/, '')}`;
-  }
-  const hasPort = /:\d+$/.test(serviceBase.replace(/^https?:\/\//, ''));
-  return hasPort ? serviceBase : `${serviceBase}:${port}`;
+  return `${protocol}://localhost:${port}`;
+}
+
+export function proxyAuthTlsRejectUnauthorized(): boolean {
+  return process.env.ORCHESTRATOR_PROXYAUTH_TLS_REJECT_UNAUTHORIZED !== 'false';
 }
 
 // Auth endpoints (no auth required)
@@ -201,6 +200,7 @@ router.get('/authProxy/config', (_req: Request, res: Response) => {
 //   ORCHESTRATOR_PROXYAUTH_NAME  — query param name for the ticket (default: 'ticket')
 //   ORCHESTRATOR_PROXYAUTH_URL   — base URL to validate ticket against
 //   ORCHESTRATOR_PROXYAUTH_REGEX — regex to extract login from the validation response
+//   ORCHESTRATOR_PROXYAUTH_TLS_REJECT_UNAUTHORIZED — set false to allow an untrusted SSO certificate
 router.get('/authProxy', async (req: Request, res: Response) => {
   const paramName = process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
   const proxyUrl = process.env.ORCHESTRATOR_PROXYAUTH_URL;
@@ -221,12 +221,15 @@ router.get('/authProxy', async (req: Request, res: Response) => {
     const serviceUrl = buildServiceUrl();
     const validateUrl = `${proxyUrl}?${paramName}=${encodeURIComponent(ticket)}&service=${encodeURIComponent(serviceUrl)}`;
     const body = await new Promise<string>((resolve, reject) => {
-      const client = validateUrl.startsWith('https://') ? https : http;
-      client.get(validateUrl, (response) => {
+      const handleResponse = (response: http.IncomingMessage) => {
         let data = '';
         response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
         response.on('end', () => resolve(data));
-      }).on('error', reject);
+      };
+      const request = validateUrl.startsWith('https://')
+        ? https.get(validateUrl, { rejectUnauthorized: proxyAuthTlsRejectUnauthorized() }, handleResponse)
+        : http.get(validateUrl, handleResponse);
+      request.on('error', reject);
     });
 
     const regex = new RegExp(regexStr);
