@@ -8,6 +8,11 @@ import ExecutionsChart from './ExecutionsChart';
 import type { ExecutionStatus } from '../../types/flows';
 import { useAuth } from '../../hooks/useAuth';
 import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
+import { executionColumns, useFilters, applyFilters, FilterHeader, ActiveFilters, looksLikeIp } from '../filters/columnFilters';
+import type { FlowExecution } from '../../types/flows';
+
+const COLS = executionColumns<FlowExecution>();
+const COL_LIST = [COLS.id, COLS.flow, COLS.status, COLS.worker, COLS.branch, COLS.trigger, COLS.by, COLS.started, COLS.duration];
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return '—';
@@ -50,7 +55,10 @@ const ExecutionsList: React.FC = () => {
     exec.status !== 'RUNNING' && (isAdmin || (role === 'operator' && !!login && exec.triggeredUser === login));
 
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ExecutionStatus | 'ALL'>('ALL');
+  const { filters, setFilter, clearAll } = useFilters();
+  const statusSel = filters.status?.kind === 'facet' ? filters.status.values : [];
+  const statusFilter: ExecutionStatus | 'ALL' | 'MIXED' = statusSel.length === 0 ? 'ALL' : statusSel.length === 1 ? statusSel[0] as ExecutionStatus : 'MIXED';
+  const setStatusFilter = (s: ExecutionStatus | 'ALL') => setFilter('status', s === 'ALL' ? undefined : { kind: 'facet', values: [s] });
   const [, setTick] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -93,15 +101,16 @@ const ExecutionsList: React.FC = () => {
     }
   };
 
-  const filtered = executions.filter(e => {
-    const matchStatus = statusFilter === 'ALL' || e.status === statusFilter;
+  const searched = executions.filter(e => {
     const matchSearch = !search ||
       (e.displayName || '').toLowerCase().includes(search.toLowerCase()) ||
       e.flowName.toLowerCase().includes(search.toLowerCase()) ||
       e.namespace.toLowerCase().includes(search.toLowerCase()) ||
       e.id.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+    return matchSearch;
   });
+  const filtered = applyFilters(searched, COL_LIST, filters);
+  const fh = { rows: searched, cols: COL_LIST, filters, setFilter };
 
   const statusCounts: Record<string, number> = { ALL: executions.length };
   for (const s of ALL_STATUSES) {
@@ -176,6 +185,8 @@ const ExecutionsList: React.FC = () => {
         />
       </div>
 
+      <ActiveFilters cols={COL_LIST} filters={filters} setFilter={setFilter} clearAll={clearAll} total={searched.length} shown={filtered.length} />
+
       {/* Chart for current filter */}
       {filtered.length > 0 && <ExecutionsChart executions={filtered} />}
 
@@ -183,7 +194,7 @@ const ExecutionsList: React.FC = () => {
       {filtered.length === 0 ? (
         <div className="tc-card">
           <div className="tc-empty">
-            {search || statusFilter !== 'ALL' ? 'no executions match the current filter' : 'no executions yet'}
+            {search || filtered.length !== executions.length ? <>no executions match the current filters · <button className="tc-filter-link" onClick={() => { clearAll(); setSearch(''); }}>clear filters</button></> : 'no executions yet'}
           </div>
         </div>
       ) : (
@@ -191,14 +202,15 @@ const ExecutionsList: React.FC = () => {
           <table className="tc-table">
             <thead>
               <tr>
-                <th>Execution</th>
-                <th>Flow</th>
-                <th>Status</th>
-                <th>Worker</th>
-                <th>Branch</th>
-                <th>Trigger</th>
-                <th>Started</th>
-                <th>Duration</th>
+                <th><FilterHeader col={COLS.id} {...fh} /></th>
+                <th><FilterHeader col={COLS.flow} {...fh} /></th>
+                <th><FilterHeader col={COLS.status} {...fh} /></th>
+                <th><FilterHeader col={COLS.worker} {...fh} /></th>
+                <th><FilterHeader col={COLS.branch} {...fh} /></th>
+                <th><FilterHeader col={COLS.trigger} {...fh} /></th>
+                <th><FilterHeader col={COLS.by} {...fh} /></th>
+                <th><FilterHeader col={COLS.started} {...fh} /></th>
+                <th><FilterHeader col={COLS.duration} {...fh} /></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -235,7 +247,12 @@ const ExecutionsList: React.FC = () => {
                       </span>
                     </td>
                     <td>
-                      <span className="tc-trigger">{exec.triggeredBy}{exec.triggeredUser ? ` · ${exec.triggeredUser}` : ''}</span>
+                      <span className="tc-trigger">{exec.triggeredBy}</span>
+                    </td>
+                    <td>
+                      {exec.triggeredUser
+                        ? <span className={looksLikeIp(exec.triggeredUser) ? 'tc-by-ip' : 'tc-by-user'}>{exec.triggeredUser}</span>
+                        : <span className="tc-dash">—</span>}
                     </td>
                     <td>
                       <span className="tc-reltime">{formatRelative(exec.startTime)}</span>

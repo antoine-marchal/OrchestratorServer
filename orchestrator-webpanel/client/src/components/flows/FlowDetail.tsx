@@ -20,6 +20,7 @@ import {
   Paperclip,
   Play,
   RefreshCw,
+  Search,
   StopCircle,
   Trash2,
   X,
@@ -45,6 +46,8 @@ import { scopeKeyOf, scopeMatchesOrDescends, nodeIdOfScope, NODE_SCOPE_SEP } fro
 import { ansiToHtml } from '../../utils/ansiToHtml';
 import { sanitizeNodesForSave, sanitizeEdgesForSave, normContent } from '../../utils/flowSanitize';
 import type { OrchestratorFlow } from '../../store/flowLibraryStore';
+import type { FlowExecution } from '../../types/flows';
+import { executionColumns, useFilters, applyFilters, FilterPill, ActiveFilters } from '../filters/columnFilters';
 import { useAuth } from '../../hooks/useAuth';
 
 type TabId = 'executions' | 'edit';
@@ -90,6 +93,11 @@ function usePersistedState<T>(key: string, fallback: T): [T, React.Dispatch<Reac
   }, [storageKey, value]);
   return [value, setValue];
 }
+
+const HIDDEN_LOG_TYPES_KEY = 'orchestrator_hidden_log_types';
+const EXEC_COLS = executionColumns<FlowExecution>();
+const SIDEBAR_COLS = [EXEC_COLS.id, EXEC_COLS.status, EXEC_COLS.trigger, EXEC_COLS.by, EXEC_COLS.branch, EXEC_COLS.worker, EXEC_COLS.started, EXEC_COLS.duration];
+const SIDEBAR_PILLS = [EXEC_COLS.status, EXEC_COLS.trigger, EXEC_COLS.by, EXEC_COLS.branch, EXEC_COLS.worker, EXEC_COLS.started, EXEC_COLS.duration];
 
 const LOG_TYPE_DEFS = [
   { key: 'input',  label: 'INPUT',  color: '#60a5fa' },
@@ -193,6 +201,9 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
   const { executions, killExecution, clearExecutions, deleteExecution, renameExecution, syncBackendExecutions, fetchExecutionDetail, flows } = useFlowLibraryStore();
   const { canEdit, isAdmin, role, login } = useAuth();
   const flowExecs = executions.filter(e => e.flowId === flowId);
+  const { filters: execFilters, setFilter: setExecFilter, clearAll: clearExecFilters } = useFilters();
+  const shownExecs = applyFilters(flowExecs, SIDEBAR_COLS, execFilters);
+  const pillProps = { rows: flowExecs, cols: SIDEBAR_COLS, filters: execFilters, setFilter: setExecFilter };
 
   // Admins delete any execution; operators only ones they triggered. Mirrors
   // the server rule in routes/executions.ts.
@@ -239,7 +250,17 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
     for (const [id, st] of Object.entries(nodeStatusMap)) flat[id] = st.status;
     return flat;
   }, [nodeStatusMap]);
-  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  // Log-type visibility (INPUT / LOG / OUTPUT / ERROR / FLOW) is remembered
+  // across executions and visits.
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(HIDDEN_LOG_TYPES_KEY) || '[]');
+      return new Set(Array.isArray(raw) ? raw.filter((k: unknown) => typeof k === 'string') : []);
+    } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(HIDDEN_LOG_TYPES_KEY, JSON.stringify([...hiddenTypes])); } catch { /* storage unavailable */ }
+  }, [hiddenTypes]);
   const [collapsedFlowNodes, setCollapsedFlowNodes] = useState<Set<string>>(new Set());
   const [clearConfirm, setClearConfirm] = useState(false);
   // Cap how many log rows we mount at once. A run with thousands of lines mounts
@@ -508,7 +529,28 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
             )}
           </div>
         </div>
-        {flowExecs.map(exec => (
+        <div className="tc-flow-filters">
+          <label className="tc-filter-search">
+            <Search size={12} />
+            <input
+              value={execFilters.id?.kind === 'text' ? execFilters.id.q : ''}
+              onChange={e => setExecFilter('id', e.target.value ? { kind: 'text', q: e.target.value } : undefined)}
+              placeholder="Search execution id or name…"
+              aria-label="Search executions"
+            />
+          </label>
+          <div className="tc-filter-pills">
+            {SIDEBAR_PILLS.map(c => <FilterPill key={c.key} col={c} {...pillProps} />)}
+          </div>
+          <ActiveFilters cols={SIDEBAR_COLS.filter(c => c.key !== 'id')} filters={execFilters} setFilter={setExecFilter}
+            clearAll={clearExecFilters} total={flowExecs.length} shown={shownExecs.length} />
+        </div>
+        {shownExecs.length === 0 && (
+          <div style={{ padding: '16px 14px', fontSize: 12, color: 'var(--text-2)' }}>
+            No executions match these filters · <button className="tc-filter-link" onClick={clearExecFilters}>clear filters</button>
+          </div>
+        )}
+        {shownExecs.map(exec => (
           <div
             key={exec.id}
             onClick={() => handleSelect(exec.id)}

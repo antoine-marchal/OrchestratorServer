@@ -8,6 +8,10 @@ import { useServerWorkers, canUseWorker } from '../../hooks/useServerWorkers';
 import StatusBadge from '../flows/StatusBadge';
 import ExecIdCell from '../flows/ExecIdCell';
 import type { ExecutionStatus, FlowExecution, OrchestratorFlow } from '../../types/flows';
+import { executionColumns, useFilters, applyFilters, FilterHeader, ActiveFilters, looksLikeIp } from '../filters/columnFilters';
+
+const EXEC_COLS = executionColumns<FlowExecution>();
+const EXEC_COL_LIST = [EXEC_COLS.id, EXEC_COLS.flow, EXEC_COLS.status, EXEC_COLS.trigger, EXEC_COLS.by, EXEC_COLS.duration, EXEC_COLS.started];
 
 /* ── Formatting ─────────────────────────────────────────────────────────── */
 
@@ -129,6 +133,7 @@ const Dashboard: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [rerunningId, setRerunningId] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const { filters: execFilters, setFilter: setExecFilter, clearAll: clearExecFilters } = useFilters();
 
   const me = (login || '').toLowerCase();
   const flowById = useMemo(() => new Map(flows.map(f => [f.id, f])), [flows]);
@@ -258,7 +263,10 @@ const Dashboard: React.FC = () => {
 
   const myExecs = sortedExecs.filter(isMine);
   const execsMineScope = myExecs.length > 0;
-  const recentExecs = (execsMineScope ? myExecs : sortedExecs).slice(0, 8);
+  const execScope = execsMineScope ? myExecs : sortedExecs;
+  const execFiltered = applyFilters(execScope, EXEC_COL_LIST, execFilters);
+  const recentExecs = execFiltered.slice(0, 8);
+  const fh = { rows: execScope, cols: EXEC_COL_LIST, filters: execFilters, setFilter: setExecFilter };
 
   const runsByFlow = useMemo(() => {
     const m = new Map<string, FlowExecution[]>();
@@ -451,14 +459,27 @@ const Dashboard: React.FC = () => {
             <h2 className="tc-home-h2">{execsMineScope ? 'Your last executions' : 'Latest executions'}</h2>
             <Link to="/executions" className="tc-home-more">All executions <ArrowRight size={12} /></Link>
           </header>
-          {recentExecs.length === 0 ? (
+          <div className="tc-home-filters">
+            <ActiveFilters cols={EXEC_COL_LIST} filters={execFilters} setFilter={setExecFilter} clearAll={clearExecFilters}
+              total={execScope.length} shown={execFiltered.length} />
+          </div>
+          {execScope.length === 0 ? (
             <div className="tc-empty">{loaded ? 'No executions yet. Run a flow and it shows up here.' : 'Loading…'}</div>
           ) : (
             <table className="tc-table tc-home-table">
               <thead>
-                <tr><th>Execution</th><th>Flow</th><th>Status</th><th>Trigger</th><th>Duration</th><th>Started</th></tr>
+                <tr>
+                  {EXEC_COL_LIST.map(c => <th key={c.key}><FilterHeader col={c} {...fh} /></th>)}
+                </tr>
               </thead>
               <tbody>
+                {recentExecs.length === 0 && (
+                  <tr className="tc-home-norows">
+                    <td colSpan={EXEC_COL_LIST.length}>
+                      No executions match these filters · <button className="tc-filter-link" onClick={clearExecFilters}>clear filters</button>
+                    </td>
+                  </tr>
+                )}
                 {recentExecs.map(e => (
                   <tr
                     key={e.id}
@@ -472,7 +493,12 @@ const Dashboard: React.FC = () => {
                       <div className="tc-flow-ns">{e.namespace}</div>
                     </td>
                     <td><StatusBadge status={e.status} /></td>
-                    <td><span className="tc-trigger">{e.triggeredBy}{!execsMineScope && e.triggeredUser ? ` · ${e.triggeredUser}` : ''}</span></td>
+                    <td><span className="tc-trigger">{e.triggeredBy}</span></td>
+                    <td>
+                      {e.triggeredUser
+                        ? <span className={looksLikeIp(e.triggeredUser) ? 'tc-by-ip' : 'tc-by-user'}>{e.triggeredUser}</span>
+                        : <span className="tc-dash">—</span>}
+                    </td>
                     <td><span className="tc-duration">{e.status === 'RUNNING' ? formatDuration(Date.now() - new Date(e.startTime).getTime()) : formatDuration(e.duration)}</span></td>
                     <td><span className="tc-home-rel">{formatRelative(e.startTime)}</span></td>
                   </tr>
