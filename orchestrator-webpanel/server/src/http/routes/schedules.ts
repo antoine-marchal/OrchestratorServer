@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { scheduleRepository, triggerTokenRepository } from '../../data/repositories';
 import { nowUid } from '../../domain/execution/nodeExecutor';
 import { register as registerCron, unregister as unregisterCron } from '../../infra/scheduler/cronScheduler';

@@ -2,7 +2,7 @@
 // in-memory long-poll/dispatch coordination, and node→worker dispatch. Shared
 // by the HTTP layer (routes/workers.ts) and the flow executor. Framework-free.
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { workerJobRepository } from '../../data/repositories';
 import { jobs } from '../execution/nodeExecutor';
 import { putArtifacts } from '../execution/artifactStore';

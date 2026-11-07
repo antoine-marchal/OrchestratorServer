@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the orchestrator-webpanel RPM from a clean git-archive of the repo.
-# Run on a Linux host with rpm-build, nodejs>=18, npm (and a JDK if you use Groovy).
+# Run on a Linux host with rpm-build, nodejs>=24, npm (and a JDK if you use Groovy).
 #   ./orchestrator-webpanel/packaging/rpm/build-rpm.sh
 set -euo pipefail
 

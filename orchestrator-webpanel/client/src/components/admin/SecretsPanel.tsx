@@ -94,7 +94,7 @@ export const SecretsPanel: React.FC = () => {
         </p>
 
         {error && (
-          <div className="flex items-center gap-2 p-3 rounded text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
+          <div className="flex items-center gap-2 p-3 rounded-sm text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
             <AlertCircle size={13} /> {error}
           </div>
         )}
@@ -103,15 +103,15 @@ export const SecretsPanel: React.FC = () => {
           <div className="p-4 rounded-lg" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
             <h3 className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>New Secret</h3>
             <div className="flex flex-col gap-3">
-              <input value={name} onChange={e => setName(e.target.value)} placeholder="Secret name (e.g. DB_PASSWORD)" className="px-3 py-1.5 rounded text-xs font-mono" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-              <input type="password" value={value} onChange={e => setValue(e.target.value)} placeholder="Secret value" className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Secret name (e.g. DB_PASSWORD)" className="px-3 py-1.5 rounded-sm text-xs font-mono" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <input type="password" value={value} onChange={e => setValue(e.target.value)} placeholder="Secret value" className="px-3 py-1.5 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               <div className="flex items-center gap-3">
-                <select value={scope} onChange={e => setScope(e.target.value as any)} className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                <select value={scope} onChange={e => setScope(e.target.value as any)} className="px-3 py-1.5 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                   <option value="global">Global</option>
                   <option value="flow">Flow-scoped</option>
                 </select>
                 {scope === 'flow' && (
-                  <input value={flowId} onChange={e => setFlowId(e.target.value)} placeholder="Flow ID" className="flex-1 px-3 py-1.5 rounded text-xs font-mono" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                  <input value={flowId} onChange={e => setFlowId(e.target.value)} placeholder="Flow ID" className="flex-1 px-3 py-1.5 rounded-sm text-xs font-mono" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 )}
               </div>
               <div className="flex gap-2 justify-end">
@@ -136,10 +136,10 @@ export const SecretsPanel: React.FC = () => {
                 <Lock size={13} style={{ color: 'var(--text-3)' }} />
                 <span className="text-sm font-mono flex-1" style={{ color: 'var(--text)' }}>{s.name}</span>
                 {s.scope === 'flow' && (
-                  <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>flow</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-sm font-mono" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>flow</span>
                 )}
                 {revealedValues[s._id] !== undefined ? (
-                  <code className="text-xs px-2 py-1 rounded max-w-48 truncate" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}>
+                  <code className="text-xs px-2 py-1 rounded-sm max-w-48 truncate" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}>
                     {revealedValues[s._id]}
                   </code>
                 ) : null}

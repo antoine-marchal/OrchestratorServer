@@ -65,7 +65,7 @@ npm install
 # 2. (Optional) Build — not required for dev
 npm run build
 
-# 3. Start in dev mode (ts-node, no build needed)
+# 3. Start in dev mode (tsx, no build needed)
 ORCHESTRATOR_URL=http://localhost:3939 WORKER_NAME=my-worker npm run dev
 
 # 4. Or run the compiled agent

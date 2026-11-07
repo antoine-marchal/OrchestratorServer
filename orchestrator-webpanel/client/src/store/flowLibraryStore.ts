@@ -561,6 +561,19 @@ export const useFlowLibraryStore = create<FlowLibraryState>((set, get) => {
         ];
         persistExecs(merged);
 
+        // A patched exec may be the one a flow's lastExecution points at. If this
+        // sync saw it finish before startPoll's tick did, stopPoll below cancels
+        // that tick — so refresh lastExecution here or the header badge stays
+        // stuck on RUNNING.
+        for (const id of patchById.keys()) {
+          const exec = merged.find(e => e.id === id);
+          if (!exec) continue;
+          const last = getFlows().find(f => f.id === exec.flowId)?.lastExecution;
+          if (last && last.id === id && (last.status !== exec.status || last.endTime !== exec.endTime)) {
+            updateFlowLastExec(exec.flowId, exec);
+          }
+        }
+
         for (const id of stoppedRunningIds) stopPoll(id);
 
         for (const exec of newExecs) {

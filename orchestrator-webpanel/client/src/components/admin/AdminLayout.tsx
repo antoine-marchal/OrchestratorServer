@@ -296,7 +296,7 @@ export const AdminLayout: React.FC = () => {
                     onChange={e => setNewLogin(e.target.value)}
                     placeholder="Login"
                     autoComplete="off"
-                    className="px-3 py-1.5 rounded text-xs"
+                    className="px-3 py-1.5 rounded-sm text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
                   <div className="relative">
@@ -306,7 +306,7 @@ export const AdminLayout: React.FC = () => {
                       onChange={e => setNewPassword(e.target.value)}
                       placeholder="Password"
                       autoComplete="new-password"
-                      className="w-full px-3 py-1.5 rounded text-xs"
+                      className="w-full px-3 py-1.5 rounded-sm text-xs"
                       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                     />
                     <button onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
@@ -316,7 +316,7 @@ export const AdminLayout: React.FC = () => {
                   <select
                     value={newRole}
                     onChange={e => setNewRole(e.target.value)}
-                    className="px-3 py-1.5 rounded text-xs"
+                    className="px-3 py-1.5 rounded-sm text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   >
                     <option value="admin">Admin</option>
@@ -334,7 +334,7 @@ export const AdminLayout: React.FC = () => {
 
           {/* Error */}
           {usersError && (
-            <div className="flex items-center gap-2 p-3 rounded text-xs mb-3"
+            <div className="flex items-center gap-2 p-3 rounded-sm text-xs mb-3"
               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
               <AlertCircle size={13} /> {usersError}
             </div>
@@ -441,7 +441,7 @@ export const AdminLayout: React.FC = () => {
                                   onChange={e => setNewPwd(e.target.value)}
                                   placeholder="Enter new password"
                                   autoComplete="new-password"
-                                  className="w-full px-2 py-1 rounded text-xs"
+                                  className="w-full px-2 py-1 rounded-sm text-xs"
                                   style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-mono)', paddingRight: 28 }}
                                   onKeyDown={e => e.key === 'Enter' && handleChangePassword(u._id)}
                                 />
@@ -468,7 +468,7 @@ export const AdminLayout: React.FC = () => {
                                 onChange={e => setKeyLabel(e.target.value)}
                                 placeholder="e.g. worker-prod"
                                 autoFocus
-                                className="flex-1 px-2 py-1 rounded text-xs"
+                                className="flex-1 px-2 py-1 rounded-sm text-xs"
                                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-mono)', maxWidth: 280 }}
                                 onKeyDown={e => e.key === 'Enter' && handleCreateKey(u._id)}
                               />
@@ -564,7 +564,7 @@ export const AdminLayout: React.FC = () => {
                     value={secName}
                     onChange={e => setSecName(e.target.value)}
                     placeholder="Secret name (e.g. DB_PASSWORD)"
-                    className="px-3 py-1.5 rounded text-xs font-mono"
+                    className="px-3 py-1.5 rounded-sm text-xs font-mono"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
                   <input
@@ -572,13 +572,13 @@ export const AdminLayout: React.FC = () => {
                     value={secValue}
                     onChange={e => setSecValue(e.target.value)}
                     placeholder="Secret value"
-                    className="px-3 py-1.5 rounded text-xs"
+                    className="px-3 py-1.5 rounded-sm text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
                   <select
                     value={secScope}
                     onChange={e => setSecScope(e.target.value as any)}
-                    className="px-3 py-1.5 rounded text-xs"
+                    className="px-3 py-1.5 rounded-sm text-xs"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
                   >
                     <option value="global">Global</option>
@@ -589,7 +589,7 @@ export const AdminLayout: React.FC = () => {
                   <select
                     value={secWorkerId}
                     onChange={e => setSecWorkerId(e.target.value)}
-                    className="px-3 py-1.5 rounded text-xs font-mono"
+                    className="px-3 py-1.5 rounded-sm text-xs font-mono"
                     style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)', maxWidth: 320 }}
                   >
                     <option value="">— pick worker —</option>
@@ -608,7 +608,7 @@ export const AdminLayout: React.FC = () => {
 
           {/* Error */}
           {secretsError && (
-            <div className="flex items-center gap-2 p-3 rounded text-xs mb-3"
+            <div className="flex items-center gap-2 p-3 rounded-sm text-xs mb-3"
               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
               <AlertCircle size={13} /> {secretsError}
             </div>

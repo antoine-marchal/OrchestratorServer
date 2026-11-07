@@ -42,7 +42,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
       <div className={`relative w-full max-w-md rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`flex items-center justify-between px-5 py-4 border-b ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2.5">
@@ -66,7 +66,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="my-workflow"
-              className={`w-full px-3 py-2 rounded-lg border text-sm ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-none`}
+              className={`w-full px-3 py-2 rounded-lg border text-sm ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-hidden`}
             />
           </div>
 
@@ -76,7 +76,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
               value={namespace}
               onChange={e => setNamespace(e.target.value)}
               placeholder="default"
-              className={`w-full px-3 py-2 rounded-lg border text-sm ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-none`}
+              className={`w-full px-3 py-2 rounded-lg border text-sm ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-hidden`}
             />
           </div>
 
@@ -87,7 +87,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
               onChange={e => setDescription(e.target.value)}
               placeholder="What does this flow do?"
               rows={2}
-              className={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-none`}
+              className={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'} focus:outline-hidden`}
             />
           </div>
 
@@ -105,7 +105,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
                   : 'border-gray-200 hover:border-gray-300 bg-gray-50'
                 }`}
               >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`}>
                   <Server className={`w-3.5 h-3.5 ${dark ? 'text-gray-500' : 'text-gray-400'}`} />
                 </div>
                 <span className={`text-sm ${dark ? 'text-gray-300' : 'text-gray-700'}`}>Server (default)</span>
@@ -126,7 +126,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
                       : 'border-gray-200 hover:border-gray-300 bg-gray-50'
                     } ${!online ? 'opacity-60 cursor-not-allowed' : ''}`}
                   >
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`}>
                       <Server className={`w-3.5 h-3.5 ${online ? 'text-emerald-400' : 'text-gray-500'}`} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -137,7 +137,7 @@ const CreateFlowModal: React.FC<Props> = ({ onClose, onCreate }) => {
                         </p>
                       )}
                     </div>
-                    <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${online ? 'text-emerald-400' : 'text-red-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${online ? 'text-emerald-400' : 'text-red-400'}`} />
                   </button>
                 );
               })}

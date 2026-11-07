@@ -5,7 +5,7 @@ import { Schedule } from '../../data/models/Schedule';
 type ExecuteOverrides = { workerId?: string | null; branch?: string };
 type ExecuteFlowFn = (flowId: string, triggeredBy: string, triggeredUser?: string, overrides?: ExecuteOverrides) => Promise<string | null>;
 
-const tasks = new Map<string, cron.ScheduledTask>();
+const tasks = new Map<string, ReturnType<typeof cron.schedule>>();
 let _executeFlow: ExecuteFlowFn | null = null;
 
 export function setExecuteFlowFn(fn: ExecuteFlowFn): void {

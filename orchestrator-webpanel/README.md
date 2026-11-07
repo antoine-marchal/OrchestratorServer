@@ -63,7 +63,7 @@ orchestrator-webpanel/
 ### Development
 
 ```bash
-# Terminal 1 — backend (hot-reload via ts-node)
+# Terminal 1 — backend (tsx)
 npm run dev:server
 
 # Terminal 2 — frontend (HMR via Vite)

@@ -47,7 +47,7 @@ const TriggerLinkModal: React.FC<{ url: string; onClose: () => void }> = ({ url,
           Call this URL to run the flow over HTTP (GET, or POST with a body); add <code>?wait=60</code> to get its result back.
           Keep it secret — anyone with this URL can execute the flow.
         </p>
-        <div className="flex items-center gap-2 p-2 rounded" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center gap-2 p-2 rounded-sm" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
           <code className="text-xs flex-1 truncate" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{url}</code>
           <button onClick={copy} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', flexShrink: 0, gap: 4, fontSize: 11 }}>
             {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -166,7 +166,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
 
       {/* Error */}
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
+        <div className="flex items-center gap-2 p-3 rounded-sm text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
           <AlertCircle size={13} /> {error}
         </div>
       )}
@@ -185,7 +185,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
                   value={cronExpr}
                   onChange={e => setCronExpr(e.target.value)}
                   placeholder="0 * * * *"
-                  className="w-full px-3 py-1.5 rounded text-xs font-mono"
+                  className="w-full px-3 py-1.5 rounded-sm text-xs font-mono"
                   style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
               </div>
@@ -197,7 +197,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
                   value={eventName}
                   onChange={e => setEventName(e.target.value)}
                   placeholder="e.g. file.arrived"
-                  className="w-full px-3 py-1.5 rounded text-xs font-mono"
+                  className="w-full px-3 py-1.5 rounded-sm text-xs font-mono"
                   style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
               </div>
@@ -213,7 +213,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
                 value={description}
                 onChange={e => setDescription(e.target.value)}
                 placeholder="What triggers this?"
-                className="w-full px-3 py-1.5 rounded text-xs"
+                className="w-full px-3 py-1.5 rounded-sm text-xs"
                 style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
               />
             </div>
@@ -247,11 +247,11 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
                     {s.type === 'event' && s.eventName}
                     {s.type === 'api-trigger' && 'API Trigger'}
                   </span>
-                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>
+                  <span className="text-xs px-1.5 py-0.5 rounded-sm" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>
                     {typeLabel(s.type)}
                   </span>
                   {!s.enabled && (
-                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--err)' }}>disabled</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded-sm" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--err)' }}>disabled</span>
                   )}
                 </div>
                 {s.description && (

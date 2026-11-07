@@ -25,7 +25,7 @@ const ToolbarButton: React.FC<ToolbarButtonProps> = ({
     disabled={disabled}
     aria-label={label}
   >
-    <Icon className="w-5 h-5 flex-shrink-0" />
+    <Icon className="w-5 h-5 shrink-0" />
     <span className="ml-2 max-w-0 opacity-0 group-hover:max-w-xs group-hover:opacity-100 transition-all duration-200 whitespace-nowrap overflow-hidden">
       {label}
     </span>

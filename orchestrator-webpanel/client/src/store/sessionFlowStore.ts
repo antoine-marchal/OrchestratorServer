@@ -1,4 +1,5 @@
-import { Node } from 'reactflow';
+import type { Node } from '../types/xyflow';
+
 import { useSessionStore } from './sessionStore';
 import { pathUtils } from '../utils/pathUtils';
 import { apiClient } from '../utils/apiClient';

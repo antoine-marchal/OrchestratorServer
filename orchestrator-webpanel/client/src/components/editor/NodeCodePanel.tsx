@@ -140,13 +140,13 @@ export const NodeCodePanel: React.FC<NodeCodePanelProps> = ({ nodeId }) => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-2)' }}>
+      <div className="flex items-center gap-3 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-2)' }}>
         <button onClick={handleClose} className="tc-btn ghost" style={{ height: 26, padding: '0 8px', gap: 4, fontSize: 12 }}>
           <ArrowLeft size={12} />
           Graph
         </button>
         <span className="text-sm font-medium flex-1 truncate" style={{ color: 'var(--text)' }}>{node.data?.label || nodeId}</span>
-        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>{language}</span>
+        <span className="text-xs px-1.5 py-0.5 rounded-sm" style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}>{language}</span>
         {FORMATTABLE.has(language) && (
           <button onClick={formatWithPrettier} className="tc-btn ghost" style={{ height: 26, padding: '0 8px', gap: 4, fontSize: 12 }}>
             <FileCode size={12} />

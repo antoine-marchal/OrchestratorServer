@@ -1,4 +1,5 @@
-import { Node } from 'reactflow';
+import type { Node } from '../types/xyflow';
+
 import { useSessionStore } from '../store/sessionStore';
 import { makeFlowNode } from '../store/flowNodeContent';
 

@@ -1,7 +1,7 @@
 # Orchestrator Webpanel — RPM packaging
 
 Builds an **applicative RPM** for RHEL/Rocky/Alma/Fedora: the self-contained
-Linux binary produced by `pkg` (`@yao-pkg/pkg`, target `node18-linux-x64`),
+Linux binary produced by `pkg` (`@yao-pkg/pkg`, target `node24-linux-x64`),
 plus a systemd service, an environment file, and data directories.
 
 It does **not** ship `node_modules` or run `npm start` on the target — the
@@ -48,7 +48,7 @@ Builds inside `rockylinux:9` (same toolchain as CI). Output RPM(s) land in
 
 ### Option B — native RPM host (Rocky/Alma/Fedora/RHEL)
 
-Needs `rpm-build`, `nodejs >= 18`, `npm`, and a JDK if you use Groovy nodes.
+Needs `rpm-build`, `nodejs >= 24`, `npm`, and a JDK if you use Groovy nodes.
 
 ```bash
 # From repo root. Builds from HEAD (uncommitted files are NOT included).
@@ -169,7 +169,7 @@ sudo dnf install -y java-17-openjdk-headless
 
 # JavaScript / .mjs nodes — Node.js >= 18 (Rocky's default stream is 16)
 sudo dnf module reset  -y nodejs
-sudo dnf module enable -y nodejs:18
+sudo dnf module enable -y nodejs:24
 sudo dnf install -y nodejs
 # point the server at it if auto-detection misses it:
 #   NODE_EXECUTABLE_PATH=/usr/bin/node   in the env file

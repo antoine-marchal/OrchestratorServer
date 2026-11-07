@@ -26,7 +26,7 @@ import workersRouter from './http/routes/workers';
 import { flowGitRepository } from './infra/git/FlowGitRepository';
 import { handleReceivePack, handleInfoRefs, handleUploadPack } from './infra/git/receivePack';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3939;
 
@@ -126,7 +126,13 @@ if (process.env.NODE_ENV === 'production' && corsOrigins.length) {
 } else {
   app.use(cors());
 }
+// Express 5 defaults to the "simple" query parser; keep v4's qs-based parsing
+// so nested/array query params (e.g. ?a[b]=c) behave as before.
+app.set('query parser', 'extended');
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '100mb' }));
+// Express 5 leaves req.body undefined when no parser matched (v4 gave {}).
+// Handlers destructure req.body, so restore the v4 default.
+app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next(); });
 
 // Serve webpanel static files (if built).
 // When packaged with pkg, prepare-pkg copies client/dist → dist/webpanel/
@@ -176,7 +182,7 @@ app.post('/git/:flowId/git-upload-pack', stashFlowId, gitAuthorize, (req, res) =
 app.post('/git/:flowId/git-receive-pack', stashFlowId, gitAuthorize, (req, res) => { void handleReceivePack(req, res); });
 
 // Fallback to webpanel index for SPA routing
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   const indexPath = path.join(panelDist, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);

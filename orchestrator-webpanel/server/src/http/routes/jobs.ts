@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
+import type { Request } from '../request';
 import { jobs, jobLogBuffers, jobLogListeners, processJob, terminateJobAndChildren, nowUid } from '../../domain/execution/nodeExecutor';
 import { resolveSecretsDetailed } from '../../domain/secrets/secretService';
 import { flowRepository } from '../../data/repositories';

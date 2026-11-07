@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, Position } from 'reactflow';
+import { Handle, Position } from '@xyflow/react';
 import { GripVertical, X } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -22,7 +22,7 @@ const SortableConnectionItem: React.FC<ConnectionItemProps> = ({ id, label, onRe
           e.stopPropagation();
           onRemove();
         }}
-        className="p-1 hover:bg-gray-700 rounded"
+        className="p-1 hover:bg-gray-700 rounded-sm"
       >
         <X className="w-3 h-3 text-red-400" />
       </button>
@@ -66,7 +66,7 @@ export const NodeConnections: React.FC<NodeConnectionsProps> = ({
       <Handle
         type={type === 'input' ? 'target' : 'source'}
         position={type === 'input' ? Position.Left : Position.Right}
-        className={`w-3 h-3 ${type === 'input' ? '!bg-blue-500' : '!bg-green-500'}`}
+        className={`w-3 h-3 ${type === 'input' ? 'bg-blue-500!' : 'bg-green-500!'}`}
       />
       <div className={type === 'input' ? 'ml-6' : 'mr-6 text-right'}>
         <span className="text-xs text-gray-400">{type === 'input' ? 'Inputs:' : 'Outputs:'}</span>

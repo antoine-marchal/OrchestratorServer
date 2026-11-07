@@ -68,7 +68,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
           </div>
           <div
             ref={outputRef}
-            className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs p-2 font-mono whitespace-pre-wrap w-full break-words max-h-32 overflow-y-auto select-text rounded"
+            className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs p-2 font-mono whitespace-pre-wrap w-full wrap-break-word max-h-32 overflow-y-auto select-text rounded-sm"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             onWheel={(e) => {
@@ -111,7 +111,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
           {headerLabel}
         </div>
         <div className="text-sm text-gray-400 space-y-2 relative">
-          <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded p-2 border border-emerald-700/30">
+          <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded-sm p-2 border border-emerald-700/30">
             <div className="text-emerald-600 dark:text-emerald-300 text-xs font-mono truncate">{displayName}</div>
             {data.linkedSessionId && (
               <div className="text-emerald-700/70 dark:text-emerald-400/60 text-[10px] font-mono truncate mt-0.5" title={data.linkedSessionId}>
@@ -127,7 +127,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
               <div
                 ref={outputRef}
                 className={
-                  "bg-emerald-100 text-emerald-600 dark:bg-gray-900 dark:text-green-400 text-xs p-2 font-mono whitespace-pre-wrap w-full break-words " +
+                  "bg-emerald-100 text-emerald-600 dark:bg-gray-900 dark:text-green-400 text-xs p-2 font-mono whitespace-pre-wrap w-full wrap-break-word " +
                   (expanded ? "max-h-[80vh]" : "max-h-64") +
                   " overflow-y-auto select-text"
                 }
@@ -153,7 +153,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                     : JSON.stringify(data.output, null, 1))}
               </div>
               <button
-                className="absolute right-5 top-[66px] dark:bg-gray-900 rounded hover:bg-gray-300 dark:hover:bg-gray-800"
+                className="absolute right-5 top-[66px] dark:bg-gray-900 rounded-sm hover:bg-gray-300 dark:hover:bg-gray-800"
                 onClick={() => {
                   setExpanded(e => !e);
                   setTimeout(() => window.dispatchEvent(new Event('resize')), 10);
@@ -218,14 +218,14 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
 
         <div className="space-y-3">
           {localConds.map((cond, i) => (
-            <div key={i} className="rounded bg-gray-200 dark:bg-gray-800 p-2 space-y-2 border border-gray-400 dark:border-gray-700">
+            <div key={i} className="rounded-sm bg-gray-200 dark:bg-gray-800 p-2 space-y-2 border border-gray-400 dark:border-gray-700">
               <label className="block text-[10px] text-gray-800 dark:text-gray-400">Condition</label>
               <input
                 value={cond.expr}
                 onChange={(e) => updateLocal(i, { expr: e.target.value })}
                 onBlur={() => commitRow(i)}
                 placeholder="e.g. input < 50"
-                className="w-full text-xs bg-gray-100 dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full text-xs bg-gray-100 dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded-sm px-2 py-1 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
               />
@@ -261,7 +261,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                 onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
-                className="mt-1 w-full text-xs bg-gray-100 dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="mt-1 w-full text-xs bg-gray-100 dark:bg-gray-900 border border-gray-400 dark:border-gray-700 rounded-sm px-2 py-1 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 {selectableTargets.map(n => (
                   <option key={n.id} value={n.id}>{n.label}</option>
@@ -274,7 +274,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
               <div className="flex justify-end">
                 <button
                   onClick={() => removeCondition(i)}
-                  className="text-[10px] px-2 py-1 bg-gray-300 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 rounded"
+                  className="text-[10px] px-2 py-1 bg-gray-300 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-sm"
                 >
                   Remove
                 </button>
@@ -285,7 +285,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
 
         <button
           onClick={addCondition}
-          className="text-[10px] px-2 py-1 bg-gray-200 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 rounded"
+          className="text-[10px] px-2 py-1 bg-gray-200 hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-sm"
         >
           + Add Condition
         </button>
@@ -309,7 +309,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
             <div
               ref={outputRef}
               className={
-                "bg-gray-200 dark:bg-gray-900 text-green-700 dark:text-green-400 text-xs p-2 font-mono whitespace-pre-wrap w-full break-words " +
+                "bg-gray-200 dark:bg-gray-900 text-green-700 dark:text-green-400 text-xs p-2 font-mono whitespace-pre-wrap w-full wrap-break-word " +
                 (expanded ? "max-h-[80vh]" : "max-h-64") +
                 " overflow-y-auto select-text"
               }
@@ -335,7 +335,7 @@ export const NodeBody: React.FC<NodeBodyProps> = memo((
                   : JSON.stringify(data.output, null, 1))}
             </div>
             <button
-              className="absolute right-5 top-6 dark:bg-gray-900 rounded hover:bg-gray-300 dark:hover:bg-gray-800"
+              className="absolute right-5 top-6 dark:bg-gray-900 rounded-sm hover:bg-gray-300 dark:hover:bg-gray-800"
               onClick={() => {
                 setExpanded(e => !e);
                 setTimeout(() => window.dispatchEvent(new Event('resize')), 10);

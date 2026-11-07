@@ -1,6 +1,7 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Response, NextFunction } from 'express';
+import type { Request } from '../request';
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { workerJobRepository, workerRepository } from '../../data/repositories';
 import { authMiddleware } from '../middleware/auth';
 import { emitJobLog } from '../../domain/execution/nodeExecutor';

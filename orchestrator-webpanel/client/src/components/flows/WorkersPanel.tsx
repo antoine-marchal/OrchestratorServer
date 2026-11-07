@@ -368,7 +368,7 @@ const WorkersPanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 p-3 rounded text-xs mb-4"
+        <div className="flex items-center gap-2 p-3 rounded-sm text-xs mb-4"
           style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
           <AlertTriangle size={13} /> {error}
         </div>

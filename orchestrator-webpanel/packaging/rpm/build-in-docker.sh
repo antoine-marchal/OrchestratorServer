@@ -27,7 +27,7 @@ docker run --rm \
   "$IMAGE" bash -euo pipefail -c '
     # Rocky 9 default nodejs stream is 16; the project needs 18.
     dnf -y module reset nodejs
-    dnf -y --nogpgcheck module enable nodejs:18
+    dnf -y --nogpgcheck module enable nodejs:24
     dnf -y --nogpgcheck install rpm-build rpmdevtools systemd-rpm-macros \
       git tar gzip nodejs npm java-17-openjdk-headless
     node --version
