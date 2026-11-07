@@ -1,3 +1,3 @@
 {"ticket":"ST-b7b2cfdab747a16c8e3fc1727e3dfa5df0c13ce7","service":"http://google.fr","user":"marchala","consumed":false,"createdAt":1780136511422,"_id":"LTU0bsDHt0pF03ZB"}
-{"ticket":"ST-26e9fe9015d5077cd1ee6602a3148ebb3b560775","service":"http://localhost:3939","user":"marchala","consumed":false,"createdAt":1788456349198,"_id":"b8dYHDqi3wX3uAwx"}
-{"$$deleted":true,"_id":"b8dYHDqi3wX3uAwx"}
+{"ticket":"ST-a813845aeda3f85ff77313f844c6fc29b6ed20db","service":"http://localhost:3939/api/v1/trigger/24eb8d23b6f1ff6f23351d7c9928a51ec96ddfe70eb72d42146b2d84d5d8d5fd/downup?_triggerAttempt=cce51581e4e2be1e1643ad835a1baf70","user":"marchala","consumed":false,"createdAt":1788459954541,"_id":"GTCS2Axdr40k8Itd"}
+{"$$deleted":true,"_id":"GTCS2Axdr40k8Itd"}

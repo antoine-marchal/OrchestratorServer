@@ -15,6 +15,7 @@ export interface Execution {
   namespace: string;
   status: 'RUNNING' | 'SUCCESS' | 'FAILED' | 'KILLED';
   triggeredBy: 'manual' | 'cron' | 'event' | 'api' | 'schedule';
+  triggeredUser?: string | null;
   startTime: string;
   endTime: string | null;
   duration: number | null;

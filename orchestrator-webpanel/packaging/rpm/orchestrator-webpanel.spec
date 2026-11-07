@@ -12,7 +12,7 @@
 %global __os_install_post %{nil}
 
 Name:           orchestrator-webpanel
-Version:        3.3.0
+Version:        3.3.1
 Release:        1%{?dist}
 Summary:        Orchestrator Server with bundled Web UI
 

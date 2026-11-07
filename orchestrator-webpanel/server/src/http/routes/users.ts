@@ -29,6 +29,56 @@ export function proxyAuthTlsRejectUnauthorized(): boolean {
   return process.env.ORCHESTRATOR_PROXYAUTH_TLS_REJECT_UNAUTHORIZED !== 'false';
 }
 
+export function proxyAuthTimeoutMs(): number {
+  const configured = Number(process.env.ORCHESTRATOR_PROXYAUTH_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : 5_000;
+}
+
+export function proxyAuthConfig(): { paramName: string; validateUrl: string; regex: string; loginUrl: string } | null {
+  const validateUrl = process.env.ORCHESTRATOR_PROXYAUTH_URL;
+  const regex = process.env.ORCHESTRATOR_PROXYAUTH_REGEX;
+  if (!validateUrl || !regex) return null;
+
+  return {
+    paramName: process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket',
+    validateUrl,
+    regex,
+    loginUrl: process.env.ORCHESTRATOR_PROXYAUTH_LOGIN_URL
+      || validateUrl.replace(/\/validate\/?$/i, '/login'),
+  };
+}
+
+export function buildProxyAuthLoginRedirect(loginUrl: string, serviceUrl: string): string {
+  const url = new URL(loginUrl);
+  url.searchParams.set('service', serviceUrl);
+  return url.toString();
+}
+
+export async function validateProxyAuthTicket(ticket: string, serviceUrl: string): Promise<string | null> {
+  const config = proxyAuthConfig();
+  if (!config) return null;
+
+  const url = new URL(config.validateUrl);
+  url.searchParams.set(config.paramName, ticket);
+  url.searchParams.set('service', serviceUrl);
+
+  const body = await new Promise<string>((resolve, reject) => {
+    const handleResponse = (response: http.IncomingMessage) => {
+      let data = '';
+      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('end', () => resolve(data));
+    };
+    const request = url.protocol === 'https:'
+      ? https.get(url, { rejectUnauthorized: proxyAuthTlsRejectUnauthorized() }, handleResponse)
+      : http.get(url, handleResponse);
+    request.setTimeout(proxyAuthTimeoutMs(), () => request.destroy(new Error('ProxyAuth validation timed out')));
+    request.on('error', reject);
+  });
+
+  const match = body.match(new RegExp(config.regex));
+  return match?.[1] ? match[1].trim().toLowerCase() : null;
+}
+
 // Auth endpoints (no auth required)
 router.post('/auth/login', validateBody(loginSchema), async (req: Request, res: Response) => {
   const { login, password } = req.body;
@@ -180,16 +230,16 @@ router.delete('/users/:id/apikeys/:keyId', authMiddleware, requireRole('admin'),
 
 // Returns proxy auth config for the frontend (no auth required)
 router.get('/authProxy/config', (_req: Request, res: Response) => {
-  const paramName = process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
-  const enabled = !!(process.env.ORCHESTRATOR_PROXYAUTH_URL && process.env.ORCHESTRATOR_PROXYAUTH_REGEX);
+  const config = proxyAuthConfig();
+  const paramName = config?.paramName || process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
+  const enabled = !!config;
   // loginUrl: where the browser is bootstrapped to obtain a ticket. Explicit
   // env wins; otherwise derive it from the validate URL (CAS convention:
   // /validate and /login are siblings). service: the value the SSO must echo.
   let loginUrl: string | undefined;
   let service: string | undefined;
-  if (enabled) {
-    loginUrl = process.env.ORCHESTRATOR_PROXYAUTH_LOGIN_URL
-      || process.env.ORCHESTRATOR_PROXYAUTH_URL!.replace(/\/validate\/?$/i, '/login');
+  if (config) {
+    loginUrl = config.loginUrl;
     service = buildServiceUrl();
   }
   res.json({ enabled, paramName, loginUrl, service });
@@ -202,11 +252,10 @@ router.get('/authProxy/config', (_req: Request, res: Response) => {
 //   ORCHESTRATOR_PROXYAUTH_REGEX — regex to extract login from the validation response
 //   ORCHESTRATOR_PROXYAUTH_TLS_REJECT_UNAUTHORIZED — set false to allow an untrusted SSO certificate
 router.get('/authProxy', async (req: Request, res: Response) => {
-  const paramName = process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
-  const proxyUrl = process.env.ORCHESTRATOR_PROXYAUTH_URL;
-  const regexStr = process.env.ORCHESTRATOR_PROXYAUTH_REGEX;
+  const config = proxyAuthConfig();
+  const paramName = config?.paramName || process.env.ORCHESTRATOR_PROXYAUTH_NAME || 'ticket';
 
-  if (!proxyUrl || !regexStr) {
+  if (!config) {
     return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'ProxyAuth not configured' } }) as any;
   }
 
@@ -219,26 +268,11 @@ router.get('/authProxy', async (req: Request, res: Response) => {
     // Some SSO/CAS servers require the `service` parameter on the validation
     // call to match the URL the ticket was originally issued for.
     const serviceUrl = buildServiceUrl();
-    const validateUrl = `${proxyUrl}?${paramName}=${encodeURIComponent(ticket)}&service=${encodeURIComponent(serviceUrl)}`;
-    const body = await new Promise<string>((resolve, reject) => {
-      const handleResponse = (response: http.IncomingMessage) => {
-        let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-        response.on('end', () => resolve(data));
-      };
-      const request = validateUrl.startsWith('https://')
-        ? https.get(validateUrl, { rejectUnauthorized: proxyAuthTlsRejectUnauthorized() }, handleResponse)
-        : http.get(validateUrl, handleResponse);
-      request.on('error', reject);
-    });
-
-    const regex = new RegExp(regexStr);
-    const match = body.match(regex);
-    if (!match || !match[1]) {
+    const login = await validateProxyAuthTicket(ticket, serviceUrl);
+    if (!login) {
       return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Could not extract login from validation response' } }) as any;
     }
 
-    const login = match[1].trim().toLowerCase();
     const users = userRepository;
     const user = await users.findOne({ login });
     if (!user) {

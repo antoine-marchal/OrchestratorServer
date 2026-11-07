@@ -237,7 +237,7 @@ Deux types d'identifiants, tous deux via l'en-tête `Authorization` (`middleware
 |---|---|
 | **cron** | `cronScheduler.ts` charge les lignes `schedules` de `type=cron` et enregistre des jobs node-cron. |
 | **event** | `eventBus.watchInbox(<WORK_DIR>/inbox)` surveille un dossier ; l'arrivée d'un fichier déclenche `file.arrived`. La fin/l'échec d'un flux émettent `flow.completed`/`flow.failed`. Les planifications `type=event` qui correspondent s'exécutent. |
-| **api-trigger** | Crée un token ; un `GET /trigger/:token` non authentifié déclenche le flux. Les tokens expirent automatiquement (balayés chaque minute dans `server.ts`). |
+| **api-trigger** | Crée un token ; `GET /trigger/:token/:param?` déclenche le flux et transmet `param` au premier nœud. Si proxy-auth est configuré, un aller-retour SSO attribue l'exécution à l'utilisateur. Une tentative corrélée lance un secours attribué à l'IP après 5 s si le callback n'arrive pas ; le premier chemin à réclamer la tentative gagne afin d'éviter une double exécution. Les tokens expirent automatiquement (balayés chaque minute dans `server.ts`). |
 
 ---
 

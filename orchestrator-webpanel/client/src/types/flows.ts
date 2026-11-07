@@ -67,8 +67,8 @@ export interface FlowExecution {
   branch?: string;
   jobId: string;
   status: ExecutionStatus;
-  triggeredBy: 'manual' | 'schedule';
-  triggeredUser?: string;
+  triggeredBy: 'manual' | 'cron' | 'event' | 'api' | 'schedule';
+  triggeredUser?: string | null;
   startTime: string;
   endTime: string | null;
   duration: number | null;

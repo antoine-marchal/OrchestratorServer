@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildServiceUrl, proxyAuthTlsRejectUnauthorized } from '../src/http/routes/users';
+import { buildProxyAuthLoginRedirect, buildServiceUrl, proxyAuthConfig, proxyAuthTimeoutMs, proxyAuthTlsRejectUnauthorized } from '../src/http/routes/users';
 
 const originalEnv = { ...process.env };
 
@@ -46,5 +46,37 @@ describe('proxyAuthTlsRejectUnauthorized', () => {
     process.env.ORCHESTRATOR_PROXYAUTH_TLS_REJECT_UNAUTHORIZED = 'false';
 
     expect(proxyAuthTlsRejectUnauthorized()).toBe(false);
+  });
+});
+
+describe('proxyAuth helpers', () => {
+  it('builds the login redirect without discarding existing query parameters', () => {
+    const redirect = new URL(buildProxyAuthLoginRedirect(
+      'https://sso.example.test/login?gateway=true',
+      'https://orchestrator.example.test/api/v1/trigger/token/value',
+    ));
+
+    expect(redirect.searchParams.get('gateway')).toBe('true');
+    expect(redirect.searchParams.get('service')).toBe('https://orchestrator.example.test/api/v1/trigger/token/value');
+  });
+
+  it('only enables proxy auth when validation URL and regex are both configured', () => {
+    process.env.ORCHESTRATOR_PROXYAUTH_URL = 'https://sso.example.test/validate';
+    delete process.env.ORCHESTRATOR_PROXYAUTH_REGEX;
+    expect(proxyAuthConfig()).toBeNull();
+
+    process.env.ORCHESTRATOR_PROXYAUTH_REGEX = '<user>([^<]+)</user>';
+    expect(proxyAuthConfig()).toMatchObject({
+      paramName: 'ticket',
+      loginUrl: 'https://sso.example.test/login',
+    });
+  });
+
+  it('uses a five-second validation timeout by default', () => {
+    delete process.env.ORCHESTRATOR_PROXYAUTH_TIMEOUT_MS;
+    expect(proxyAuthTimeoutMs()).toBe(5_000);
+
+    process.env.ORCHESTRATOR_PROXYAUTH_TIMEOUT_MS = '2500';
+    expect(proxyAuthTimeoutMs()).toBe(2_500);
   });
 });

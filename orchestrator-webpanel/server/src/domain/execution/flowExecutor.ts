@@ -656,13 +656,15 @@ export async function executeInlineFlow(tempFlow: any, flowInput: any, flowPath:
 // flow's own worker. A `branch` other than the active one is reconstructed from
 // that branch's git HEAD without disturbing the live flow doc.
 export interface ExecuteOverrides { workerId?: string | null; branch?: string }
+export interface ExecuteContext { input?: any; actor?: string }
 
-export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string, overrides?: ExecuteOverrides): Promise<string | null> {
+export async function executeOrchestratorFlow(flowId: string, triggeredBy: string = 'manual', triggeredUser?: string, overrides?: ExecuteOverrides, context?: ExecuteContext): Promise<string | null> {
   const flowsCol = flowRepository;
   const execsCol = executionRepository;
 
   const flow = await flowsCol.findOne({ _id: flowId });
   if (!flow) return null;
+  const executionActor = context?.actor || triggeredUser || null;
 
   // Resolve the triggering user's role so flowRef sub-flows can be gated by the
   // same worker-access rules as the top-level run. System triggers (cron/api)
@@ -730,7 +732,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
       const reason = !w ? 'Assigned worker not found' : `Assigned worker "${w.name}" is offline`;
       const failedExec: any = {
         _id: executionId, flowId, flowName: flow.name, namespace: flow.namespace || 'default',
-        status: 'FAILED', triggeredBy, triggeredUser: triggeredUser || null, startTime, endTime, duration, jobId: null,
+        status: 'FAILED', triggeredBy, triggeredUser: executionActor, startTime, endTime, duration, jobId: null,
         workerId: effectiveWorkerId, workerName: w?.name || null,
         output: null, error: reason, nodeStatuses: {}, flowCommit, branch, ...graphSnapshot,
       };
@@ -750,7 +752,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     namespace: flow.namespace || 'default',
     status: 'RUNNING',
     triggeredBy,
-    triggeredUser: triggeredUser || null,
+    triggeredUser: executionActor,
     startTime,
     endTime: null,
     duration: null,
@@ -788,7 +790,7 @@ export async function executeOrchestratorFlow(flowId: string, triggeredBy: strin
     triggerUser,
     code: flowContent,
     codeFilePath: null,
-    input: null,
+    input: context?.input ?? null,
     timeout: 0,
     basePath: EXECUTION_DIR,
     variables: {},

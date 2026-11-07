@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFlowContent } from '../src/domain/execution/flowExecutor';
+import { executeInlineFlow, parseFlowContent } from '../src/domain/execution/flowExecutor';
 
 describe('parseFlowContent', () => {
   it('parses a minimal valid flow', () => {
@@ -32,5 +32,16 @@ describe('parseFlowContent', () => {
   it('throws when nodes/edges missing', () => {
     expect(() => parseFlowContent(JSON.stringify({ nodes: [] }))).toThrow(/missing nodes or edges/);
     expect(() => parseFlowContent(JSON.stringify({ edges: [] }))).toThrow(/missing nodes or edges/);
+  });
+
+  it('supplies flow input to the first root node', async () => {
+    const parsed = parseFlowContent(JSON.stringify({
+      nodes: [{ id: 'root', data: { type: 'javascript', code: 'return input;' } }],
+      edges: [],
+    }));
+
+    const result = await executeInlineFlow(parsed, 'from-api-path', [], process.cwd(), 1000, null);
+
+    expect(result).toBe('from-api-path');
   });
 });

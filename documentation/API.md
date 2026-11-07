@@ -173,7 +173,7 @@ Montés sur `/api/v1`.
 
 | Méthode | Chemin | Auth | Description |
 |---|---|---|---|
-| GET | `/trigger/:token` | public | Déclenche le flux lié à ce token api-trigger. |
+| GET | `/trigger/:token/:param?` | public / proxy-auth optionnel | Déclenche le flux lié au token. Le segment `param`, s'il est fourni, devient l'entrée du premier nœud. Avec proxy-auth configuré, la route effectue une redirection SSO pour attribuer l'exécution à l'utilisateur. Si le callback n'arrive pas sous 5 s, un déclenchement de secours attribué à l'adresse IP est lancé. Un identifiant interne de tentative empêche le callback SSO et le secours de lancer deux exécutions. |
 | POST | `/trigger-tokens/:id/revoke` | admin | Révoque un token de trigger. |
 
 ---

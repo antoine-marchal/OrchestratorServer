@@ -334,8 +334,8 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
         {tab === 'api' && (
           <div className="p-5 space-y-4">
             <p className={`text-xs ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Generate a unique URL that triggers this flow on HTTP GET. The token is shown only once at creation —
-              copy it now or you'll have to recreate the trigger.
+              Generate a unique URL that triggers this flow on HTTP GET. Append <code>/PARAM</code> to pass PARAM
+              into the first node. The token is shown only once — copy it now or you'll have to recreate the trigger.
             </p>
 
             <div className="flex gap-2">

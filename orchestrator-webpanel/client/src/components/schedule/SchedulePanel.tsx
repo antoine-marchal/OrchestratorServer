@@ -199,7 +199,7 @@ const SchedulePanel: React.FC<SchedulePanelProps> = ({ flowId }) => {
             )}
             {creating === 'api-trigger' && (
               <p className="text-xs" style={{ color: 'var(--text-3)' }}>
-                A unique trigger URL will be generated. You can copy it after creation.
+                A unique trigger URL will be generated. Append /PARAM to pass PARAM into the first node.
               </p>
             )}
             <div>
