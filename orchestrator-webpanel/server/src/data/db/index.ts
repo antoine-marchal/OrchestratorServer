@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 const COLLECTION_NAMES = [
   'users', 'roles', 'secrets', 'flows', 'executions', 'execution_logs',
@@ -211,7 +212,11 @@ export async function connectDB(): Promise<void> {
 
   if (mongoUri) {
     const { MongoClient } = await import('mongodb');
-    const client = new MongoClient(mongoUri);
+    // Hand the driver `os` explicitly: by default mongodb 7 loads it with a dynamic
+    // `import('os')`, which fails inside the pkg-bundled binary. The driver then
+    // silently sends empty client metadata and MongoDB rejects the handshake
+    // ("Missing required sub-document 'driver'", code 183).
+    const client = new MongoClient(mongoUri, { runtimeAdapters: { os } });
     await client.connect();
     // db() with no args uses the database name embedded in the URI
     const nativeDb = client.db();
