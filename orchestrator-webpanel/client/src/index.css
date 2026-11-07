@@ -1,15 +1,44 @@
 /* Local font bundles — no internet required */
-@import '@fontsource/inter/latin-400.css';
-@import '@fontsource/inter/latin-500.css';
-@import '@fontsource/inter/latin-600.css';
-@import '@fontsource/inter/latin-700.css';
-@import '@fontsource/jetbrains-mono/latin-400.css';
-@import '@fontsource/jetbrains-mono/latin-500.css';
-@import '@fontsource/jetbrains-mono/latin-600.css';
+@import '@fontsource/inter/latin-400.css' layer(base);
+@import '@fontsource/inter/latin-500.css' layer(base);
+@import '@fontsource/inter/latin-600.css' layer(base);
+@import '@fontsource/inter/latin-700.css' layer(base);
+@import '@fontsource/jetbrains-mono/latin-400.css' layer(base);
+@import '@fontsource/jetbrains-mono/latin-500.css' layer(base);
+@import '@fontsource/jetbrains-mono/latin-600.css' layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  /* v3 defaults dropped in v4: placeholder colour and pointer cursor on buttons. */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 /* ===== Terminal Cobalt — CSS Variables ===== */
 :root {
@@ -812,10 +841,10 @@ tr:hover .tc-row-actions { opacity: 1; }
 }
 
 /* ReactFlow overrides */
-.react-flow__node { @apply shadow-lg; }
-.react-flow__handle { @apply w-3 h-3; background: var(--accent); }
-.react-flow__minimap { @apply rounded-lg shadow-lg; background: var(--surface); }
-.react-flow__controls { @apply rounded-lg shadow-lg; background: var(--surface); }
+.react-flow__node { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); }
+.react-flow__handle { width: 0.75rem; height: 0.75rem; background: var(--accent); }
+.react-flow__minimap { border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); background: var(--surface); }
+.react-flow__controls { border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1); background: var(--surface); }
 .react-flow__controls-button:hover { background: var(--surface-hi); }
 .react-flow__handle { z-index: 1000; }
 

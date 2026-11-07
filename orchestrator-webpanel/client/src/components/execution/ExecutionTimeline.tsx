@@ -291,21 +291,21 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({
               {row.hasChildren ? (
                 <button
                   onClick={e => { e.stopPropagation(); toggleCollapse(row.id); }}
-                  className="p-0 flex-shrink-0"
+                  className="p-0 shrink-0"
                   style={{ color: 'var(--text-3)' }}
                   title={isCollapsed ? 'Expand inner nodes' : 'Collapse inner nodes'}
                 >
                   {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
               ) : (
-                <span className="w-3 h-3 flex-shrink-0" />
+                <span className="w-3 h-3 shrink-0" />
               )}
               {isFlowRoot
-                ? <GitBranch className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-3)' }} />
+                ? <GitBranch className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
                 : <NodeIcon type={row.type || 'javascript'} />}
               <span className="truncate flex-1 ml-1">{row.label}</span>
               {row.runs.length > 1 && (
-                <span className="flex-shrink-0 text-[10px] leading-none px-1 py-0.5 rounded" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}>×{row.runs.length}</span>
+                <span className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded-sm" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}>×{row.runs.length}</span>
               )}
               {/**
               <RelationBadge direction="in" items={row.preds} />

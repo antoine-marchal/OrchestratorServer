@@ -1,4 +1,5 @@
-import { Node, Edge } from 'reactflow';
+import type { Edge, Node } from '../types/xyflow';
+
 
 /**
  * Console message type for execution logging

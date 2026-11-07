@@ -265,6 +265,6 @@ Deux types d'identifiants, tous deux via l'en-tête `Authorization` (`middleware
 | Réconciliation des exécutions orphelines au boot | La carte des jobs en mémoire est remise à zéro au redémarrage ; sans ça, les runs tournent à l'infini. | Un run interrompu par un redémarrage est marqué FAILED, pas repris. |
 | Dépôt git par flux, en base (pas de `.git`) | Versionnage type code (branches, commits, clone/push) sans dépendre d'un git système ni d'un stockage fichier. | Implémentation smart-HTTP maison à maintenir ; les objets git vivent dans la même base que le reste. |
 | Artefacts adressés par contenu (`artifact_blobs`) + bytes réels committés dans git | Un seul exemplaire par contenu côté base, dédupliqué entre runs/nœuds ; le `git clone` récupère le vrai fichier (ouvrable hors-ligne). | Duplication assumée entre `artifact_blobs` et les blobs git ; GC nécessaire (fenêtre de fraîcheur pour ne pas réclamer un upload en cours). |
-| Binaire unique packagé (`pkg`) | Déploiement « pose-et-lance » ; embarque `groovyExec.jar`. | Épinglé sur la cible Node 18 (backlog : passer à 20/22). |
+| Binaire unique packagé (`pkg`) | Déploiement « pose-et-lance » ; embarque `groovyExec.jar`. | Cible Node 24 LTS (`@yao-pkg/pkg` 6). |
 
 Voir [todo.md](../todo.md) pour le backlog complet des limites connues et du durcissement prévu.

@@ -1,6 +1,7 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { NodeResizer, NodeProps } from 'reactflow';
+import { NodeResizer, NodeProps } from '@xyflow/react';
+import type { NodeType } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { openFlowNodeEditor } from '../../store/flowNodeContent';
@@ -9,7 +10,7 @@ import { NodeBody } from './NodeBody';
 import { NodeFooter } from './NodeFooter';
 import { Loader2, ExternalLink } from 'lucide-react';
 
-const CustomNode = ({ data, id, selected }: NodeProps) => {
+const CustomNode = ({ data, id, selected }: NodeProps<NodeType>) => {
   const { updateNodeData, executeNode, edges, removeNode, nodes, nodeLoading, outputClearCounter } = useFlowStore();
   const sessionStore = useSessionStore();
   const navigate = useNavigate();

@@ -1,16 +1,16 @@
 {
   "name": "orchestrator-worker",
-  "version": "3.3.2",
+  "version": "4.0.0",
   "description": "Orchestrator remote execution agent",
   "main": "dist/agent.js",
   "scripts": {
-    "dev": "ts-node src/agent.ts",
+    "dev": "tsx src/agent.ts",
     "build": "tsc",
     "start": "node dist/agent.js",
     "pkg:prepare": "node scripts/prepare-pkg.mjs",
-    "pkg:win": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output ../release/orchestrator-worker-win.exe && node scripts/patch-exe.mjs",
-    "pkg:linux": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output ../release/orchestrator-worker-linux",
-    "pkg:all": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node18-win-x64 --output ../release/orchestrator-worker-win.exe && pkg dist/agent.js --config package.json --targets node18-linux-x64 --output ../release/orchestrator-worker-linux && node scripts/patch-exe.mjs"
+    "pkg:win": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node24-win-x64 --output ../release/orchestrator-worker-win.exe && node scripts/patch-exe.mjs",
+    "pkg:linux": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node24-linux-x64 --output ../release/orchestrator-worker-linux",
+    "pkg:all": "npm run pkg:prepare && pkg dist/agent.js --config package.json --targets node24-win-x64 --output ../release/orchestrator-worker-win.exe && pkg dist/agent.js --config package.json --targets node24-linux-x64 --output ../release/orchestrator-worker-linux && node scripts/patch-exe.mjs"
   },
   "pkg": {
     "assets": [
@@ -18,27 +18,25 @@
       "dist/**/*.jar"
     ],
     "targets": [
-      "node18-win-x64",
-      "node18-linux-x64"
+      "node24-win-x64",
+      "node24-linux-x64"
     ],
     "outputPath": "release"
   },
   "dependencies": {
-    "axios": "^1.7.2",
-    "dotenv": "^16.6.1",
-    "playwright": "^1.43.1",
-    "tree-kill": "^1.2.2",
-    "uuid": "^10.0.0"
+    "axios": "^1.21.0",
+    "dotenv": "^18.0.9",
+    "playwright": "^1.65.0",
+    "tree-kill": "^1.2.2"
   },
   "devDependencies": {
-    "@types/node": "^20.14.9",
-    "@types/uuid": "^10.0.0",
-    "@yao-pkg/pkg": "^5.16.1",
-    "resedit": "^3.0.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.3"
+    "@types/node": "^24.19.2",
+    "@yao-pkg/pkg": "^6.25.0",
+    "resedit": "^3.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

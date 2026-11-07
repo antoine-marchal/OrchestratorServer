@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import 'reactflow/dist/style.css';
+import '@xyflow/react/dist/style.css';
 import {
   Activity,
   AlertCircle,
@@ -151,7 +151,7 @@ const ResizeHandleV: React.FC<{ width: number; setWidth: (w: number) => void }> 
         document.body.style.userSelect = 'none';
       }}
       title="Drag to resize"
-      className="flex items-center justify-center flex-shrink-0"
+      className="flex items-center justify-center shrink-0"
       style={{ width: 9, cursor: 'ew-resize', background: 'var(--surface)', borderRight: '1px solid var(--border)' }}
     >
       <GripVertical size={12} style={{ color: 'var(--text-mute)' }} />
@@ -184,7 +184,7 @@ const ResizeHandle: React.FC<{ height: number; setHeight: (h: number) => void; t
         document.body.style.userSelect = 'none';
       }}
       title={title ?? 'Drag to resize'}
-      className="flex items-center justify-center flex-shrink-0"
+      className="flex items-center justify-center shrink-0"
       style={{ height: 9, cursor: 'ns-resize', background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
     >
       <GripHorizontal size={12} style={{ color: 'var(--text-mute)' }} />
@@ -495,7 +495,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
 
   return (
     <div className="h-full flex overflow-hidden">
-      <div className="flex-shrink-0 overflow-auto" style={{ width: execListWidth, borderColor: 'var(--border)' }}>
+      <div className="shrink-0 overflow-auto" style={{ width: execListWidth, borderColor: 'var(--border)' }}>
         <div className="sticky top-0 z-10 px-3 py-2 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <button
@@ -613,7 +613,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
       <div className="flex-1 flex flex-col overflow-hidden" style={{ background: 'var(--bg)' }}>
         {selectedExec ? (
           <>
-            <div className="px-4 py-2 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div className="px-4 py-2 border-b flex items-center gap-3 shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
               <StatusBadge status={selectedExec.status} />
               {selectedExec.status === 'SUCCESS' && (selectedExec.logs || []).some(l => l.type === 'error' || (l.type === 'flow' && /fail/i.test(l.message))) && (
                 <span
@@ -707,7 +707,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
               return (
                 <>
                   {showGraph && hasNodes && (
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       <div style={{ height: graphHeight, background: 'var(--bg-2)' }}>
                         <ExecutionGraph
                           executionId={selectedExec.id}
@@ -722,7 +722,7 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                     </div>
                   )}
                   {showTimeline && hasNodes && (
-                    <div className="flex-shrink-0">
+                    <div className="shrink-0">
                       <div style={{ height: timelineHeight }}>
                         <ExecutionTimeline
                           exec={selectedExec}
@@ -892,11 +892,11 @@ const ExecutionsTab: React.FC<{ flow: OrchestratorFlow; highlightId?: string; on
                                       ? <ChevronRight size={11} style={{ flexShrink: 0 }} />
                                       : <ChevronDown size={11} style={{ flexShrink: 0 }} />
                                     }
-                                    <span className="min-w-0 whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
+                                    <span className="min-w-0 whitespace-pre-wrap wrap-break-word" dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }} />
                                   </div>
                                 ) : (
                                   <span
-                                    className="min-w-0 whitespace-pre-wrap break-words"
+                                    className="min-w-0 whitespace-pre-wrap wrap-break-word"
                                     style={{ color: typeColor }}
                                     dangerouslySetInnerHTML={{ __html: ansiToHtml(log.message) }}
                                   />
@@ -1118,9 +1118,9 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--bg)' }}>
-      <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+      <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
         <SessionTabs flowId={flow.id} compact />
-        <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+        <div className="flex items-center gap-2 ml-3 shrink-0">
           {saveState === 'saved' && (
             <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--ok)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
               <CheckCircle2 size={12} />Saved
@@ -1139,7 +1139,7 @@ const EditorTab: React.FC<{ flow: OrchestratorFlow }> = ({ flow }) => {
       </div>
 
       {showArtifacts && (
-        <div className="flex-shrink-0 px-3 py-2 border-b" style={{ background: 'var(--bg-2)', borderColor: 'var(--border)' }}>
+        <div className="shrink-0 px-3 py-2 border-b" style={{ background: 'var(--bg-2)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2 mb-2">
             <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Artifacts</span>
             <span style={{ fontSize: 10, color: 'var(--text-mute)' }}>— files extracted to ORCHESTRATOR_EXECUTION_DIR before each execution</span>
@@ -1322,7 +1322,7 @@ const FlowDetail: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--bg)' }}>
-      <div className="flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-2)' }}>
+      <div className="shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-2)' }}>
         <div className="px-5 py-3 flex items-center gap-3">
           <button
             onClick={() => navigate('/flows')}

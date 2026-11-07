@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 import { userRepository } from '../../data/repositories';
 import { hashApiKey, generateJWT, generateRefreshToken, verifyRefreshToken } from '../../infra/auth/tokens';
 import { requireRole } from '../middleware/rbac';

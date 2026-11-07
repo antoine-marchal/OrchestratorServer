@@ -1,18 +1,12 @@
+import type { Edge, Node } from '../../types/xyflow';
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal,
-  TerminalSquare, MessageSquare, CornerRightDown, ChevronRight,
-  ChevronDown, Circle, ArrowDownLeft, ArrowUpRight,
-  Loader2, CheckCircle2, AlertCircle, RefreshCw, Folder as FolderIcon, FolderOpen,
-  FileText, Download,
-} from 'lucide-react';
+import { Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal, TerminalSquare, MessageSquare, CornerRightDown, ChevronRight, ChevronDown, Circle, ArrowDownLeft, ArrowUpRight, Loader2, CheckCircle2, AlertCircle, RefreshCw, Folder as FolderIcon, FolderOpen, FileText, Download, } from 'lucide-react';
 import { useSessionStore } from '../../store/sessionStore';
 import { useFlowStore } from '../../store/sessionFlowStore';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { apiClient } from '../../utils/apiClient';
 import { TransferModal, type TransferState } from '../flows/TransferModal';
 import { RepoFileViewer, type RepoFile } from './RepoFileViewer';
-import { Node, Edge } from 'reactflow';
 
 // A user-pushed (non-managed) file/folder in the flow's committed git tree,
 // mirroring ExtraEntry in the server materializer.
@@ -64,27 +58,27 @@ const isFile = (n: Node) => !isFlowSession(n) && typeof n?.data?.code === 'strin
 
 function StatusIcon({ status }: { status?: string }) {
   switch (status) {
-    case 'running': return <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />;
-    case 'retrying': return <RefreshCw className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: 'var(--warn)' }} />;
-    case 'success': return <CheckCircle2 className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--ok)' }} />;
-    case 'failed': return <AlertCircle className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--err)' }} />;
+    case 'running': return <Loader2 className="w-3 h-3 animate-spin shrink-0" style={{ color: 'var(--accent)' }} />;
+    case 'retrying': return <RefreshCw className="w-3 h-3 animate-spin shrink-0" style={{ color: 'var(--warn)' }} />;
+    case 'success': return <CheckCircle2 className="w-3 h-3 shrink-0" style={{ color: 'var(--ok)' }} />;
+    case 'failed': return <AlertCircle className="w-3 h-3 shrink-0" style={{ color: 'var(--err)' }} />;
     default: return null;
   }
 }
 
 function NodeIcon({ type }: { type: string }) {
   switch (type) {
-    case 'variable': return <Hash className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />;
-    case 'flow': return <GitBranch className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />;
-    case 'javascript': return <FileCode className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />;
-    case 'jsbackend': return <Server className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />;
-    case 'groovy': return <Coffee className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />;
-    case 'batch': return <Terminal className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />;
-    case 'powershell': return <TerminalSquare className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />;
-    case 'python': return <Code2 className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />;
-    case 'goto': return <CornerRightDown className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />;
-    case 'comment': return <MessageSquare className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />;
-    default: return <Code2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />;
+    case 'variable': return <Hash className="w-3.5 h-3.5 text-purple-500 shrink-0" />;
+    case 'flow': return <GitBranch className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
+    case 'javascript': return <FileCode className="w-3.5 h-3.5 text-yellow-500 shrink-0" />;
+    case 'jsbackend': return <Server className="w-3.5 h-3.5 text-blue-500 shrink-0" />;
+    case 'groovy': return <Coffee className="w-3.5 h-3.5 text-red-500 shrink-0" />;
+    case 'batch': return <Terminal className="w-3.5 h-3.5 text-gray-400 shrink-0" />;
+    case 'powershell': return <TerminalSquare className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+    case 'python': return <Code2 className="w-3.5 h-3.5 text-yellow-400 shrink-0" />;
+    case 'goto': return <CornerRightDown className="w-3.5 h-3.5 text-yellow-600 shrink-0" />;
+    case 'comment': return <MessageSquare className="w-3.5 h-3.5 text-gray-500 shrink-0" />;
+    default: return <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
   }
 }
 
@@ -146,7 +140,7 @@ function RelationBadge({ direction, items }: { direction: 'in' | 'out'; items: {
   return (
     <span
       title={tooltip}
-      className="flex items-center gap-0.5 flex-shrink-0 text-[10px] leading-none px-1 py-0.5 rounded"
+      className="flex items-center gap-0.5 shrink-0 text-[10px] leading-none px-1 py-0.5 rounded-sm"
       style={{ background: 'var(--bg-3)', color: direction === 'in' ? 'var(--text-3)' : 'var(--accent)', fontFamily: 'var(--font-mono)' }}
     >
       <Icon className="w-2.5 h-2.5" />
@@ -161,12 +155,12 @@ function Folder({ name, depth, children, defaultOpen = true }: { name: string; d
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none hover:bg-white/5"
+        className="flex items-center gap-1 px-2 py-1 cursor-pointer rounded-xs text-xs select-none hover:bg-white/5"
         style={{ paddingLeft: `${8 + depth * 14}px`, color: 'var(--text-3)' }}
         onClick={() => setOpen(o => !o)}
       >
-        {open ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
-        {open ? <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent)' }} /> : <FolderIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--accent)' }} />}
+        {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+        {open ? <FolderOpen className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} /> : <FolderIcon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />}
         <span className="truncate ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{name}</span>
       </div>
       {open && <div>{children}</div>}
@@ -189,16 +183,16 @@ function FileRow({ name, node, depth, parentFlow, relations, editingNodeId, modi
   const rel = relations[node.id] || { preds: [], succs: [] };
   return (
     <div
-      className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none ${isEditing ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}`}
+      className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-xs text-xs select-none ${isEditing ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}`}
       style={{ paddingLeft: `${8 + depth * 14}px` }}
       onClick={() => onSelect(node, parentFlow)}
     >
-      <span className="w-3 h-3 flex-shrink-0" />
+      <span className="w-3 h-3 shrink-0" />
       <NodeIcon type={type} />
       <span className="truncate flex-1 ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{name}</span>
       <RelationBadge direction="in" items={rel.preds} />
       <RelationBadge direction="out" items={rel.succs} />
-      {isModified && <Circle className="w-1.5 h-1.5 fill-orange-400 text-orange-400 flex-shrink-0" />}
+      {isModified && <Circle className="w-1.5 h-1.5 fill-orange-400 text-orange-400 shrink-0" />}
       <StatusIcon status={(node.data as any)?.executionStatus} />
     </div>
   );
@@ -269,17 +263,17 @@ function ExtraFileRow({ entry, depth, onOpen, onDownload }: {
 }) {
   return (
     <div
-      className="group flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none hover:bg-white/5 text-gray-300"
+      className="group flex items-center gap-1 px-2 py-1 cursor-pointer rounded-xs text-xs select-none hover:bg-white/5 text-gray-300"
       style={{ paddingLeft: `${8 + depth * 14}px` }}
       onClick={() => onOpen(entry)}
     >
-      <span className="w-3 h-3 flex-shrink-0" />
-      <FileText className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-3)' }} />
+      <span className="w-3 h-3 shrink-0" />
+      <FileText className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
       <span className="truncate flex-1 ml-1" style={{ fontFamily: 'var(--font-mono)' }}>{entry.name}</span>
       <button
         onClick={(e) => { e.stopPropagation(); onDownload(entry); }}
         title="Download"
-        className="opacity-0 group-hover:opacity-100 flex-shrink-0"
+        className="opacity-0 group-hover:opacity-100 shrink-0"
         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0 }}
       >
         <Download className="w-3 h-3" />

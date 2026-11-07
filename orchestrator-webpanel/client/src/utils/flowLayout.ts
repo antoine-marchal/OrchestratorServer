@@ -1,5 +1,6 @@
+import type { Node } from '../types/xyflow';
 import dagre from 'dagre';
-import { Node } from 'reactflow';
+
 
 const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));

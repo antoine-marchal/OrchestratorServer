@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import ReactFlow, {
+import {
+  ReactFlow,
   Background,
   useNodesState,
   useEdgesState,
@@ -7,8 +8,9 @@ import ReactFlow, {
   Position,
   MarkerType,
   type ReactFlowInstance,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import type { Edge, Node } from '../../types/xyflow';
 import { CheckCircle2, AlertCircle, Loader2, Clock, RefreshCw, SkipForward, ChevronRight, ChevronDown } from 'lucide-react';
 import { NODE_TYPES } from '../../constants/nodeTypes';
 import { formatDurationShort } from '../../utils/execTiming';
@@ -35,7 +37,7 @@ function NodeTypeIcon({ type, size = 14 }: { type?: string; size?: number }) {
   const def = type ? NODE_ICON_MAP[type] : undefined;
   if (!def) return null;
   const { Icon, color } = def;
-  return <Icon size={size} className={`flex-shrink-0 ${color}`} />;
+  return <Icon size={size} className={`shrink-0 ${color}`} />;
 }
 
 type NodeExecStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'retrying';
@@ -217,7 +219,7 @@ function ExecutionNode({ data }: { data: ExecutionNodeData }) {
         )}
         <StatusIcon status={status} size={13} />
         {data.executionAttempt != null && data.executionAttempt > 1 && (
-          <span className="text-xs px-1 rounded" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontSize: 10 }}>
+          <span className="text-xs px-1 rounded-sm" style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontSize: 10 }}>
             #{data.executionAttempt}
           </span>
         )}
@@ -285,9 +287,9 @@ export const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
   const onNodeSelectRef = useRef(onNodeSelect);
   onNodeSelectRef.current = onNodeSelect;
 
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
-  const rfInstance = useRef<ReactFlowInstance | null>(null);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const rfInstance = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Cache of built rf-nodes by id + content signature. Status/duration updates
   // arrive in bursts (SSE + 3s poll); rebuilding every node object each burst
   // makes ReactFlow re-mount/re-measure the whole graph, and an interrupted

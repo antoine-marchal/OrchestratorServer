@@ -251,7 +251,7 @@ const Console: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setFullscreen()}
-            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            className="p-1 hover:bg-gray-700 hover:text-white rounded-sm"
             title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {fullscreen ? (
@@ -262,7 +262,7 @@ const Console: React.FC = () => {
           </button>
           <button
             onClick={clearConsole}
-            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            className="p-1 hover:bg-gray-700 hover:text-white rounded-sm"
             title="Clear console"
           >
             <Trash2 className="w-4 h-4" />
@@ -275,7 +275,7 @@ const Console: React.FC = () => {
                 setTimeoutDropdownOpen((v) => !v);
                 setLogDropdownOpen(false);
               }}
-              className="p-1 hover:bg-gray-700  hover:text-white rounded flex items-center"
+              className="p-1 hover:bg-gray-700  hover:text-white rounded-sm flex items-center"
               title="Node execution timeout"
             >
               <Clock className="w-4 h-4" />
@@ -284,7 +284,7 @@ const Console: React.FC = () => {
             {timeoutDropdownOpen && (
               <div
                 ref={timeoutDropdownRef}
-                className="absolute right-0 mt-2 w-36 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded shadow-xl z-50"
+                className="absolute right-0 mt-2 w-36 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm shadow-xl z-50"
               >
                 <div className="py-1 px-2 text-xs text-gray-600 dark:text-gray-400 border-b border-gray-300 dark:border-gray-700">Execution Timeout</div>
                 {[5, 30, 60, 120, 600, 1200, Infinity].map((seconds) => (
@@ -311,7 +311,7 @@ const Console: React.FC = () => {
               setLogDropdownOpen((v) => !v);
               setTimeoutDropdownOpen(false);
             }}
-            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            className="p-1 hover:bg-gray-700 hover:text-white rounded-sm"
             title="Log level filter"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -319,7 +319,7 @@ const Console: React.FC = () => {
             </svg>
           </button>
           {logDropdownOpen && (
-            <div ref={logDropdownRef} className="absolute right-0 mt-2 w-36 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded shadow-xl z-50">
+            <div ref={logDropdownRef} className="absolute right-0 mt-2 w-36 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm shadow-xl z-50">
               {LOG_TYPES.map((item) => (
                 <label key={item.value} className="flex items-center px-3 py-1 cursor-pointer hover:bg-gray-700 hover:text-white">
                   <input
@@ -337,7 +337,7 @@ const Console: React.FC = () => {
 
           <button
             onClick={handleExportLogs}
-            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            className="p-1 hover:bg-gray-700 hover:text-white rounded-sm"
             title="Export logs"
           >
             <Download className="w-4 h-4" />
@@ -345,7 +345,7 @@ const Console: React.FC = () => {
 
           <button
             onClick={toggleConsole}
-            className="p-1 hover:bg-gray-700 hover:text-white rounded"
+            className="p-1 hover:bg-gray-700 hover:text-white rounded-sm"
             title="Close console"
           >
             <X className="w-4 h-4" />
@@ -394,7 +394,7 @@ const Console: React.FC = () => {
               [{new Date(msg.timestamp).toLocaleTimeString()}] {getScopedLabel(msg)}:
             </span>
             <span
-              className="whitespace-pre-wrap break-words min-w-0"
+              className="whitespace-pre-wrap wrap-break-word min-w-0"
               dangerouslySetInnerHTML={{
                 __html: ansiToHtml(msg.message || '')
               }}

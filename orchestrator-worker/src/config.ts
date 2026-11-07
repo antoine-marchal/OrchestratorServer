@@ -1,6 +1,6 @@
 // Centralised worker configuration — every tunable read from the environment in
 // one place. Other modules import these constants instead of reading env ad hoc.
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'crypto';
 
 export const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://localhost:3939';
 export const WORKER_NAME      = process.env.WORKER_NAME || `worker-${uuidv4().slice(0, 8)}`;

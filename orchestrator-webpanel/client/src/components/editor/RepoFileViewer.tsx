@@ -47,7 +47,7 @@ export function RepoFileViewer({ file, onClose, onDownload }: {
             : { borderRadius: 8, width: 860, maxWidth: '92vw', height: '80vh' }),
         }}
       >
-        <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-3)' }}>
+        <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-3)' }}>
           <FileText size={13} style={{ color: 'var(--accent)' }} />
           <span className="truncate flex-1" style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text)' }}>{file.path}</span>
           <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>read-only</span>

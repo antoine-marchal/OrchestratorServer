@@ -1,24 +1,13 @@
+import type { Edge, Node } from '../types/xyflow';
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FlowNodeCreationModal from './FlowNodeCreationModal';
 import FlowEditorToolbar from './FlowEditorToolbar';
 import NodeCreationMenu from './NodeCreationMenu';
 
-import ReactFlow, {
-  Edge,
-  Background,
-  NodeTypes,
-  OnNodesChange,
-  Connection,
-  getOutgoers,
-  addEdge,
-  applyNodeChanges,
-  useReactFlow,
-  ReactFlowProvider,
-  IsValidConnection,
-  Node,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+import {
+  ReactFlow, Background, NodeTypes, OnNodesChange, Connection, getOutgoers, addEdge, applyNodeChanges, useReactFlow, ReactFlowProvider, IsValidConnection } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { useFlowStore } from '../store/sessionFlowStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useUIStore } from '../store/uiStore';
@@ -466,9 +455,9 @@ function Flow({ embedded = false, readOnly = false, flowId, versionsVisible, onT
 
   // For context menu (right-click in pane)
   const handlePaneContextMenu = useCallback(
-    (event: React.MouseEvent) => {
+    (event: MouseEvent | React.MouseEvent) => {
       event.preventDefault();
-      const bounds = event.currentTarget.getBoundingClientRect();
+      const bounds = (event.currentTarget as Element).getBoundingClientRect();
       const flowPoint = screenToFlowPosition({
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,

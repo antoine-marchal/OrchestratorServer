@@ -202,7 +202,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
       <div className={`relative w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[calc(100vh-2rem)] flex flex-col transition-[max-width] duration-300 ease-out rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`flex items-center justify-between px-5 py-4 border-b ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2.5">
@@ -291,7 +291,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
                 className={`w-full px-3 py-2 rounded-lg border text-sm font-mono ${
                   dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-purple-500'
                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'
-                } focus:outline-none focus:ring-1 focus:ring-purple-500 ${!isValid && cron ? 'border-red-500' : ''}`}
+                } focus:outline-hidden focus:ring-1 focus:ring-purple-500 ${!isValid && cron ? 'border-red-500' : ''}`}
               />
               {cron && (
                 <p className={`text-xs mt-1 ${isValid ? (dark ? 'text-gray-500' : 'text-gray-400') : 'text-red-400'}`}>
@@ -304,7 +304,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 {error}
               </div>
             )}
@@ -352,7 +352,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
                 className={`flex-1 px-3 py-2 rounded-lg border text-sm ${
                   dark ? 'bg-gray-800 border-gray-600 text-gray-100 placeholder-gray-500'
                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-                } focus:outline-none focus:ring-1 focus:ring-purple-500`}
+                } focus:outline-hidden focus:ring-1 focus:ring-purple-500`}
               />
               <button
                 type="button"
@@ -367,7 +367,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 {error}
               </div>
             )}
@@ -380,7 +380,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
                       <span className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>{t.label}</span>
                       <button
                         onClick={() => handleDeleteTrigger(t.scheduleId)}
-                        className="p-1 rounded hover:bg-red-900/30"
+                        className="p-1 rounded-sm hover:bg-red-900/30"
                         title="Revoke"
                       >
                         <Trash2 className="w-3 h-3 text-red-400" />
@@ -388,7 +388,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
                     </div>
                     <div className="flex items-center gap-2">
                       <code
-                        className="flex-1 truncate px-2 py-1 rounded text-xs"
+                        className="flex-1 truncate px-2 py-1 rounded-sm text-xs"
                         style={{ background: 'var(--bg-3)', color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
                         title={t.url}
                       >

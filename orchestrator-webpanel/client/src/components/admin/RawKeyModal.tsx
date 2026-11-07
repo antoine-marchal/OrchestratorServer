@@ -16,7 +16,7 @@ export function RawKeyModal({ rawKey, onClose }: { rawKey: string; onClose: () =
         <p className="text-xs mb-4" style={{ color: 'var(--err)' }}>
           This key will not be shown again. Copy and store it securely.
         </p>
-        <div className="flex items-center gap-2 p-2 rounded" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center gap-2 p-2 rounded-sm" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
           <code className="text-xs flex-1 truncate" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{rawKey}</code>
           <button onClick={copy} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', gap: 4, fontSize: 11 }}>
             {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}

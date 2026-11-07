@@ -82,27 +82,27 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           {(() => {
             switch (data.type) {
               case 'variable':
-                return <Hash className="w-5 h-5 text-purple-500 flex-shrink-0" />;
+                return <Hash className="w-5 h-5 text-purple-500 shrink-0" />;
               case 'flow':
-                return <GitBranch className="w-5 h-5 text-emerald-500 flex-shrink-0" />;
+                return <GitBranch className="w-5 h-5 text-emerald-500 shrink-0" />;
               case 'javascript':
-                return <FileCode className="w-5 h-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0" />;
+                return <FileCode className="w-5 h-5 text-yellow-600 dark:text-yellow-500 shrink-0" />;
               case 'jsbackend':
-                return <Server className="w-5 h-5 text-blue-500 flex-shrink-0" />;
+                return <Server className="w-5 h-5 text-blue-500 shrink-0" />;
               case 'groovy':
-                return <Coffee className="w-5 h-5 text-red-500 flex-shrink-0" />;
+                return <Coffee className="w-5 h-5 text-red-500 shrink-0" />;
               case 'batch':
-                return <Terminal className="w-5 h-5 text-gray-400 flex-shrink-0" />;
+                return <Terminal className="w-5 h-5 text-gray-400 shrink-0" />;
               case 'powershell':
-                return <TerminalSquare className="w-5 h-5 text-blue-400 flex-shrink-0" />;
+                return <TerminalSquare className="w-5 h-5 text-blue-400 shrink-0" />;
               case 'python':
-                return <Code2 className="w-5 h-5 text-yellow-500 flex-shrink-0" />;
+                return <Code2 className="w-5 h-5 text-yellow-500 shrink-0" />;
               case 'goto':
-                return <CornerRightDown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />;   
+                return <CornerRightDown className="w-5 h-5 text-yellow-600 dark:text-yellow-400 shrink-0" />;   
               case 'comment':
-                return <MessageSquare className="w-5 h-5 text-gray-500 flex-shrink-0" />;
+                return <MessageSquare className="w-5 h-5 text-gray-500 shrink-0" />;
               default:
-                return <Code2 className="w-5 h-5 text-blue-500 flex-shrink-0" />;
+                return <Code2 className="w-5 h-5 text-blue-500 shrink-0" />;
             }
           })()}
           <input
@@ -125,13 +125,13 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
               updateNodeDraggable(nodeId, true);
               updatePanOnDrag(true);
             }}
-            className="font-semibold text-black dark:text-white bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 w-full"
+            className="font-semibold text-black dark:text-white bg-transparent border-none focus:outline-hidden focus:ring-2 focus:ring-blue-500 rounded-sm px-2 w-full"
           />
         </div>
         <div className="flex items-center gap-2">
           {data.type !== 'variable' && data.type !== 'flow' && data.type !== 'goto' && (
             <button
-              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
               onClick={() => sessionStore.openNodeEditor(nodeId)}
             >
               <Edit2 className="w-4 h-4 text-blue-500" />
@@ -139,7 +139,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {data.type === 'flow' && (
             <button
-              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
               onClick={handleEditFlowNode}
               title={data.linkedSessionId ? "Switch to linked session" : "Create session from flow content"}
             >
@@ -148,7 +148,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {data.type === 'flow' && (
             <button
-              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
               onClick={() => setRepointNodeId(nodeId)}
               title="Modify flow node — re-point to another session or flow"
             >
@@ -157,7 +157,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {data.type !== 'goto' && (
           <button
-            className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded ${isNodeExecuting ? 'cursor-not-allowed opacity-50' : ''}`}
+            className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm ${isNodeExecuting ? 'cursor-not-allowed opacity-50' : ''}`}
             onClick={onExecute}
             title={isNodeExecuting ? "Node is already running" : "Execute node"}
           >
@@ -166,7 +166,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {data.type !== 'goto' && (
           <button
-            className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded ${data.isStarterNode ? 'bg-gray-400 dark:bg-gray-700' : ''}`}
+            className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm ${data.isStarterNode ? 'bg-gray-400 dark:bg-gray-700' : ''}`}
             onClick={() => setStarterNode(nodeId)}
             title={data.isStarterNode ? "Unset as starter node" : "Set as starter node"}
           >
@@ -176,7 +176,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           {/* Stop button (shown when node is executing) */}
           {data.type !== 'goto' && isNodeExecuting && (
             <button
-              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+              className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
               onClick={() => stopNodeExecution(nodeId)}
               title="Stop execution"
             >
@@ -185,7 +185,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {data.type !== 'goto' && data.type !== 'comment' && data.type !== 'variable' && !isNodeExecuting && (
             <button
-              className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded ${onErrorMode !== 'stop' ? 'bg-gray-400 dark:bg-gray-700' : ''}`}
+              className={`p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm ${onErrorMode !== 'stop' ? 'bg-gray-400 dark:bg-gray-700' : ''}`}
               onClick={cycleErrorMode}
               title={errorModeMeta.label}
             >
@@ -194,13 +194,13 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           )}
           {isNodeExecuting ? (
           <button
-            className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+            className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
           >
             <Trash2 className="w-4 h-4 text-red-500" />
           </button>
            ) : (
             <button
-            className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+            className="p-1 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
             onClick={onDelete}
           >
             <Trash2 className="w-4 h-4 text-red-500" />
@@ -215,14 +215,14 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           onMouseEnter={() => { updateNodeDraggable(nodeId, false); updatePanOnDrag(false); }}
           onMouseLeave={() => { updateNodeDraggable(nodeId, true); updatePanOnDrag(true); }}
         >
-          <RotateCw className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+          <RotateCw className="w-3.5 h-3.5 text-blue-500 shrink-0" />
           <label className="flex items-center gap-1">
             ×
             <input
               type="number" min={1}
               value={retryCfg.maxAttempts}
               onChange={(e) => updateNodeData(nodeId, { retry: { ...retryCfg, maxAttempts: Math.max(1, parseInt(e.target.value) || 1) } })}
-              className="w-12 bg-gray-200 dark:bg-gray-700 border-none rounded px-1 py-0.5 font-mono"
+              className="w-12 bg-gray-200 dark:bg-gray-700 border-none rounded-sm px-1 py-0.5 font-mono"
               title="Total attempts (1 = no retry)"
             />
           </label>
@@ -232,14 +232,14 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
               type="number" min={0}
               value={retryCfg.delaySec}
               onChange={(e) => updateNodeData(nodeId, { retry: { ...retryCfg, delaySec: Math.max(0, parseInt(e.target.value) || 0) } })}
-              className="w-12 bg-gray-200 dark:bg-gray-700 border-none rounded px-1 py-0.5 font-mono"
+              className="w-12 bg-gray-200 dark:bg-gray-700 border-none rounded-sm px-1 py-0.5 font-mono"
               title="Delay before each retry, in seconds"
             />s
           </label>
           <select
             value={retryCfg.backoff}
             onChange={(e) => updateNodeData(nodeId, { retry: { ...retryCfg, backoff: e.target.value as 'fixed' | 'linear' | 'exponential' } })}
-            className="bg-gray-200 dark:bg-gray-700 border-none rounded px-1 py-0.5"
+            className="bg-gray-200 dark:bg-gray-700 border-none rounded-sm px-1 py-0.5"
             title="Backoff: fixed (constant), linear (×attempt), exponential (×2^attempt)"
           >
             <option value="fixed">fixed</option>
@@ -255,7 +255,7 @@ export const NodeHeader: React.FC<NodeHeaderProps> = ({
           type="text"
           value={data.value || ''}
           onChange={(e) => onValueChange(e.target.value)}
-          className="mt-2 text-base bg-gray-200 dark:bg-gray-700 border-none rounded px-2 py-1 text-black dark:text-white w-full font-mono"
+          className="mt-2 text-base bg-gray-200 dark:bg-gray-700 border-none rounded-sm px-2 py-1 text-black dark:text-white w-full font-mono"
           placeholder="Value…"
           onFocus={(e) => {
             e.target.select();

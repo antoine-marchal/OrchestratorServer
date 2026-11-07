@@ -118,7 +118,7 @@ const SortableTab: React.FC<SortableTabProps> = ({
           onChange={(e) => onNameChange(e.target.value)}
           onBlur={onSaveEdit}
           onKeyDown={handleKeyPress}
-          className="flex-1 bg-transparent border-none outline-none text-sm min-w-0"
+          className="flex-1 bg-transparent border-none outline-hidden text-sm min-w-0"
           autoFocus
           onClick={(e) => e.stopPropagation()}
         />
@@ -131,7 +131,7 @@ const SortableTab: React.FC<SortableTabProps> = ({
       <div className="flex items-center ml-2">
         <button
           onClick={onEdit}
-          className="p-1 hover:bg-gray-400 dark:hover:bg-gray-400 rounded opacity-60 hover:opacity-100 transition-opacity"
+          className="p-1 hover:bg-gray-400 dark:hover:bg-gray-400 rounded-sm opacity-60 hover:opacity-100 transition-opacity"
           title="Rename session"
         >
           <Edit2 size={12} />
@@ -151,7 +151,7 @@ const SortableTab: React.FC<SortableTabProps> = ({
         {canClose && (
           <button
             onClick={onClose}
-            className="p-1 hover:bg-red-400 dark:hover:bg-red-400 rounded opacity-60 hover:opacity-100 transition-opacity ml-1"
+            className="p-1 hover:bg-red-400 dark:hover:bg-red-400 rounded-sm opacity-60 hover:opacity-100 transition-opacity ml-1"
             title="Close session"
             disabled={isLoading}
           >
@@ -348,7 +348,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
   return (
     <div className={`flex items-center min-w-0 ${compact ? 'w-full flex-1 bg-white dark:bg-gray-900 border-0' : 'bg-gray-100 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-700'} px-2 py-1 overflow-x-auto`}>
       {/* Backend Address Input + connection indicator */}
-      <div className={`${compact ? 'hidden' : 'flex'} items-center mr-2 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}>
+      <div className={`${compact ? 'hidden' : 'flex'} items-center mr-2 px-3 py-1 bg-white dark:bg-gray-700 rounded-sm border border-gray-300 dark:border-gray-600`}>
         <Server size={14} className="mr-2 text-gray-500 dark:text-gray-400" />
         <input
           type="text"
@@ -357,11 +357,11 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
           onBlur={handleBackendAddressBlur}
           onKeyPress={handleBackendAddressKeyPress}
           placeholder="localhost:3000"
-          className="bg-transparent border-none outline-none text-sm w-40 text-gray-700 dark:text-gray-200"
+          className="bg-transparent border-none outline-hidden text-sm w-40 text-gray-700 dark:text-gray-200"
           title="Backend server address"
         />
         <span
-          className={`ml-2 w-2 h-2 rounded-full flex-shrink-0 ${connDot}`}
+          className={`ml-2 w-2 h-2 rounded-full shrink-0 ${connDot}`}
           title={connTitle}
         />
       </div>
@@ -370,9 +370,9 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
           password field outside a form (also enables Enter-to-submit). */}
       <form
         onSubmit={(e) => e.preventDefault()}
-        className={`${compact ? 'hidden' : 'flex'} items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded border border-gray-300 dark:border-gray-600`}
+        className={`${compact ? 'hidden' : 'flex'} items-center mr-4 px-3 py-1 bg-white dark:bg-gray-700 rounded-sm border border-gray-300 dark:border-gray-600`}
       >
-        <KeyRound size={14} className="mr-2 text-gray-500 dark:text-gray-400 flex-shrink-0" />
+        <KeyRound size={14} className="mr-2 text-gray-500 dark:text-gray-400 shrink-0" />
         <input
           type={showApiKey ? 'text' : 'password'}
           value={apiKey}
@@ -382,7 +382,7 @@ const SessionTabs: React.FC<{ flowId?: string; compact?: boolean }> = ({ flowId,
           placeholder="API key"
           autoComplete="off"
           name="orchestrator-api-key"
-          className="bg-transparent border-none outline-none text-sm w-32 text-gray-700 dark:text-gray-200"
+          className="bg-transparent border-none outline-hidden text-sm w-32 text-gray-700 dark:text-gray-200"
           title="Server API key (shown in backend console)"
         />
         <button

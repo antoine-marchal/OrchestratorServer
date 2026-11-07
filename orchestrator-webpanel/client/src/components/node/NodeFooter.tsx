@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, Position } from 'reactflow';
+import { Handle, Position } from '@xyflow/react';
 import { X, ChevronUp, ChevronDown } from 'lucide-react';
 import { EdgeConnection } from '../../types/node';
 import { useFlowStore } from '../../store/sessionFlowStore';
@@ -49,7 +49,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
                   e.stopPropagation();
                   removeConnection(edge.id);
                 }}
-                className="p-0.5 hover:bg-gray-400 dark:hover:bg-gray-700 rounded"
+                className="p-0.5 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm"
               >
                 <X className="w-3 h-3 text-red-400" />
               </button>
@@ -94,7 +94,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
                   e.stopPropagation();
                   removeConnection(edge.id);
                 }}
-                className="p-0.5 hover:bg-gray-400 dark:hover:bg-gray-700 rounded z-50 relative"
+                className="p-0.5 hover:bg-gray-400 dark:hover:bg-gray-700 rounded-sm z-50 relative"
               >
                 <X className="w-3 h-3 text-red-400" />
               </button>
@@ -124,7 +124,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
               <Handle
                 type="target"
                 position={Position.Left}
-                className={`w-3 h-3 !bg-blue-500`}
+                className={`w-3 h-3 bg-blue-500!`}
                 style={{ zIndex: 1 }}
               />
               <div className="ml-6"  >
@@ -145,7 +145,7 @@ export const NodeFooter: React.FC<NodeFooterProps> = ({
             <Handle
               type="source"
               position={Position.Right}
-              className={`w-3 h-3 !bg-green-500`}
+              className={`w-3 h-3 bg-green-500!`}
               style={{ zIndex: 1 }}
             />
             <div className="mr-6 text-right">

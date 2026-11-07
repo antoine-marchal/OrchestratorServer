@@ -1,6 +1,8 @@
-import { Node, Edge } from 'reactflow';
+import type { Edge, Node } from './xyflow';
 
-export interface NodeData {
+
+// Extends Record so it satisfies @xyflow/react v12's Node<Data> constraint.
+export interface NodeData extends Record<string, unknown> {
   label: string;
   type: 'variable' | 'javascript' | 'jsbackend' | 'groovy' | 'batch' | 'powershell' | 'python' | 'shell' | 'flow' | 'comment' | 'goto';
   language?: string;

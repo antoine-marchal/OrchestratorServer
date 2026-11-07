@@ -1,4 +1,5 @@
-import { Node } from 'reactflow';
+import type { Node } from '../../types/xyflow';
+
 
 /**
  * Sanitize a variable name to be a valid JavaScript identifier

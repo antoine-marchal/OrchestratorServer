@@ -111,7 +111,7 @@ const LoginPage: React.FC = () => {
           style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}
         >
           {error && (
-            <div className="flex items-center gap-2 p-2 rounded text-xs"
+            <div className="flex items-center gap-2 p-2 rounded-sm text-xs"
               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
               <AlertCircle size={12} /> {error}
             </div>
@@ -124,7 +124,7 @@ const LoginPage: React.FC = () => {
               onChange={e => setLogin(e.target.value)}
               autoComplete="username"
               required
-              className="w-full px-3 py-2 rounded text-sm"
+              className="w-full px-3 py-2 rounded-sm text-sm"
               style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
             />
           </div>
@@ -137,7 +137,7 @@ const LoginPage: React.FC = () => {
                 onChange={e => setPassword(e.target.value)}
                 autoComplete="current-password"
                 required
-                className="w-full px-3 py-2 rounded text-sm pr-9"
+                className="w-full px-3 py-2 rounded-sm text-sm pr-9"
                 style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
               />
               <button

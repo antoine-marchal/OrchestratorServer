@@ -68,9 +68,9 @@ dev-worker.bat     :: worker  -> se connecte à :3939
 Les équivalents multiplateformes :
 
 ```bash
-cd orchestrator-webpanel/server && npm run dev      # ts-node, rechargement à chaud
+cd orchestrator-webpanel/server && npm run dev      # tsx
 cd orchestrator-webpanel/client && npm run dev      # Vite HMR
-cd orchestrator-worker          && npm run dev      # agent ts-node
+cd orchestrator-worker          && npm run dev      # agent tsx
 ```
 
 Ensuite :
@@ -144,7 +144,7 @@ Arrêtez le serveur et supprimez `<WORK_DIR>/data/`. Redémarrez — l'utilisate
 - **Les exécuteurs de nœuds serveur et worker doivent rester synchronisés** — un nouveau type de nœud ou un changement de passage de variables touche en général les deux.
 - **Les secrets** se référencent par `${{ secrets.NAME }}` et sont résolus côté serveur au moment de l'exécution. Ne loggez jamais les valeurs résolues.
 - **Le JS inline n'est pas sandboxé.** Pour du code non fiable, routez-le vers un worker ou posez `ORCHESTRATOR_SERVER_EXECUTION_ENABLED=false`.
-- **Redémarrages du backend :** les changements de code serveur sous `npm run dev` se rechargent à chaud via ts-node ; un binaire packagé doit être rebuildé et redémarré.
+- **Redémarrages du backend :** les changements de code serveur sous `npm run dev` nécessitent de relancer `npm run dev` (tsx) ; un binaire packagé doit être rebuildé et redémarré.
 - **L'URL du worker** est juste `scheme://host:port` — le chemin `/api/v1/...` est ajouté par l'agent. Ne l'incluez pas dans `ORCHESTRATOR_URL`.
 - **`req.user`** est rempli par `authMiddleware` (`{ _id, login, role, authType }`).
 

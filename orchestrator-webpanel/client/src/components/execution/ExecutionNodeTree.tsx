@@ -1,11 +1,6 @@
+import type { Edge, Node } from '../../types/xyflow';
 import React, { useMemo, useState } from 'react';
-import {
-  Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal,
-  TerminalSquare, MessageSquare, CornerRightDown, ChevronRight,
-  ChevronDown, ArrowDownLeft, ArrowUpRight,
-  Loader2, CheckCircle2, AlertCircle, RefreshCw, SkipForward, Clock,
-} from 'lucide-react';
-import { Node, Edge } from 'reactflow';
+import { Code2, Hash, GitBranch, FileCode, Server, Coffee, Terminal, TerminalSquare, MessageSquare, CornerRightDown, ChevronRight, ChevronDown, ArrowDownLeft, ArrowUpRight, Loader2, CheckCircle2, AlertCircle, RefreshCw, SkipForward, Clock, } from 'lucide-react';
 import { useFlowLibraryStore } from '../../store/flowLibraryStore';
 import { formatDurationShort, type NodeRun } from '../../utils/execTiming';
 import { scopeKey } from '../../utils/execScope';
@@ -19,17 +14,17 @@ export const isVisibleInTree = (n: Node) => !HIDDEN_TYPES.has(n.data?.type || ''
 
 export function NodeIcon({ type }: { type: string }) {
   switch (type) {
-    case 'variable': return <Hash className="w-3.5 h-3.5 text-purple-500 flex-shrink-0" />;
-    case 'flow': return <GitBranch className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />;
-    case 'javascript': return <FileCode className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />;
-    case 'jsbackend': return <Server className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />;
-    case 'groovy': return <Coffee className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />;
-    case 'batch': return <Terminal className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />;
-    case 'powershell': return <TerminalSquare className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />;
-    case 'python': return <Code2 className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />;
-    case 'goto': return <CornerRightDown className="w-3.5 h-3.5 text-yellow-600 flex-shrink-0" />;
-    case 'comment': return <MessageSquare className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />;
-    default: return <Code2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />;
+    case 'variable': return <Hash className="w-3.5 h-3.5 text-purple-500 shrink-0" />;
+    case 'flow': return <GitBranch className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
+    case 'javascript': return <FileCode className="w-3.5 h-3.5 text-yellow-500 shrink-0" />;
+    case 'jsbackend': return <Server className="w-3.5 h-3.5 text-blue-500 shrink-0" />;
+    case 'groovy': return <Coffee className="w-3.5 h-3.5 text-red-500 shrink-0" />;
+    case 'batch': return <Terminal className="w-3.5 h-3.5 text-gray-400 shrink-0" />;
+    case 'powershell': return <TerminalSquare className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+    case 'python': return <Code2 className="w-3.5 h-3.5 text-yellow-400 shrink-0" />;
+    case 'goto': return <CornerRightDown className="w-3.5 h-3.5 text-yellow-600 shrink-0" />;
+    case 'comment': return <MessageSquare className="w-3.5 h-3.5 text-gray-500 shrink-0" />;
+    default: return <Code2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
   }
 }
 
@@ -110,7 +105,7 @@ export function RelationBadge({ direction, items }: { direction: 'in' | 'out'; i
   return (
     <span
       title={tooltip}
-      className="flex items-center gap-0.5 flex-shrink-0 text-[10px] leading-none px-1 py-0.5 rounded"
+      className="flex items-center gap-0.5 shrink-0 text-[10px] leading-none px-1 py-0.5 rounded-sm"
       style={{ background: 'var(--bg-3)', color: direction === 'in' ? 'var(--text-3)' : 'var(--accent)', fontFamily: 'var(--font-mono)' }}
     >
       <Icon className="w-2.5 h-2.5" />
@@ -176,7 +171,7 @@ function NodeItemView({ node, depth, scopePrefix, selectedId, onSelect, relation
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-sm text-xs select-none
+        className={`flex items-center gap-1 px-2 py-1 cursor-pointer rounded-xs text-xs select-none
           ${isSelected ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-300'}`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         // Click toggles selection: click again to clear filter.
@@ -185,18 +180,18 @@ function NodeItemView({ node, depth, scopePrefix, selectedId, onSelect, relation
         {isFlow && childNodes.length > 0 ? (
           <button
             onClick={e => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="p-0 flex-shrink-0"
+            className="p-0 shrink-0"
           >
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
         ) : (
-          <span className="w-3 h-3 flex-shrink-0" />
+          <span className="w-3 h-3 shrink-0" />
         )}
         <NodeIcon type={type} />
         <span className="truncate flex-1 ml-1">{node.data?.label || node.id}</span>
         {multiRun && (
           <span
-            className="flex-shrink-0 text-[10px] leading-none px-1 py-0.5 rounded"
+            className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded-sm"
             style={{ background: 'var(--bg-3)', color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}
             title={`${runs.length} run instances`}
           >×{runs.length}</span>
@@ -211,15 +206,15 @@ function NodeItemView({ node, depth, scopePrefix, selectedId, onSelect, relation
         return (
           <div
             key={`${node.id}#${idx}`}
-            className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm text-[11px] select-none
+            className={`flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-xs text-[11px] select-none
               ${runSelected ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-white/5 text-gray-400'}`}
             style={{ paddingLeft: `${8 + (depth + 1) * 14}px` }}
             onClick={(e) => { e.stopPropagation(); onSelectRun?.(scope, node.id, idx, run); }}
           >
-            <span className="w-3 h-3 flex-shrink-0" />
+            <span className="w-3 h-3 shrink-0" />
             <StatusIcon status={run.hasError ? 'failed' : 'success'} />
             <span className="truncate flex-1 ml-1">run {idx + 1}</span>
-            <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+            <span className="shrink-0 text-[10px]" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
               {formatDurationShort(run.end - run.start)}
             </span>
           </div>
@@ -272,7 +267,7 @@ const ExecutionNodeTree: React.FC<ExecutionNodeTreeProps> = ({ nodes, edges, sel
         {selectedId && (
           <button
             onClick={() => onSelect(null)}
-            className="text-[10px] px-1.5 py-0.5 rounded"
+            className="text-[10px] px-1.5 py-0.5 rounded-sm"
             style={{ background: 'var(--bg-3)', color: 'var(--text-3)' }}
             title="Clear filter — show logs for all nodes"
           >

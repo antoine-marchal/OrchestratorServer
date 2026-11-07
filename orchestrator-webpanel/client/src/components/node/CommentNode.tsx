@@ -1,11 +1,12 @@
 import React, { memo, useState, useEffect } from 'react';
-import { NodeResizer, NodeProps } from 'reactflow';
+import { NodeResizer, NodeProps } from '@xyflow/react';
+import type { Node } from '../../types/xyflow';
 import { Trash2 } from 'lucide-react';
 import { useFlowStore } from '../../store/sessionFlowStore';
 
 const MIN_HEIGHT = 64;
 
-const CommentNode = ({ data, id, selected }: NodeProps) => {
+const CommentNode = ({ data, id, selected }: NodeProps<Node>) => {
   const { removeNode, updateNodeData, updateNodeDraggable, updatePanOnDrag } = useFlowStore();
   const [editing, setEditing] = useState(false);
 // Handle DEL key for deletion when node is selected
@@ -62,7 +63,7 @@ const CommentNode = ({ data, id, selected }: NodeProps) => {
       {/* FLEX-1 makes this fill the remaining space */}
       <div className="flex-1 flex flex-col py-4 pb-3">
         <textarea
-          className="w-full h-full flex-1 bg-transparent text-yellow-900 dark:text-yellow-100 font-medium resize-none border-none focus:ring-0 focus:outline-none"
+          className="w-full h-full flex-1 bg-transparent text-yellow-900 dark:text-yellow-100 font-medium resize-none border-none focus:ring-0 focus:outline-hidden"
           placeholder="Add your comment…"
           value={data.value || ''}
           onChange={e => updateNodeData(id, { value: e.target.value })}

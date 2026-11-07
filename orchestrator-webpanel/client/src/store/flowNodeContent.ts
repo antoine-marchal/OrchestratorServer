@@ -1,4 +1,5 @@
-import { Node, Edge } from 'reactflow';
+import type { Edge, Node } from '../types/xyflow';
+
 import { useSessionStore } from './sessionStore';
 import { useFlowLibraryStore } from './flowLibraryStore';
 import { createDefaultFlowState } from './types';

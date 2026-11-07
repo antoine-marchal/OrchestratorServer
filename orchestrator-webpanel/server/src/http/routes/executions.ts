@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
+import type { Request } from '../request';
 import { executionRepository, flowRepository } from '../../data/repositories';
 import { jobs, jobLogBuffers, terminateJobAndChildren, executionSSEListeners, executionNodeStatuses } from '../../domain/execution/nodeExecutor';
 import { loadExecutionLogs, deleteExecutionLogs } from '../../domain/execution/executionLogs';

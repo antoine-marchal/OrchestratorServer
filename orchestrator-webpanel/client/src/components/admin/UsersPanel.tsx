@@ -44,7 +44,7 @@ function RawKeyModal({ rawKey, onClose }: { rawKey: string; onClose: () => void 
         <p className="text-xs mb-4" style={{ color: 'var(--err)' }}>
           This key will not be shown again. Copy and store it securely.
         </p>
-        <div className="flex items-center gap-2 p-2 rounded" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center gap-2 p-2 rounded-sm" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
           <code className="text-xs flex-1 truncate" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{rawKey}</code>
           <button onClick={copy} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', flexShrink: 0, gap: 4, fontSize: 11 }}>
             {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -166,7 +166,7 @@ export const UsersPanel: React.FC = () => {
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 p-3 rounded text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
+          <div className="flex items-center gap-2 p-3 rounded-sm text-xs" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--err)' }}>
             <AlertCircle size={13} /> {error}
           </div>
         )}
@@ -175,14 +175,14 @@ export const UsersPanel: React.FC = () => {
           <div className="p-4 rounded-lg" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
             <h3 className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>New User</h3>
             <div className="flex flex-col gap-3">
-              <input value={login} onChange={e => setLogin(e.target.value)} placeholder="Login" className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+              <input value={login} onChange={e => setLogin(e.target.value)} placeholder="Login" className="px-3 py-1.5 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
               <div className="relative">
-                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (blank = SSO-only)" className="w-full px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                <input type={showPwd ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password (blank = SSO-only)" className="w-full px-3 py-1.5 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                 <button onClick={() => setShowPwd(!showPwd)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)' }}>
                   {showPwd ? <EyeOff size={13} /> : <Eye size={13} />}
                 </button>
               </div>
-              <select value={role} onChange={e => setRole(e.target.value)} className="px-3 py-1.5 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+              <select value={role} onChange={e => setRole(e.target.value)} className="px-3 py-1.5 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 <option value="admin">Admin</option>
                 <option value="operator">Operator</option>
                 <option value="viewer">Viewer</option>
@@ -209,7 +209,7 @@ export const UsersPanel: React.FC = () => {
                     {expandedUser === u._id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
                   <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>{u.login}</span>
-                  <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: 'var(--bg-3)', color: roleColor(u.role) }}>{u.role}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-sm font-mono" style={{ background: 'var(--bg-3)', color: roleColor(u.role) }}>{u.role}</span>
                   <span className="text-xs" style={{ color: 'var(--text-3)' }}>{u.apiKeys?.length ?? 0} keys</span>
                   <button
                     onClick={() => { setKeyUserId(u._id); setKeyLabel(''); }}
@@ -235,7 +235,7 @@ export const UsersPanel: React.FC = () => {
                 {keyUserId === u._id && (
                   <div className="px-4 pb-3 flex items-center gap-2" style={{ borderTop: '1px solid var(--border)' }}>
                     <span className="text-xs" style={{ color: 'var(--text-3)' }}>New key label:</span>
-                    <input value={keyLabel} onChange={e => setKeyLabel(e.target.value)} placeholder="e.g. worker-prod" className="flex-1 px-2 py-1 rounded text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} onKeyDown={e => e.key === 'Enter' && handleCreateKey(u._id)} />
+                    <input value={keyLabel} onChange={e => setKeyLabel(e.target.value)} placeholder="e.g. worker-prod" className="flex-1 px-2 py-1 rounded-sm text-xs" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }} onKeyDown={e => e.key === 'Enter' && handleCreateKey(u._id)} />
                     <button onClick={() => handleCreateKey(u._id)} className="tc-btn primary" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>Create</button>
                     <button onClick={() => setKeyUserId(null)} className="tc-btn ghost" style={{ height: 24, padding: '0 8px', fontSize: 11 }}>Cancel</button>
                   </div>
@@ -250,7 +250,7 @@ export const UsersPanel: React.FC = () => {
                         value={newPwd}
                         onChange={e => setNewPwd(e.target.value)}
                         placeholder="Enter new password"
-                        className="w-full px-2 py-1 rounded text-xs"
+                        className="w-full px-2 py-1 rounded-sm text-xs"
                         style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', color: 'var(--text)' }}
                         onKeyDown={e => e.key === 'Enter' && handleChangePassword(u._id)}
                       />

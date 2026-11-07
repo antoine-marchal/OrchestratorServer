@@ -1,4 +1,5 @@
-import { Node } from 'reactflow';
+import type { Node } from '../../types/xyflow';
+
 import { FlowState, Session } from '../types';
 import { pathUtils } from '../../utils/pathUtils';
 

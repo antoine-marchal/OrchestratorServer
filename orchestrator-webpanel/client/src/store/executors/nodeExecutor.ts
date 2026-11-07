@@ -1,4 +1,5 @@
-import { Node } from 'reactflow';
+import type { Node } from '../../types/xyflow';
+
 import { FlowState, ConsoleMessage } from '../types';
 import { apiClient, StreamLogEntry } from '../../utils/apiClient';
 import { pathUtils } from '../../utils/pathUtils';

@@ -1,4 +1,5 @@
-import express, { Router, Request, Response } from 'express';
+import express, { Router, Response } from 'express';
+import type { Request } from '../request';
 import crypto from 'crypto';
 import { executionRepository, flowRepository, scheduleRepository, triggerTokenRepository } from '../../data/repositories';
 import { executeOrchestratorFlow } from '../../domain/execution/flowExecutor';
@@ -353,7 +354,7 @@ const handleTrigger = async (req: Request, res: Response) => {
   }
 };
 
-router.get('/trigger/:token/:param?', handleTrigger);
-router.post('/trigger/:token/:param?', express.text({ type: ['text/*'], limit: process.env.JSON_BODY_LIMIT || '100mb' }), handleTrigger);
+router.get('/trigger/:token{/:param}', handleTrigger);
+router.post('/trigger/:token{/:param}', express.text({ type: ['text/*'], limit: process.env.JSON_BODY_LIMIT || '100mb' }), handleTrigger);
 
 export default router;

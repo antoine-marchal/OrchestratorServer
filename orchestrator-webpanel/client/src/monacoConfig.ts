@@ -1,7 +1,7 @@
 import * as monaco from 'monaco-editor';
 import loader from '@monaco-editor/loader';
-import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker&inline';
-import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker&inline';
+import editorWorker from 'monaco-editor/editor/editor.worker?worker&inline';
+import tsWorker from 'monaco-editor/language/typescript/ts.worker?worker&inline';
 
 window.MonacoEnvironment = {
   getWorker(_workerId: string, label: string) {
