@@ -67,7 +67,7 @@ title Deploy Orchestrator binaries
 setlocal
 
 set "SRC=%~dp0release"
-set "DEST=M:\Workspace\tools"
+set "DEST=Z:\Workspace\tools"
 
 if not exist "%SRC%" (
   echo  ERROR: release directory not found: %SRC%

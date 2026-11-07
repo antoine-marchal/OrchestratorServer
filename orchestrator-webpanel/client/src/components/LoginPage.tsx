@@ -63,7 +63,7 @@ const LoginPage: React.FC = () => {
         setJwt(data.accessToken);
         localStorage.setItem('orchestrator_refresh', data.refreshToken || '');
         localStorage.setItem('orchestrator_user', JSON.stringify(data.user || {}));
-        navigate('/flows', { replace: true });
+        navigate('/home', { replace: true });
       } catch (e: any) {
         setError(e?.message ?? 'Proxy authentication failed');
         setLoading(false);
@@ -89,7 +89,7 @@ const LoginPage: React.FC = () => {
       setJwt(data.accessToken);
       localStorage.setItem('orchestrator_refresh', data.refreshToken || '');
       localStorage.setItem('orchestrator_user', JSON.stringify(data.user || {}));
-      navigate('/flows', { replace: true });
+      navigate('/home', { replace: true });
     } catch (e: any) {
       setError(e?.message ?? 'Login failed');
     } finally {

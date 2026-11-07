@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { schedulesApi } from '../../api';
+import TriggerUsageHelp from './TriggerUsageHelp';
 
 interface Schedule {
   _id: string;
@@ -40,10 +41,11 @@ const TriggerLinkModal: React.FC<{ url: string; onClose: () => void }> = ({ url,
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="rounded-lg p-6 w-full max-w-lg" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
+      <div className="rounded-lg p-6 w-full max-w-3xl max-h-[calc(100vh-2rem)] overflow-y-auto" style={{ background: 'var(--bg-2)', border: '1px solid var(--border)' }}>
         <h2 className="text-base font-semibold mb-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>API Trigger URL</h2>
         <p className="text-xs mb-4" style={{ color: 'var(--text-3)' }}>
-          Share this URL to trigger the flow via HTTP GET. Keep it secret — anyone with this URL can execute the flow.
+          Call this URL to run the flow over HTTP (GET, or POST with a body); add <code>?wait=60</code> to get its result back.
+          Keep it secret — anyone with this URL can execute the flow.
         </p>
         <div className="flex items-center gap-2 p-2 rounded" style={{ background: 'var(--bg-3)', border: '1px solid var(--border)' }}>
           <code className="text-xs flex-1 truncate" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>{url}</code>
@@ -51,6 +53,9 @@ const TriggerLinkModal: React.FC<{ url: string; onClose: () => void }> = ({ url,
             {copied ? <Check size={12} /> : <Copy size={12} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
+        </div>
+        <div className="mt-3">
+          <TriggerUsageHelp url={url} defaultOpen />
         </div>
         <div className="flex justify-end mt-4">
           <button onClick={onClose} className="tc-btn" style={{ height: 28, padding: '0 14px', fontSize: 12 }}>Close</button>

@@ -173,8 +173,54 @@ Montés sur `/api/v1`.
 
 | Méthode | Chemin | Auth | Description |
 |---|---|---|---|
-| GET | `/trigger/:token/:param?` | public / proxy-auth optionnel | Déclenche le flux lié au token. Le segment `param`, s'il est fourni, devient l'entrée du premier nœud. Avec proxy-auth configuré, la route effectue une redirection SSO pour attribuer l'exécution à l'utilisateur. Si le callback n'arrive pas sous 5 s, un déclenchement de secours attribué à l'adresse IP est lancé. Un identifiant interne de tentative empêche le callback SSO et le secours de lancer deux exécutions. |
+| GET | `/trigger/:token/:param?` | public / proxy-auth optionnel | Déclenche le flux lié au token. Le segment `param`, s'il est fourni, devient l'entrée du premier nœud. Avec proxy-auth configuré, la route effectue une redirection SSO pour attribuer l'exécution à l'utilisateur. Si le callback n'arrive pas sous 5 s, un déclenchement de secours attribué à l'adresse IP est lancé. Un identifiant interne de tentative empêche le callback SSO et le secours de lancer deux exécutions. Avec `?wait`, pas de redirection SSO (voir ci-dessous). |
+| POST | `/trigger/:token/:param?` | public (token) | Comme le GET, mais le corps de la requête (JSON, ou texte avec `Content-Type: text/*`) devient l'entrée du premier nœud ; s'il est vide, c'est `param`. Jamais de redirection SSO : l'exécution est attribuée à l'adresse IP de l'appelant. Accepte `?wait`. |
 | POST | `/trigger-tokens/:id/revoke` | admin | Révoque un token de trigger. |
+
+### Mode synchrone (`?wait`) — un flux comme endpoint REST
+
+Ajouter `?wait=<secondes>` (GET ou POST) fait attendre la requête jusqu'à la fin de l'exécution, puis renvoie son résultat. `?wait` seul (ou `wait=true`) attend le maximum, plafonné par `TRIGGER_MAX_WAIT_SECONDS` (défaut 300).
+
+Entrée du premier nœud :
+
+- **GET** : le dernier segment de chemin `/<param>`. S'il est du JSON valide il est parsé (`/42` → nombre, `/%7B%22n%22%3A1%7D` → `{"n":1}`), sinon il reste une chaîne. Penser à l'encoder pour l'URL.
+- **POST** : le corps de la requête (JSON → objet ; texte avec `Content-Type: text/*` → chaîne). Corps vide → `/<param>` comme en GET.
+
+```bash
+# GET : entrée dans le chemin, résultat dans la réponse
+curl "https://orchestrator/api/v1/trigger/<TOKEN>/42?wait=60"
+
+# POST : entrée dans le corps
+curl -X POST "https://orchestrator/api/v1/trigger/<TOKEN>?wait=60" \
+     -H "Content-Type: application/json" -d '{"orderId": 42}'
+```
+
+| HTTP | Cas | Corps |
+|---|---|---|
+| 200 | `SUCCESS` | `{ executionId, status, output, error: null, duration, triggeredBy }` — `output` est la sortie du dernier nœud exécuté. |
+| 500 | `FAILED` / `KILLED` | même forme, `error` renseigné. |
+| 202 | délai `wait` écoulé | `{ executionId, status: "RUNNING", statusUrl, message }` — continuer en interrogeant `GET /api/v1/executions/:id` (auth requise). |
+| 404 | flux supprimé | `{ error }` |
+
+Sans `?wait`, la réponse reste `{ executionId, message, user, triggeredBy }` immédiatement. Si l'appelant coupe la connexion pendant l'attente, l'exécution continue.
+
+### Identification optionnelle de l'appelant
+
+Le token du trigger suffit à autoriser l'exécution. Sans autre information, elle est attribuée au trigger API (adresse IP de l'appelant), comme avant. Un appelant peut **en plus** s'identifier pour que l'exécution soit attribuée à un utilisateur :
+
+- en-tête `Authorization: ApiKey <clé>` (clés créées dans Admin → Users) ou `Authorization: Bearer <jwt>` ;
+- ou un ticket SSO `?ticket=ST-…` (nom du paramètre : `ORCHESTRATOR_PROXYAUTH_NAME`), émis par le SSO pour **l'URL exacte du trigger sans le paramètre ticket** (ex. `service=https://orchestrator/api/v1/trigger/<TOKEN>?wait=60`). Il est validé côté serveur, sans redirection.
+
+L'en-tête l'emporte sur le ticket. Des identifiants fournis mais invalides renvoient `401` (pas d'exécution anonyme silencieuse). C'est une attribution, pas une autorisation : le rôle de l'utilisateur n'est pas vérifié, seul le token compte.
+
+Seul un GET navigateur sans `?wait` ni en-tête `Authorization` passe par la redirection SSO ; les appels POST, `?wait` ou authentifiés ne redirigent jamais.
+
+```bash
+# ticket SSO pour l'URL du trigger, puis appel
+SERVICE="https://orchestrator/api/v1/trigger/<TOKEN>?wait=60"
+curl -i "https://sso/login?service=$(python -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=""))' "$SERVICE")"   # → Location: …?ticket=ST-…
+curl -X POST "$SERVICE&ticket=ST-…" -H "Content-Type: application/json" -d '{"orderId":42}'
+```
 
 ---
 

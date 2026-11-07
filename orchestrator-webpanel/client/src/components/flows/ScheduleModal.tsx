@@ -3,6 +3,7 @@ import { X, Clock, AlertCircle, Globe, Copy, Check, Trash2 } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext';
 import { schedulesApi } from '../../api';
 import type { OrchestratorFlow } from '../../types/flows';
+import TriggerUsageHelp from '../schedule/TriggerUsageHelp';
 
 interface Props {
   flow: OrchestratorFlow;
@@ -48,6 +49,9 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const [tab, setTab] = useState<Tab>('cron');
+  // The "How to call" help widens the modal so the curl examples fit.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const wide = tab === 'api' && helpOpen;
 
   // Cron tab state
   const [cron, setCron] = useState(flow.schedule?.cron || '0 * * * *');
@@ -199,7 +203,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative w-full max-w-lg rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+      <div className={`relative w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[calc(100vh-2rem)] flex flex-col transition-[max-width] duration-300 ease-out rounded-xl shadow-2xl border ${dark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`flex items-center justify-between px-5 py-4 border-b ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
@@ -241,7 +245,7 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
         </div>
 
         {tab === 'cron' && (
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-4 overflow-y-auto min-h-0">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Enabled</span>
               <button
@@ -332,11 +336,13 @@ const ScheduleModal: React.FC<Props> = ({ flow, variant, onClose, onSave }) => {
         )}
 
         {tab === 'api' && (
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-4 overflow-y-auto min-h-0">
             <p className={`text-xs ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
-              Generate a unique URL that triggers this flow on HTTP GET. Append <code>/PARAM</code> to pass PARAM
-              into the first node. The token is shown only once — copy it now or you'll have to recreate the trigger.
+              Generate a unique URL that runs this flow over HTTP (GET, or POST with a body). Add <code>?wait=60</code> to
+              get the flow's result back in the response. The token is shown only once — copy it now or you'll have to recreate the trigger.
             </p>
+
+            <TriggerUsageHelp url={apiTriggers.find(t => t.url.startsWith('http'))?.url} onOpenChange={setHelpOpen} />
 
             <div className="flex gap-2">
               <input

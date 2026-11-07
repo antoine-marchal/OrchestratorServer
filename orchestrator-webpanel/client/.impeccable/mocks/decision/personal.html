@@ -1,0 +1,66 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Your desk + platform rail</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;width:1440px;height:900px;overflow:hidden;background:#0A0E14;color:#E6ECF2;font:13px/1.5 Inter,sans-serif;
+background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:32px 32px}
+.mono{font-family:'JetBrains Mono',monospace}
+.top{height:44px;border-bottom:1px solid rgba(255,255,255,.07);background:#0E141C;display:flex;align-items:center;padding:0 14px;gap:8px}
+.top .b{color:#6E7889}.top .o{color:#1972DB;font-weight:600}
+.side{position:absolute;top:44px;left:0;bottom:0;width:52px;border-right:1px solid rgba(255,255,255,.07);background:#0E141C;padding-top:10px}
+.side i{display:block;width:28px;height:28px;margin:6px auto;border-radius:6px;background:#141B26}.side i.on{background:rgba(25,114,219,.2)}
+main{position:absolute;top:44px;left:52px;right:340px;bottom:0;padding:24px 28px}
+aside{position:absolute;top:44px;right:0;width:340px;bottom:0;border-left:1px solid rgba(255,255,255,.07);background:#0E141C;padding:22px 20px}
+h1{margin:0;font:600 20px 'JetBrains Mono',monospace}h1 .br{color:#6E7889}
+.hd{display:flex;justify-content:space-between;align-items:center}
+.btn{display:inline-block;padding:7px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.13);font-size:12px;margin-left:8px}.btn.p{background:#1972DB;border-color:#1972DB}
+.cap{font:500 11px 'JetBrains Mono',monospace;color:#6E7889;letter-spacing:.06em;margin:20px 0 10px}
+.err{color:#E5484D}.ok{color:#3DD68C}.acc{color:#5FA2F0}.warn{color:#F5A524}.mute{color:#6E7889}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.fc{border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F;padding:14px}
+.fc .n{font-weight:600}.fc small{display:block;color:#6E7889;font-size:11px}
+.ticks{display:flex;gap:2px;margin:12px 0 8px}.ticks b{flex:1;height:18px;border-radius:2px;background:#3DD68C}.ticks b.e{background:#E5484D}.ticks b.r{background:#1972DB}
+.meta{display:flex;justify-content:space-between;font:11px 'JetBrains Mono',monospace;color:#6E7889}
+.card{border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F;overflow:hidden}
+table{width:100%;border-collapse:collapse}td{padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12px}
+.st{display:inline-flex;gap:6px;align-items:center;font-size:11px;padding:2px 8px;border-radius:999px}
+.st.ok{background:rgba(61,214,140,.1)}.st.err{background:rgba(229,72,77,.12)}.st.run{background:rgba(25,114,219,.15);color:#5FA2F0}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.stat{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.stat .v{font:600 22px 'JetBrains Mono',monospace}
+.bars{display:flex;gap:4px;align-items:flex-end;height:60px;margin-top:10px}.bars div{flex:1;display:flex;flex-direction:column;justify-content:flex-end}
+.w{display:flex;justify-content:space-between;padding:6px 0;font-size:12px}
+</style></head><body>
+<div class="top mono"><span class="b">&lt;</span><span class="o">O</span>rchestrator<span class="b">/&gt;</span></div>
+<div class="side"><i class="on"></i><i></i><i></i><i></i></div>
+<main>
+<div class="hd"><div><h1><span class="br">&lt;</span>Welcome back, amarchal<span class="br"> /&gt;</span></h1><div class="mute" style="font-size:12px">9 flows you own · 46 runs you triggered this week</div></div><div><span class="btn">All flows</span><span class="btn p">+ New flow</span></div></div>
+<div class="cap">// YOUR FLOWS · LAST 12 RUNS</div>
+<div class="grid">
+ <div class="fc"><div class="n">nightly-erp-sync</div><small>erp · cron 0 3 * * *</small><div class="ticks"><b></b><b></b><b></b><b></b><b class="e"></b><b></b><b></b><b></b><b></b><b></b><b></b><b class="e"></b></div><div class="meta"><span class="err">failed 5h ago</span><span>83%</span></div></div>
+ <div class="fc"><div class="n">invoice-export</div><small>finance · cron 40 7 * * 1-5</small><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b class="e"></b></div><div class="meta"><span class="err">failed 1h ago</span><span>92%</span></div></div>
+ <div class="fc"><div class="n">plm-bom-import</div><small>plm · manual · 2 variants</small><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b class="r"></b></div><div class="meta"><span class="acc">running 4m</span><span>100%</span></div></div>
+ <div class="fc"><div class="n">daily-report</div><small>ops · cron 0 6 * * *</small><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="meta"><span>2h ago</span><span>100%</span></div></div>
+ <div class="fc"><div class="n">catia-batch-render</div><small>cad · api trigger</small><div class="ticks"><b></b><b></b><b class="e"></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="meta"><span>14h ago</span><span>92%</span></div></div>
+ <div class="fc"><div class="n">ldap-user-sync</div><small>it · cron 0 * * * *</small><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div><div class="meta"><span>1h ago</span><span>100%</span></div></div>
+</div>
+<div class="cap">// YOUR LAST EXECUTIONS</div>
+<div class="card"><table>
+ <tr><td class="mono mute">1107-0740·a3f</td><td>invoice-export</td><td><span class="st err"><span class="dot"></span>Failed</span></td><td class="mono mute">cron</td><td class="mono">2m 3s</td><td class="mute">1h ago</td></tr>
+ <tr><td class="mono mute">1107-0702·91c</td><td>plm-bom-import</td><td><span class="st run"><span class="dot"></span>Running</span></td><td class="mono mute">manual</td><td class="mono">4m 12s</td><td class="mute">4m ago</td></tr>
+ <tr><td class="mono mute">1107-0600·27d</td><td>daily-report</td><td><span class="st ok"><span class="dot ok"></span>Success</span></td><td class="mono mute">cron</td><td class="mono">12s</td><td class="mute">2h ago</td></tr>
+ <tr><td class="mono mute">1107-0312·e02</td><td>nightly-erp-sync</td><td><span class="st err"><span class="dot"></span>Failed</span></td><td class="mono mute">cron</td><td class="mono">41s</td><td class="mute">5h ago</td></tr>
+</table></div>
+</main>
+<aside>
+ <div class="cap" style="margin-top:0">// PLATFORM · 7 DAYS</div>
+ <div class="stat"><span class="mute">Runs</span><span class="v">1 284</span></div>
+ <div class="stat"><span class="mute">Success rate</span><span class="v ok">96.4%</span></div>
+ <div class="stat"><span class="mute">Failed</span><span class="v err">46</span></div>
+ <div class="stat"><span class="mute">Median duration</span><span class="v">38s</span></div>
+ <div class="bars"><div><b style="height:30px;background:#3DD68C"></b><b style="height:3px;background:#E5484D"></b></div><div><b style="height:40px;background:#3DD68C"></b><b style="height:2px;background:#E5484D"></b></div><div><b style="height:36px;background:#3DD68C"></b><b style="height:5px;background:#E5484D"></b></div><div><b style="height:50px;background:#3DD68C"></b><b style="height:2px;background:#E5484D"></b></div><div><b style="height:44px;background:#3DD68C"></b><b style="height:4px;background:#E5484D"></b></div><div><b style="height:18px;background:#3DD68C"></b></div><div><b style="height:52px;background:#3DD68C"></b><b style="height:6px;background:#E5484D"></b></div></div>
+ <div class="cap">// RUNNING NOW · 3</div>
+ <div class="w"><span>plm-bom-import</span><span class="mono acc">4m 12s</span></div><div class="w"><span>catia-batch-render</span><span class="mono acc">58s</span></div><div class="w"><span>ldap-user-sync</span><span class="mono acc">3s</span></div>
+ <div class="cap">// WORKERS · 4/5 ONLINE</div>
+ <div class="w"><span>win-build-01</span><span class="ok">● online</span></div><div class="w"><span>win-build-02</span><span class="warn">● offline 2h</span></div><div class="w"><span>linux-03</span><span class="ok">● online</span></div>
+</aside>
+</body></html>

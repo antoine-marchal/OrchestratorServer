@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Up next / just ran</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;width:1440px;height:900px;overflow:hidden;background:#0A0E14;color:#E6ECF2;font:13px/1.5 Inter,sans-serif;
+background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:32px 32px}
+.mono{font-family:'JetBrains Mono',monospace}
+.top{height:44px;border-bottom:1px solid rgba(255,255,255,.07);background:#0E141C;display:flex;align-items:center;padding:0 14px;gap:8px}
+.top .b{color:#6E7889}.top .o{color:#1972DB;font-weight:600}
+.side{position:absolute;top:44px;left:0;bottom:0;width:52px;border-right:1px solid rgba(255,255,255,.07);background:#0E141C;padding-top:10px}
+.side i{display:block;width:28px;height:28px;margin:6px auto;border-radius:6px;background:#141B26}.side i.on{background:rgba(25,114,219,.2)}
+main{position:absolute;top:44px;left:52px;right:0;bottom:0;padding:24px 32px}
+h1{margin:0;font:600 20px 'JetBrains Mono',monospace}h1 .br{color:#6E7889}
+.hd{display:flex;justify-content:space-between;align-items:flex-end}
+.kpis{display:flex;gap:28px}.k .cap{font:500 10px 'JetBrains Mono',monospace;color:#6E7889;letter-spacing:.08em}.k .v{font:600 20px 'JetBrains Mono',monospace}
+.err{color:#E5484D}.ok{color:#3DD68C}.acc{color:#5FA2F0}.warn{color:#F5A524}.mute{color:#6E7889}
+.split{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F;overflow:hidden}
+.card h2{margin:0;padding:12px 16px;font:600 12px 'JetBrains Mono',monospace;letter-spacing:.1em;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between;background:#141B26}
+.r{display:grid;grid-template-columns:76px 1fr 120px 96px;align-items:center;padding:0 16px;height:46px;border-bottom:1px solid rgba(255,255,255,.05)}
+.t{font:600 15px 'JetBrains Mono',monospace;letter-spacing:.04em}
+.t span{display:inline-block;background:#0A0E14;border:1px solid rgba(255,255,255,.08);padding:0 3px;margin-right:1px;border-radius:3px}
+.n{font-weight:500}.n small{display:block;color:#6E7889;font-size:11px;font-weight:400}
+.st{font:600 11px 'JetBrains Mono',monospace;letter-spacing:.08em}
+.mine{border-left:2px solid #1972DB}
+.strip{margin-top:16px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.fc{border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F;padding:12px 14px}
+.ticks{display:flex;gap:2px;margin-top:8px}.ticks b{flex:1;height:12px;border-radius:1px;background:#3DD68C}.ticks b.e{background:#E5484D}
+</style></head><body>
+<div class="top mono"><span class="b">&lt;</span><span class="o">O</span>rchestrator<span class="b">/&gt;</span></div>
+<div class="side"><i class="on"></i><i></i><i></i><i></i></div>
+<main>
+<div class="hd"><div><h1><span class="br">&lt;</span>Home<span class="br"> /&gt;</span></h1><div class="mute" style="font-size:12px">Welcome back, amarchal — your flows are marked in blue</div></div>
+<div class="kpis"><div class="k"><div class="cap">RUNS 7D</div><div class="v">1 284</div></div><div class="k"><div class="cap">SUCCESS</div><div class="v ok">96.4%</div></div><div class="k"><div class="cap">FAILED 24H</div><div class="v err">5</div></div><div class="k"><div class="cap">RUNNING</div><div class="v acc">3</div></div><div class="k"><div class="cap">WORKERS</div><div class="v">4/5</div></div></div></div>
+<div class="split">
+ <div class="card"><h2><span>UP NEXT</span><span class="mute">scheduled · next 12h</span></h2>
+  <div class="r mine"><div class="t"><span>0</span><span>9</span>:<span>3</span><span>0</span></div><div class="n">invoice-export<small>finance · win-build-01</small></div><div class="mono mute">cron 30 9 * * 1-5</div><div class="st mute">in 52m</div></div>
+  <div class="r"><div class="t"><span>1</span><span>0</span>:<span>0</span><span>0</span></div><div class="n">ldap-user-sync<small>it · server</small></div><div class="mono mute">cron 0 * * * *</div><div class="st mute">in 1h 22m</div></div>
+  <div class="r mine"><div class="t"><span>1</span><span>2</span>:<span>0</span><span>0</span></div><div class="n">daily-report<small>ops · server</small></div><div class="mono mute">cron 0 12 * * *</div><div class="st mute">in 3h 22m</div></div>
+  <div class="r"><div class="t"><span>1</span><span>4</span>:<span>1</span><span>5</span></div><div class="n">plm-cleanup<small>plm · linux-03</small></div><div class="mono mute">cron 15 14 * * *</div><div class="st warn">worker offline</div></div>
+  <div class="r mine"><div class="t"><span>1</span><span>8</span>:<span>0</span><span>0</span></div><div class="n">catia-batch-render<small>cad · win-cad-02</small></div><div class="mono mute">cron 0 18 * * 1-5</div><div class="st mute">in 9h 22m</div></div>
+  <div class="r"><div class="t"><span>2</span><span>0</span>:<span>0</span><span>0</span></div><div class="n">backup-artifacts<small>ops · server</small></div><div class="mono mute">cron 0 20 * * *</div><div class="st mute">in 11h 22m</div></div>
+ </div>
+ <div class="card"><h2><span>JUST RAN</span><span class="acc">all executions →</span></h2>
+  <div class="r mine"><div class="t"><span>0</span><span>8</span>:<span>3</span><span>4</span></div><div class="n">plm-bom-import<small>plm · manual · amarchal</small></div><div class="mono">4m 12s</div><div class="st acc">● RUNNING</div></div>
+  <div class="r mine"><div class="t"><span>0</span><span>7</span>:<span>4</span><span>0</span></div><div class="n">invoice-export<small>finance · cron</small></div><div class="mono">2m 3s</div><div class="st err">✕ FAILED</div></div>
+  <div class="r"><div class="t"><span>0</span><span>7</span>:<span>0</span><span>0</span></div><div class="n">ldap-user-sync<small>it · cron</small></div><div class="mono">9s</div><div class="st ok">✓ SUCCESS</div></div>
+  <div class="r mine"><div class="t"><span>0</span><span>6</span>:<span>0</span><span>0</span></div><div class="n">daily-report<small>ops · cron</small></div><div class="mono">12s</div><div class="st ok">✓ SUCCESS</div></div>
+  <div class="r mine"><div class="t"><span>0</span><span>3</span>:<span>1</span><span>2</span></div><div class="n">nightly-erp-sync<small>erp · cron</small></div><div class="mono">41s</div><div class="st err">✕ FAILED</div></div>
+  <div class="r"><div class="t"><span>0</span><span>2</span>:<span>0</span><span>0</span></div><div class="n">backup-db<small>ops · api</small></div><div class="mono">3m 50s</div><div class="st ok">✓ SUCCESS</div></div>
+ </div>
+</div>
+<div class="strip">
+ <div class="fc"><div class="n">nightly-erp-sync<small>erp</small></div><div class="ticks"><b></b><b></b><b></b><b class="e"></b><b></b><b></b><b class="e"></b></div></div>
+ <div class="fc"><div class="n">invoice-export<small>finance</small></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b class="e"></b></div></div>
+ <div class="fc"><div class="n">plm-bom-import<small>plm</small></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+ <div class="fc"><div class="n">daily-report<small>ops</small></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+ <div class="fc"><div class="n">catia-batch-render<small>cad</small></div><div class="ticks"><b></b><b></b><b class="e"></b><b></b><b></b><b></b><b></b></div></div>
+</div>
+</main></body></html>

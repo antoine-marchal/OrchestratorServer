@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Attention first</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;width:1440px;height:900px;overflow:hidden;background:#0A0E14;color:#E6ECF2;font:13px/1.5 Inter,sans-serif;
+background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:32px 32px}
+.mono{font-family:'JetBrains Mono',monospace}
+.top{height:44px;border-bottom:1px solid rgba(255,255,255,.07);background:#0E141C;display:flex;align-items:center;padding:0 14px;gap:8px}
+.top .b{color:#6E7889}.top .o{color:#1972DB;font-weight:600}
+.side{position:absolute;top:44px;left:0;bottom:0;width:52px;border-right:1px solid rgba(255,255,255,.07);background:#0E141C;padding-top:10px}
+.side i{display:block;width:28px;height:28px;margin:6px auto;border-radius:6px;background:#141B26}.side i.on{background:rgba(25,114,219,.2);outline:1px solid rgba(25,114,219,.4)}
+main{position:absolute;top:44px;left:52px;right:0;bottom:0;padding:24px 32px}
+h1{margin:0;font:600 20px 'JetBrains Mono',monospace}h1 .br{color:#6E7889}
+.sub{color:#6E7889;font-size:12px;margin-top:2px}
+.att{margin-top:18px;border:1px solid rgba(229,72,77,.35);background:rgba(229,72,77,.06);border-radius:10px;display:grid;grid-template-columns:repeat(3,1fr)}
+.att>div{padding:14px 16px;border-right:1px solid rgba(255,255,255,.07)}.att>div:last-child{border:0}
+.cap{font:500 11px 'JetBrains Mono',monospace;color:#6E7889;letter-spacing:.06em}
+.big{font:600 26px 'JetBrains Mono',monospace;margin:4px 0}
+.err{color:#E5484D}.ok{color:#3DD68C}.acc{color:#1972DB}.warn{color:#F5A524}
+.row{font-size:12px;color:#A6B0BD;display:flex;justify-content:space-between;padding:3px 0}
+.kpis{margin-top:16px;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F}
+.kpis>div{padding:14px 16px;border-right:1px solid rgba(255,255,255,.07)}.kpis>div:last-child{border:0}
+.spark{height:22px;display:flex;align-items:flex-end;gap:3px;margin-top:6px}.spark b{flex:1;background:#1972DB;opacity:.7;border-radius:1px}
+.cols{margin-top:16px;display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+.card{border:1px solid rgba(255,255,255,.07);border-radius:10px;background:#10161F;overflow:hidden}
+.card h2{margin:0;padding:12px 16px;font:500 11px 'JetBrains Mono',monospace;color:#6E7889;letter-spacing:.06em;border-bottom:1px solid rgba(255,255,255,.07);display:flex;justify-content:space-between}
+table{width:100%;border-collapse:collapse}td{padding:9px 16px;border-bottom:1px solid rgba(255,255,255,.05);font-size:12px}
+.st{display:inline-flex;gap:6px;align-items:center;font-size:11px;padding:2px 8px;border-radius:999px}
+.st.ok{background:rgba(61,214,140,.1)}.st.err{background:rgba(229,72,77,.12)}.st.run{background:rgba(25,114,219,.15);color:#5FA2F0}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.fl{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;justify-content:space-between;align-items:center}
+.ticks{display:flex;gap:2px}.ticks b{width:5px;height:14px;border-radius:1px;background:#3DD68C}.ticks b.e{background:#E5484D}
+</style></head><body>
+<div class="top mono"><span class="b">&lt;</span><span class="o">O</span>rchestrator<span class="b">/&gt;</span><span style="color:#4A5365;font-size:11px">v3.3.1</span></div>
+<div class="side"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+<main>
+<h1><span class="br">&lt;</span>Good morning, amarchal<span class="br"> /&gt;</span></h1>
+<div class="sub">Saturday 7 November · 3 of your flows ran overnight · 1 needs attention</div>
+<div class="att">
+ <div><div class="cap">// FAILED · YOURS · 24H</div><div class="big err">2</div>
+  <div class="row"><span>nightly-erp-sync</span><span class="mono">03:12 · 41s</span></div><div class="row"><span>invoice-export</span><span class="mono">07:40 · 2m 3s</span></div></div>
+ <div><div class="cap">// RUNNING NOW</div><div class="big acc">3</div>
+  <div class="row"><span>plm-bom-import</span><span class="mono">4m 12s</span></div><div class="row"><span>catia-batch-render</span><span class="mono">58s</span></div></div>
+ <div><div class="cap">// WORKERS</div><div class="big"><span class="ok">4</span><span style="color:#6E7889">/5</span></div>
+  <div class="row"><span>win-build-02</span><span class="warn mono">offline 2h</span></div></div>
+</div>
+<div class="kpis">
+ <div><div class="cap">// RUNS · 7D</div><div class="big">1 284</div><div class="spark"><b style="height:40%"></b><b style="height:60%"></b><b style="height:55%"></b><b style="height:80%"></b><b style="height:70%"></b><b style="height:30%"></b><b style="height:90%"></b></div></div>
+ <div><div class="cap">// SUCCESS RATE</div><div class="big ok">96.4%</div><div class="spark"><b style="height:90%;background:#3DD68C"></b><b style="height:94%;background:#3DD68C"></b><b style="height:88%;background:#3DD68C"></b><b style="height:97%;background:#3DD68C"></b><b style="height:95%;background:#3DD68C"></b><b style="height:99%;background:#3DD68C"></b><b style="height:92%;background:#3DD68C"></b></div></div>
+ <div><div class="cap">// MEDIAN DURATION</div><div class="big">38s</div><div class="spark"><b style="height:50%"></b><b style="height:45%"></b><b style="height:60%"></b><b style="height:40%"></b><b style="height:42%"></b><b style="height:48%"></b><b style="height:44%"></b></div></div>
+ <div><div class="cap">// ACTIVE FLOWS</div><div class="big">27</div><div class="sub">9 owned by you · 14 scheduled</div></div>
+</div>
+<div class="cols">
+ <div class="card"><h2><span>// YOUR LAST EXECUTIONS</span><span class="acc">all executions →</span></h2><table>
+  <tr><td class="mono" style="color:#A6B0BD">1107-0740·a3f</td><td>invoice-export<div style="color:#6E7889;font-size:11px">finance</div></td><td><span class="st err"><span class="dot err"></span>Failed</span></td><td class="mono" style="color:#6E7889">cron</td><td class="mono">2m 3s</td><td style="color:#6E7889">1h ago</td></tr>
+  <tr><td class="mono" style="color:#A6B0BD">1107-0702·91c</td><td>plm-bom-import<div style="color:#6E7889;font-size:11px">plm</div></td><td><span class="st run"><span class="dot"></span>Running</span></td><td class="mono" style="color:#6E7889">manual</td><td class="mono">4m 12s</td><td style="color:#6E7889">4m ago</td></tr>
+  <tr><td class="mono" style="color:#A6B0BD">1107-0600·27d</td><td>daily-report<div style="color:#6E7889;font-size:11px">ops</div></td><td><span class="st ok"><span class="dot ok"></span>Success</span></td><td class="mono" style="color:#6E7889">cron</td><td class="mono">12s</td><td style="color:#6E7889">2h ago</td></tr>
+  <tr><td class="mono" style="color:#A6B0BD">1107-0312·e02</td><td>nightly-erp-sync<div style="color:#6E7889;font-size:11px">erp</div></td><td><span class="st err"><span class="dot err"></span>Failed</span></td><td class="mono" style="color:#6E7889">cron</td><td class="mono">41s</td><td style="color:#6E7889">5h ago</td></tr>
+  <tr><td class="mono" style="color:#A6B0BD">1106-1822·b70</td><td>catia-batch-render<div style="color:#6E7889;font-size:11px">cad</div></td><td><span class="st ok"><span class="dot ok"></span>Success</span></td><td class="mono" style="color:#6E7889">api</td><td class="mono">6m 40s</td><td style="color:#6E7889">14h ago</td></tr>
+ </table></div>
+ <div class="card"><h2><span>// YOUR FLOWS</span><span class="acc">all flows →</span></h2>
+  <div class="fl"><div>nightly-erp-sync<div style="color:#6E7889;font-size:11px">erp · next 03:00</div></div><div class="ticks"><b></b><b></b><b></b><b></b><b class="e"></b><b></b><b class="e"></b></div></div>
+  <div class="fl"><div>invoice-export<div style="color:#6E7889;font-size:11px">finance · next 07:40</div></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b class="e"></b></div></div>
+  <div class="fl"><div>plm-bom-import<div style="color:#6E7889;font-size:11px">plm · manual</div></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+  <div class="fl"><div>daily-report<div style="color:#6E7889;font-size:11px">ops · next 06:00</div></div><div class="ticks"><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+ </div>
+</div>
+</main></body></html>

@@ -6,6 +6,7 @@ import FlowDetail from './components/flows/FlowDetail';
 import ExecutionsList from './components/flows/ExecutionsList';
 import WorkersPanel from './components/flows/WorkersPanel';
 import AdminLayout from './components/admin/AdminLayout';
+import Dashboard from './components/dashboard/Dashboard';
 import LoginPage from './components/LoginPage';
 import { getJwt } from './utils/apiClient';
 import { useSessionStore } from './store/sessionStore';
@@ -84,8 +85,9 @@ function App() {
     <HashRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<PrivateRoute element={<Navigate to="/flows" replace />} />} />
+        <Route path="/" element={<PrivateRoute element={<Navigate to="/home" replace />} />} />
         <Route element={<PrivateRoute element={<AppLayout />} />}>
+          <Route path="/home" element={<Dashboard />} />
           <Route path="/flows" element={<FlowsList />} />
           <Route path="/flows/:id" element={<FlowDetail />} />
           <Route path="/executions" element={<ExecutionsList />} />
@@ -93,7 +95,7 @@ function App() {
           <Route path="/admin" element={<AdminLayout />} />
         </Route>
         <Route path="/editor" element={<Navigate to="/flows" replace />} />
-        <Route path="*" element={<Navigate to="/flows" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </HashRouter>
   );

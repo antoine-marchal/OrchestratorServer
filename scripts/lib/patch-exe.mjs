@@ -89,7 +89,14 @@ export async function patchExe(ResEdit, {
   if (fs.existsSync(ICON)) {
     console.log('[patch-exe] Applying icon...');
     const iconData = fs.readFileSync(ICON);
-    const iconFile = ResEdit.Data.IconFile.from(iconData.buffer);
+    // Slice to the exact bytes: a Buffer may be a view into a larger pooled
+    // ArrayBuffer (non-zero byteOffset), so `.buffer` alone is not the file.
+    const iconFile = ResEdit.Data.IconFile.from(
+      iconData.buffer.slice(iconData.byteOffset, iconData.byteOffset + iconData.byteLength),
+    );
+    if (iconFile.icons.length === 0) {
+      throw new Error(`[patch-exe] No icon images parsed from ${ICON}`);
+    }
     ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
       res.entries, 1, LANG,
       iconFile.icons.map(i => i.data),

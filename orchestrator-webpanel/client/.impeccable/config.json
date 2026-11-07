@@ -1,0 +1,41 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-11-07T13:15:46.697Z",
+        "reason": "Inter is the incumbent app typeface (index.css --font-sans, @fontsource/inter); PRODUCT.md extension of established world"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/triage.html"
+        ],
+        "createdAt": "2026-11-07T13:15:46.726Z",
+        "reason": "throwaway decision-page sketch, drawn as skeleton bars; not shipped UI"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/board.html"
+        ],
+        "createdAt": "2026-11-07T13:15:46.755Z",
+        "reason": "throwaway decision-page sketch, drawn as skeleton bars; not shipped UI"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/personal.html"
+        ],
+        "createdAt": "2026-11-07T13:15:46.785Z",
+        "reason": "throwaway decision-page sketch, drawn as skeleton bars; not shipped UI"
+      }
+    ]
+  }
+}

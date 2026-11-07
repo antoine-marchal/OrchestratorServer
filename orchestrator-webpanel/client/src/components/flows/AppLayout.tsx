@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Activity, Server, Sun, Moon, ShieldCheck, LogOut } from 'lucide-react';
+import { Activity, Server, Sun, Moon, ShieldCheck, LogOut, LayoutDashboard } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useServerWorkers } from '../../hooks/useServerWorkers';
 import { clearJwt } from '../../utils/apiClient';
@@ -60,6 +60,7 @@ const Logo = () => (
 );
 
 const ALL_NAV_ITEMS = [
+  { to: '/home', icon: LayoutDashboard, label: 'Home', adminOnly: false },
   { to: '/flows', icon: FlowIcon, label: 'Flows', adminOnly: false },
   { to: '/executions', icon: Activity, label: 'Executions', adminOnly: false },
   { to: '/workers', icon: Server, label: 'Workers', adminOnly: false },
