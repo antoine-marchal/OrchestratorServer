@@ -1,0 +1,56 @@
+model {
+  bdd = treeGraph "Base Orchestrator" {
+    racine = treeNode "data/ — NeDB ou MongoDB" {
+      dIam = treeNode "Identité & accès" {
+        cUsers = treeNode "users.db · comptes, clés API"
+        cRoles = treeNode "roles.db · RBAC"
+        cSessions = treeNode "sessions.db · sessions"
+        cSecrets = treeNode "secrets.db · AES-256-GCM"
+      }
+      dFlux = treeNode "Flux & versions git" {
+        cFlows = treeNode "flows.db · nodes, edges, variantes"
+        cGitObjects = treeNode "git_objects.db · blob/tree/commit"
+        cGitChunks = treeNode "git_object_chunks.db · gros objets"
+        cGitRefs = treeNode "git_refs.db · refs/heads/*"
+      }
+      dArtefacts = treeNode "Artefacts (sha256)" {
+        cBlobs = treeNode "artifact_blobs.db · corps ou manifeste"
+        cChunks = treeNode "artifact_chunks.db · tranches 8 Mo"
+      }
+      dPlanif = treeNode "Planification" {
+        cSchedules = treeNode "schedules.db · cron, event, api"
+        cTokens = treeNode "trigger_tokens.db · triggers HTTP"
+      }
+      dExec = treeNode "Exécutions" {
+        cExecutions = treeNode "executions.db · statut par run"
+        cLogs = treeNode "execution_logs.db · logs"
+      }
+      dWorker = treeNode "Couplage worker" {
+        cWorkers = treeNode "workers.db · tokenHash, lastSeenAt"
+        cJobs = treeNode "worker_jobs.db · jobs répartis"
+      }
+    }
+  }
+  repos = node "Repositories" {
+    description "Serveur : seul accès à la base"
+    technology "data/repositories"
+  }
+  apiWorker = node "API worker" {
+    description "/api/v1/workers/*"
+  }
+  worker = external "Worker" {
+    description "Aucun accès direct"
+  }
+
+  repos -> racine "Lit / écrit" anchor t _
+  worker -> apiWorker "HTTPS + token" anchor t _
+  apiWorker -> cWorkers "heartbeat" anchor r l
+  apiWorker -> cJobs "ack, log, complete" anchor b l
+}
+
+views {
+  view arbre "Base de données — collections" {
+    include *
+    autolayout lr
+  }
+}

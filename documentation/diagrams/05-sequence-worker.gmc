@@ -1,0 +1,69 @@
+// Séquences — dialogue Webpanel / Worker (tout passe par /api/v1, le worker
+// initie toujours la connexion : aucun port entrant côté worker).
+// Vue 1 : enregistrement et cycle de vie · Vue 2 : exécution d'un nœud distant.
+model {
+  seqEnreg = seqGraph "Enregistrement et cycle de vie" {
+    autonumber "on"
+    eWorker = participant "Worker"
+    eServeur = participant "Serveur Orchestrator"
+    eDb = participant "Base (workers)"
+  }
+
+  seqExec = seqGraph "Exécution d'un nœud distant" {
+    autonumber "on"
+    xUser = seqActor "Opérateur"
+    xUi = participant "Interface web"
+    xServeur = participant "Serveur Orchestrator"
+    xDb = participant "Base"
+    xWorker = participant "Worker"
+    xRuntime = participant "Processus enfant"
+  }
+
+  // ── Enregistrement ───────────────────────────────────────────────
+  eWorker -> eServeur : message "POST /workers/register + secret"
+  eServeur -> eDb : message "upsert worker, tokenHash"
+  eDb -> eServeur : replyMessage "ok"
+  eServeur -> eWorker : replyMessage "workerId + token"
+  eWorker -> eServeur : asyncMessage "POST /heartbeat (périodique)"
+  eWorker -> eServeur : message "GET /jobs (long-poll ≤ 25 s)"
+  eServeur -> eWorker : replyMessage "jobs[] ou vide"
+  eServeur -> eDb : asyncMessage "Reaper : muet > 60 s → jobs annulés"
+  eServeur -> eWorker : replyMessage "401 si token invalide"
+  eWorker -> eServeur : message "Ré-enregistrement"
+  eWorker -> eServeur : asyncMessage "DELETE /workers/:id (arrêt)"
+
+  // ── Exécution ────────────────────────────────────────────────────
+  xWorker -> xServeur : message "GET /jobs (long-poll en attente)"
+  xUser -> xUi : message "Exécuter le flux"
+  xUi -> xServeur : message "POST /flows/:id/execute"
+  xServeur -> xDb : asyncMessage "insert worker_job (pending)"
+  xServeur -> xUi : replyMessage "executionId"
+  xUi -> xServeur : asyncMessage "GET /stream (SSE)"
+  xServeur -> xWorker : replyMessage "jobs[] (réveil immédiat)"
+  xWorker -> xServeur : asyncMessage "ack + status running"
+  xWorker -> xServeur : message "GET artifacts/:sha"
+  xServeur -> xWorker : replyMessage "octets de l'artefact"
+  xWorker -> xServeur : message "POST secrets (noms)"
+  xServeur -> xWorker : replyMessage "valeurs déchiffrées"
+  xWorker -> xRuntime : message "spawn (node, python…)"
+  xRuntime -> xWorker : asyncMessage "stdout / stderr"
+  xWorker -> xServeur : asyncMessage "POST log"
+  xServeur -> xUi : asyncMessage "événement SSE log"
+  xRuntime -> xWorker : replyMessage "exit + variables"
+  xWorker -> xServeur : message "POST complete (output)"
+  xServeur -> xDb : asyncMessage "job + exécution à jour"
+  xServeur -> xUi : asyncMessage "SSE fin du run"
+}
+
+views {
+  view enregistrement "Séquence — enregistrement du worker" {
+    include seqEnreg, seqEnreg.*
+    autolayout lr
+    seqEnreg size 1300 640
+  }
+  view execution "Séquence — exécution d'un nœud distant" {
+    include seqExec, seqExec.*
+    autolayout lr
+    seqExec size 1500 840
+  }
+}

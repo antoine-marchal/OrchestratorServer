@@ -1,0 +1,118 @@
+model {
+  metier = grouping "Couche métier" {
+    concepteur = businessActor "Concepteur" {
+      description " "
+    }
+    operateur = businessActor "Opérateur" {
+      description " "
+    }
+    pConcevoir = businessProcess "Concevoir un flux" {
+      description " "
+    }
+    pExecuter = businessProcess "Exécuter un flux" {
+      description " "
+    }
+    pSuperviser = businessProcess "Superviser les runs" {
+      description " "
+    }
+  }
+  applicatif = grouping "Couche applicative" {
+    sEdition = applicationService "Édition & versions" {
+      description " "
+    }
+    sExec = applicationService "Exécution de flux" {
+      description " "
+    }
+    sLogs = applicationService "Logs temps réel" {
+      description " "
+    }
+    iWorker = applicationInterface "API worker" {
+      description "/api/v1/workers/*"
+    }
+    cUi = applicationComponent "Interface web" {
+      technology "React"
+    }
+    cServeur = applicationComponent "Serveur Orchestrator" {
+      technology "Express"
+    }
+    cWorker = applicationComponent "Worker" {
+      technology "Node.js"
+    }
+    dFlux = dataObject "Flux (DAG)" {
+      description " "
+    }
+    dJob = dataObject "Job worker" {
+      description " "
+    }
+  }
+  technique = grouping "Couche technique" {
+    hServeur = technologyNode "Hôte serveur" {
+      description "Binaire unique"
+    }
+    sBdd = systemSoftware "NeDB / MongoDB" {
+      description " "
+    }
+    reseau = communicationNetwork "HTTP(S)" {
+      description "Sortant côté worker"
+    }
+    hWorker = technologyNode "Machine worker" {
+      description "Sans port entrant"
+    }
+    sRuntimes = systemSoftware "Runtimes" {
+      description "node, python, java, pwsh"
+    }
+  }
+
+  concepteur -> pConcevoir : assignment anchor r l
+  operateur -> pExecuter : assignment anchor r l
+  operateur -> pSuperviser : assignment anchor l r
+  sEdition -> pConcevoir : serving
+  cUi -> sLogs : realization
+  sExec -> pExecuter : serving
+  sLogs -> pSuperviser : serving
+  cUi -> sEdition : realization
+  cServeur -> sExec : realization
+  cServeur -> iWorker : composition
+  iWorker -> cWorker : serving "Jobs"
+  cWorker -> sExec : realization
+  cServeur -> dFlux : access
+  cServeur -> dJob : access
+  cWorker -> dJob : access
+  hServeur -> cServeur : serving
+  sBdd -> cServeur : serving
+  hWorker -> cWorker : serving
+  sRuntimes -> cWorker : serving
+  hServeur -> reseau : association anchor r l
+  hWorker -> reseau : association anchor l r
+}
+
+views {
+  view couches "ArchiMate — vue en couches" {
+    include *
+    autolayout bt
+    metier at 0 0
+    concepteur at 20 44
+    pConcevoir at 240 44
+    pSuperviser at 440 44
+    operateur at 650 44
+    pExecuter at 880 44
+    applicatif at 0 190
+    sEdition at 240 44
+    sLogs at 440 44
+    sExec at 880 44
+    cUi at 340 180
+    cServeur at 680 180
+    iWorker at 880 180
+    cWorker at 1120 180
+    dFlux at 580 316
+    dJob at 880 316
+    technique at 0 640
+    sBdd at 480 44
+    hServeur at 680 44
+    reseau at 880 44
+    hWorker at 1080 44
+    sRuntimes at 1280 44
+    applicatif size 1448 406
+    metier size 1456 150
+  }
+}

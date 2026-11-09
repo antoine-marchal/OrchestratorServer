@@ -1,0 +1,187 @@
+model {
+  utilisateur = person "Utilisateur" {
+    description "Concepteur, opérateur"
+  }
+  workerSys = softwareSystem "Orchestrator Worker" {
+    description " "
+    agent = container "Agent worker" {
+      description "Sans état, binaire pkg"
+      technology "Node.js, axios"
+      lifecycle = component "Lifecycle" {
+        description "register, heartbeat"
+        technology "lifecycle.ts"
+      }
+      poller = component "Poller" {
+        description "Long-poll des jobs"
+        technology "poller.ts"
+      }
+      jobRunner = component "Job runner" {
+        technology "jobs/jobRunner.ts"
+      }
+      wArtifacts = component "Artefacts" {
+        description "Télécharge, extrait"
+        technology "jobs/artifacts.ts"
+      }
+      wSecrets = component "Secrets" {
+        technology "jobs/secrets.ts"
+      }
+      runtimes = component "Runtimes" {
+        description "Un par langage"
+        technology "runtimes/*"
+      }
+      httpClient = component "Client HTTP" {
+        description "Token worker"
+        technology "axios"
+      }
+    }
+  }
+  process = container "Processus enfants" {
+    description "Un par nœud exécuté"
+    technology "node, python, java, pwsh"
+  }
+  webpanel = softwareSystem "Orchestrator Webpanel" {
+    description " "
+    spa = container "Interface web" {
+      description "Éditeur de flux, admin, logs"
+      technology "React 18, Vite"
+    }
+    db = container "Base de données" {
+      description "Flux, jobs, git"
+      technology "NeDB / MongoDB"
+    }
+  }
+  serveur = container "Serveur Orchestrator" {
+    description "API, exécuteur, planif."
+    technology "Express"
+    workerRoutes = component "API worker" {
+      description "register, jobs, logs"
+      technology "routes/workers"
+    }
+    routes = component "Routes HTTP" {
+      technology "http/routes"
+    }
+    middleware = component "Auth & RBAC" {
+      technology "JWT, clé API, zod"
+    }
+    flowExec = component "Exécuteur de flux" {
+      description "DAG, retry, timeouts"
+      technology "domain/execution"
+    }
+    workerSvc = component "Service workers" {
+      description "Dispatch + awaiters"
+      technology "domain/workers"
+    }
+    secretSvc = component "Service secrets" {
+      technology "AES-256-GCM"
+    }
+    artifactStore = component "Artifact store" {
+      description "sha256, chunks 8 Mo"
+      technology "domain/execution"
+    }
+    scheduler = component "Planificateur" {
+      technology "node-cron, eventBus"
+    }
+    gitFlux = component "Git des flux" {
+      technology "infra/git, smart-HTTP"
+    }
+    repos = component "Repositories" {
+      technology "data/repositories"
+    }
+  }
+  clientGit = softwareSystem "Client git" {
+    description "git clone / push"
+    tags "external"
+  }
+  sso = softwareSystem "SSO / CAS" {
+    description "Validation de ticket"
+    tags "external"
+  }
+
+  utilisateur -> spa "Utilise"
+  spa -> serveur "REST + SSE"
+  clientGit -> serveur "Smart-HTTP"
+  serveur -> sso "Valide ticket"
+  serveur -> db "Lit / écrit"
+  agent -> serveur "Long-poll HTTPS" anchor l t
+  agent -> process "Lance"
+  spa -> routes "/api/v1"
+  clientGit -> gitFlux "/git/:flowId"
+  routes -> middleware
+  middleware -> sso
+  routes -> flowExec "Exécute"
+  scheduler -> flowExec "Déclenche"
+  flowExec -> workerSvc "Dispatch"
+  flowExec -> secretSvc
+  flowExec -> artifactStore
+  workerRoutes -> workerSvc
+  routes -> gitFlux
+  gitFlux -> repos
+  workerSvc -> repos
+  secretSvc -> repos
+  flowExec -> repos
+  artifactStore -> db
+  repos -> db
+  lifecycle -> httpClient anchor _ t
+  poller -> httpClient anchor _ b
+  poller -> jobRunner "Job"
+  jobRunner -> wArtifacts
+  jobRunner -> wSecrets
+  jobRunner -> runtimes
+  wArtifacts -> httpClient
+  wSecrets -> httpClient
+  runtimes -> process "spawn" anchor b r
+  httpClient -> workerRoutes "HTTPS + token"
+}
+
+views {
+  view conteneurs "Technique — conteneurs" {
+    include utilisateur, clientGit, sso, webpanel, spa, serveur, db, workerSys, agent, process
+    autolayout lr
+    webpanel at 592 165
+    spa at 32 65
+    db at 208 65
+    workerSys at 148 336
+    agent at 56 48
+    clientGit at 198 37
+    sso at 976 37
+    utilisateur at 223 202
+    serveur at 676 37
+    process at 672 384
+    webpanel size 408 182
+    workerSys size 260 138
+  }
+  view composantsServeur "Technique — serveur" {
+    include spa, clientGit, agent, serveur, serveur.*, sso, db
+    include_relations spa -> routes, clientGit -> gitFlux, httpClient -> workerRoutes, routes -> middleware, middleware -> sso, routes -> flowExec, scheduler -> flowExec, flowExec -> workerSvc, flowExec -> secretSvc, flowExec -> artifactStore, workerRoutes -> workerSvc, routes -> gitFlux, gitFlux -> repos, workerSvc -> repos, secretSvc -> repos, flowExec -> repos, artifactStore -> db, repos -> db
+    autolayout lr
+    workerRoutes at 16 76
+    routes at 16 194
+    middleware at 276 76
+    flowExec at 276 312
+    workerSvc at 536 76
+    secretSvc at 536 194
+    artifactStore at 536 312
+    scheduler at 16 312
+    gitFlux at 276 194
+    repos at 796 194
+    serveur size 972 402
+  }
+  view composantsWorker "Technique — worker" {
+    include serveur, workerRoutes, agent, agent.*, process
+    include_relations lifecycle -> httpClient, poller -> httpClient, poller -> jobRunner, jobRunner -> wArtifacts, jobRunner -> wSecrets, jobRunner -> runtimes, wArtifacts -> httpClient, wSecrets -> httpClient, runtimes -> process, httpClient -> workerRoutes
+    autolayout lr
+    workerRoutes at 112 44
+    jobRunner at 276 248
+    agent at 40 24
+    lifecycle at 16 119
+    poller at 16 237
+    wArtifacts at 536 60
+    wSecrets at 536 168
+    runtimes at 536 264
+    httpClient at 796 178
+    serveur at 1056 214
+    process at 1184 104
+    serveur size 310 140
+    agent size 972 386
+  }
+}

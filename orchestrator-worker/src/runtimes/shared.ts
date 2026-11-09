@@ -9,6 +9,13 @@ export const INBOX = path.join(WORK_DIR, 'inbox');
 export const GROOVY_JAR = process.env.GROOVY_JAR || path.join(WORK_DIR, 'groovyExec.jar');
 
 if (!fs.existsSync(INBOX)) fs.mkdirSync(INBOX, { recursive: true });
+// Every job spawns with cwd=EXECUTION_DIR; a missing dir makes spawn fail with
+// a misleading "spawn cmd.exe ENOENT". Create it up front.
+try {
+  if (!fs.existsSync(EXECUTION_DIR)) fs.mkdirSync(EXECUTION_DIR, { recursive: true });
+} catch (e: any) {
+  console.warn(`[worker] cannot create execution dir ${EXECUTION_DIR}: ${e?.message ?? e}`);
+}
 
 export function nowUid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

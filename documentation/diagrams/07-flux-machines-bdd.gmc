@@ -1,0 +1,70 @@
+model {
+  poste = group "Poste utilisateur" {
+    navigateur = container "Navigateur" {
+      description "Interface web React"
+    }
+    gitCli = container "Client git" {
+      description "clone / pull / push"
+    }
+  }
+  hote = group "Hôte serveur" {
+    serveur = container "Serveur Orchestrator" {
+      description "Express, binaire unique"
+      technology "PORT 3939"
+    }
+    nedb = container "Fichiers NeDB" {
+      description "<WORK_DIR>/data/*.db"
+      technology "par défaut"
+    }
+    inbox = container "Dossier inbox" {
+      description "<WORK_DIR>/inbox"
+      technology "événements fichier"
+    }
+  }
+  mongoHote = group "Serveur MongoDB (option)" {
+    mongo = container "MongoDB" {
+      description "Si MONGO_URI est défini"
+      technology "TCP 27017"
+    }
+  }
+  machineWorker = group "Machine worker" {
+    agent = container "Agent worker" {
+      description "Sans état"
+      technology "ORCHESTRATOR_URL"
+    }
+    execDir = container "Répertoire d'exécution" {
+      description "Artefacts extraits, scripts"
+    }
+  }
+
+  navigateur -> serveur "Flux, artefacts ⇄ logs SSE" bidirectional
+  gitCli -> serveur "Packs git ⇄" bidirectional
+  agent -> serveur "Jobs, secrets ⇄ logs, résultat" bidirectional
+  agent -> execDir "Extrait"
+  serveur -> nedb "Lit / écrit" bidirectional
+  serveur -> mongo "Lit / écrit" bidirectional
+  inbox -> serveur "Événements"
+}
+
+views {
+  view flux "Flux de données — machines et base" {
+    include *
+    autolayout lr
+    machineWorker at 40 320
+    agent at 16 60
+    execDir at 276 60
+    poste at 48 40
+    navigateur at 144 44
+    gitCli at 144 162
+    hote at 592 180
+    serveur at 276 60
+    nedb at 536 60
+    inbox at 16 60
+    mongoHote at 1404 180
+    mongo at 52 60
+    machineWorker size 452 150
+    poste size 428 252
+    hote size 712 150
+    mongoHote size 300 150
+  }
+}

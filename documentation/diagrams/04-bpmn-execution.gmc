@@ -1,0 +1,85 @@
+model {
+  run = pool "Exécution d'un flux" {
+    laneTrig = lane "Déclencheur" {
+      start = startEvent "Run demandé" {
+        description "Cron, événement, API, UI"
+      }
+    }
+    laneSrv = lane "Serveur Orchestrator" {
+      charger = serviceTask "Charger le flux" {
+        description "Racines du DAG, artefacts"
+      }
+      gDistant = exclusiveGateway "Nœud distant ?"
+      local = serviceTask "Exécuter en local"
+      dispatch = serviceTask "Créer le job" {
+        description "worker_jobs = pending"
+      }
+      attente = intermediateEvent "Résultat reçu"
+      gOk = exclusiveGateway "Succès ?"
+      gSuite = exclusiveGateway "Nœuds restants ?"
+      fin = endEvent "Run SUCCESS" {
+        accentColor "#65A30D"
+      }
+      echec = endEvent "Run FAILED"
+    }
+    laneWrk = lane "Worker" {
+      poll = task "Long-poll /jobs" {
+        description "ack du job"
+      }
+      prep = serviceTask "Préparer" {
+        description "Artefacts + secrets"
+      }
+      exec = serviceTask "Exécuter le runtime" {
+        description "Processus enfant"
+      }
+      report = task "Remonter le résultat" {
+        description "log* puis complete"
+      }
+    }
+  }
+
+  start -> charger : sequenceFlow
+  charger -> gDistant : sequenceFlow anchor r l
+  gDistant -> local : sequenceFlow "non" anchor r l
+  gDistant -> dispatch : sequenceFlow "oui" anchor b l
+  dispatch -> poll : sequenceFlow anchor b t
+  poll -> prep : sequenceFlow anchor r l
+  prep -> exec : sequenceFlow anchor r l
+  exec -> report : sequenceFlow anchor r l
+  report -> attente : sequenceFlow anchor t b
+  local -> gOk : sequenceFlow anchor r t
+  attente -> gOk : sequenceFlow anchor r l
+  gOk -> echec : sequenceFlow "non" anchor r l
+  gOk -> gSuite : sequenceFlow "oui" anchor t b
+  gSuite -> gDistant : sequenceFlow "oui" anchor t t
+  gSuite -> fin : sequenceFlow "non" anchor r l
+}
+
+views {
+  view execution "BPMN — exécution d'un flux" {
+    include *
+    autolayout lr
+    run at 0 -32
+    laneTrig at 16 48
+    start at 70 37
+    laneSrv at 16 190
+    charger at 70 72
+    gDistant at 270 74
+    local at 400 72
+    dispatch at 400 202
+    attente at 1042 211
+    gOk at 1180 204
+    echec at 1320 211
+    gSuite at 1180 74
+    fin at 1320 81
+    laneWrk at 16 508
+    poll at 400 28
+    prep at 600 28
+    exec at 800 28
+    report at 990 28
+    laneTrig size 1460 130
+    laneSrv size 1460 302
+    laneWrk size 1460 130
+    run size 1492 654
+  }
+}

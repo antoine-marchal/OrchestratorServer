@@ -1,0 +1,131 @@
+model {
+  clientGit = external "Client git" {
+    description "clone / push d'un flux"
+  }
+  concepteur = person "Concepteur" {
+    description " "
+  }
+  operateur = person "Opérateur" {
+    description " "
+  }
+  declencheurs = external "Déclencheurs" {
+    description "Cron, inbox, appel HTTP"
+  }
+  admin = person "Administrateur" {
+    description " "
+  }
+  ui = group "Webpanel — Interface web" {
+    fEdition = node "Éditer un flux" {
+      description "Graphe, code, artefacts"
+    }
+    fSupervision = node "Superviser" {
+      description "Historique, logs live"
+    }
+    fAdmin = node "Administrer" {
+      description "Users, secrets, workers"
+    }
+  }
+  coeur = group "Webpanel — Serveur central" {
+    fVersion = node "Versionner" {
+      description "Commits, branches"
+    }
+    fPlanif = node "Planifier / déclencher" {
+      description "Cron, événement, API"
+    }
+    fExec = node "Orchestrer le DAG" {
+      description "Parcours, retry, timeouts"
+    }
+    fDispatch = node "Répartir les jobs" {
+      description "File + long-poll"
+    }
+    fSecrets = node "Gérer les secrets" {
+      description "Chiffrés, résolus au run"
+    }
+    fArtefacts = node "Stocker les artefacts" {
+      description "Adressés par sha256"
+    }
+    fIam = node "Authentifier" {
+      description "JWT, clés API, RBAC"
+    }
+  }
+  worker = group "Worker — agent distant" {
+    wEnreg = node "S'enregistrer" {
+      description "Token + heartbeat"
+    }
+    wPoll = node "Récupérer les jobs" {
+      description "Sans port entrant"
+    }
+    wPrep = node "Préparer le job" {
+      description "Artefacts + secrets"
+    }
+    wRun = node "Exécuter le nœud" {
+      description "JS, Python, Groovy, PS…"
+    }
+    wLogs = node "Remonter les logs" {
+      description "Logs + résultat"
+    }
+  }
+
+  concepteur -> fEdition
+  operateur -> fSupervision
+  admin -> fAdmin
+  clientGit -> fVersion
+  declencheurs -> fPlanif
+  fEdition -> fVersion "Sauvegarde"
+  fSupervision -> fExec "Lance" anchor _ t
+  fAdmin -> fIam anchor _ b
+  fPlanif -> fExec "Démarre"
+  fExec -> fDispatch "Nœuds distants" anchor r _
+  fExec -> fSecrets
+  fExec -> fArtefacts anchor _ t
+  wEnreg -> fIam "Enregistre"
+  fDispatch -> wPoll "Jobs" anchor t l
+  fSecrets -> wPrep
+  fArtefacts -> wPrep
+  wPoll -> wPrep
+  wPrep -> wRun
+  wRun -> wLogs
+  wLogs -> fDispatch "Résultat"
+}
+
+views {
+  view webpanel "Fonctionnel — Webpanel" {
+    include concepteur, operateur, admin, declencheurs, clientGit, ui, ui.*, coeur, coeur.*
+    autolayout lr
+    coeur at 700 163
+    ui at 300 163
+    fVersion at 796 60
+    fPlanif at 16 178
+    fExec at 276 178
+    fDispatch at 536 60
+    fSecrets at 536 178
+    fArtefacts at 536 296
+    fIam at 796 178
+    fEdition at 16 60
+    fSupervision at 16 178
+    fAdmin at 16 296
+    declencheurs at 48 576
+    admin at 65 448
+    coeur size 976 404
+    ui size 300 402
+  }
+  view couplage "Fonctionnel — couplage serveur / worker" {
+    include coeur, fPlanif, fExec, fIam, fDispatch, fSecrets, fArtefacts, worker, worker.*
+    autolayout lr
+    coeur at 41 -8
+    fArtefacts at 277 328
+    fExec at 277 210
+    fPlanif at 16 210
+    fDispatch at 536 92
+    fSecrets at 536 210
+    fIam at 796 92
+    worker at 40 448
+    wEnreg at 1056 80
+    wPoll at 16 80
+    wPrep at 276 80
+    wRun at 536 80
+    wLogs at 796 80
+    coeur size 1228 418
+    worker size 1232 182
+  }
+}

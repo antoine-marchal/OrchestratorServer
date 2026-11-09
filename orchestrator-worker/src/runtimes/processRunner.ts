@@ -1,6 +1,7 @@
 // Low-level child-process runner shared by every language runtime. Streams
 // stdout/stderr back via onLog, enforces a timeout (tree-kill), and optionally
 // promotes a clean exit to a failure when output contains an ERROR/FAILED token.
+import fs from 'fs';
 import { spawn } from 'child_process';
 import kill from 'tree-kill';
 import { EXECUTION_DIR } from './shared';
@@ -28,6 +29,13 @@ const LOG_ERROR_PATTERN = /\b(ERROR|FAILED)\b/;
 export function runProcess(cmd: string, args: string[], opts: RunOpts): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve) => {
     const useShell = opts.shell ?? false;
+    const cwd = opts.cwd || EXECUTION_DIR;
+    // Spawn ENOENT names the command but is just as often a missing cwd —
+    // fail the job with a message that says which one, instead of crashing.
+    if (!fs.existsSync(cwd)) {
+      resolve({ stdout: '', stderr: `[worker] spawn ${cmd} failed: working directory does not exist: ${cwd} (check ORCHESTRATOR_EXECUTION_DIR / ORCHESTRATOR_WORK_DIR)`, exitCode: -1 });
+      return;
+    }
     const child = useShell
       ? spawn(toShellCommand(cmd, args), {
           cwd: opts.cwd || EXECUTION_DIR,
@@ -53,7 +61,24 @@ export function runProcess(cmd: string, args: string[], opts: RunOpts): Promise<
       }, opts.timeoutMs);
     }
 
+    // Without this listener a failed spawn (ENOENT/EPERM/EACCES) is an
+    // uncaught exception that kills the whole worker process.
+    let settled = false;
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      const hint = err.code === 'ENOENT'
+        ? ` — executable "${cmd}" not found (PATH=${process.env.PATH ?? process.env.Path ?? ''})`
+        : (err.code === 'EPERM' || err.code === 'EACCES')
+          ? ' — blocked by OS/security policy (Defender ASR, AppLocker, EDR?)'
+          : '';
+      resolve({ stdout, stderr: `${stderr}\n[worker] spawn ${cmd} failed: ${err.code ?? ''} ${err.message}${hint} (cwd=${cwd})`, exitCode: -1 });
+    });
+
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
       if (timer) clearTimeout(timer);
       let exitCode = code ?? 0;
       let finalStderr = stderr;
